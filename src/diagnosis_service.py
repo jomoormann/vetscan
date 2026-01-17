@@ -8,6 +8,7 @@ It analyzes clinical notes and test data to generate diagnostic reports.
 import os
 from datetime import date
 from typing import Optional, List, Dict, Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
     import anthropic
@@ -67,9 +68,12 @@ Suggest next diagnostic steps or immediate clinical actions:
 ## Referências (References)
 Cite relevant veterinary literature, guidelines, or consensus statements that support your analysis.
 
-Important notes:
+Important formatting notes:
+- Use **bold** for important terms, diagnosis names, and key findings
+- Use bullet points and numbered lists for clarity
+- Use ### subheadings to organize content within sections
+- Highlight critical findings with **⚠️ ALERTA:** prefix
 - Be thorough but practical in your recommendations
-- Highlight any critical or urgent findings
 - Consider both common and important rare conditions
 - Write in Portuguese but include English terms in parentheses where helpful for clarity"""
 
@@ -133,11 +137,14 @@ Suggest next diagnostic steps or immediate clinical actions:
 ## Referências (References)
 Cite relevant veterinary literature, guidelines, or consensus statements that support your analysis.
 
-Important notes:
+Important formatting notes:
+- Use **bold** for important terms, diagnosis names, and key findings
+- Use bullet points and numbered lists for clarity
+- Use ### subheadings to organize content within sections
+- Highlight critical findings with **⚠️ ALERTA:** prefix
 - Be thorough and educational in your test interpretation
 - Explain the pathophysiology behind abnormal findings
 - Always correlate laboratory findings with clinical presentation
-- Highlight any critical or urgent findings
 - Write in Portuguese but include English terms in parentheses where helpful for clarity"""
 
 
@@ -590,8 +597,14 @@ Suggest a clear path forward for clinical investigation:
 - Monitoring recommendations
 - Any urgent actions needed
 
-Keep the language accessible but professional. Write in Portuguese with English terms in parentheses where helpful.
-Be concise but thorough - this is an executive summary for busy clinicians."""
+Important formatting notes:
+- Use **bold** for important terms, diagnosis names, and key findings
+- Use bullet points and numbered lists for clarity
+- Use ### subheadings within sections to organize content
+- Highlight urgent findings with **⚠️ ALERTA:** prefix
+- Keep the language accessible but professional
+- Write in Portuguese with English terms in parentheses where helpful
+- Be concise but thorough - this is an executive summary for busy clinicians"""
 
 
 # =============================================================================
@@ -831,41 +844,68 @@ def create_diagnosis_report(
     claude_model = "claude-sonnet-4-20250514"
     openai_model = "gpt-5-mini"
 
-    # Generate diagnosis with Claude (Anthropic)
-    try:
-        claude_service = DiagnosisService(api_key=anthropic_api_key)
-        claude_result = claude_service.generate_diagnosis(
-            animal=animal,
-            clinical_notes=clinical_notes,
-            sessions_data=sessions_data,
-            report_type=report_type
-        )
-        claude_model = claude_service.model
-    except Exception as e:
-        print(f"Claude API error: {e}")
-        claude_result["differential_diagnosis"] = f"Erro ao gerar diagnóstico com Claude: {str(e)}"
-
-    # Generate diagnosis with OpenAI (GPT-5 mini)
+    # Create services
+    claude_service = None
     openai_service = None
-    try:
-        openai_service = OpenAIDiagnosisService(api_key=openai_api_key)
-        # Create a prompt builder from Claude service for shared methods
-        prompt_builder = DiagnosisService.__new__(DiagnosisService)
-        prompt_builder.api_key = None
-        prompt_builder.client = None
-        prompt_builder.model = None
+    prompt_builder = DiagnosisService.__new__(DiagnosisService)
+    prompt_builder.api_key = None
+    prompt_builder.client = None
+    prompt_builder.model = None
 
-        openai_result = openai_service.generate_diagnosis(
-            animal=animal,
-            clinical_notes=clinical_notes,
-            sessions_data=sessions_data,
-            report_type=report_type,
-            prompt_builder=prompt_builder
-        )
-        openai_model = openai_service.model
-    except Exception as e:
-        print(f"OpenAI API error: {e}")
-        openai_result["differential_diagnosis"] = f"Erro ao gerar diagnóstico com OpenAI: {str(e)}"
+    # Define functions for parallel execution
+    def run_claude():
+        nonlocal claude_model
+        try:
+            service = DiagnosisService(api_key=anthropic_api_key)
+            result = service.generate_diagnosis(
+                animal=animal,
+                clinical_notes=clinical_notes,
+                sessions_data=sessions_data,
+                report_type=report_type
+            )
+            claude_model = service.model
+            return ("claude", result, None)
+        except Exception as e:
+            print(f"Claude API error: {e}")
+            return ("claude", None, str(e))
+
+    def run_openai():
+        nonlocal openai_model, openai_service
+        try:
+            openai_service = OpenAIDiagnosisService(api_key=openai_api_key)
+            result = openai_service.generate_diagnosis(
+                animal=animal,
+                clinical_notes=clinical_notes,
+                sessions_data=sessions_data,
+                report_type=report_type,
+                prompt_builder=prompt_builder
+            )
+            openai_model = openai_service.model
+            return ("openai", result, openai_service)
+        except Exception as e:
+            print(f"OpenAI API error: {e}")
+            return ("openai", None, str(e))
+
+    # Run Claude and OpenAI in parallel
+    print("Starting parallel AI diagnosis generation...")
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(run_claude), executor.submit(run_openai)]
+
+        for future in as_completed(futures):
+            name, result, extra = future.result()
+            if name == "claude":
+                if result:
+                    claude_result = result
+                else:
+                    claude_result["differential_diagnosis"] = f"Erro ao gerar diagnóstico com Claude: {extra}"
+            elif name == "openai":
+                if result:
+                    openai_result = result
+                    openai_service = extra
+                else:
+                    openai_result["differential_diagnosis"] = f"Erro ao gerar diagnóstico com OpenAI: {extra}"
+
+    print("Parallel AI diagnosis generation completed.")
 
     # Generate Executive Summary using OpenAI (combining both reports)
     executive_summary = ""
