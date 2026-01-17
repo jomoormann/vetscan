@@ -473,9 +473,12 @@ class DiagnosisService:
 
         # Build input summary
         input_summary_parts = [f"Paciente: {animal.name} ({animal.species})"]
-        input_summary_parts.append(f"Notas clínicas analisadas: {len(clinical_notes)}")
+        if clinical_notes:
+            input_summary_parts.append(f"Notas clínicas: {len(clinical_notes)}")
         if sessions_data:
             input_summary_parts.append(f"Sessões de teste: {len(sessions_data)}")
+        if not clinical_notes and not sessions_data:
+            input_summary_parts.append("Apenas dados do paciente")
         input_summary = " | ".join(input_summary_parts)
 
         # Select appropriate system prompt based on report type
@@ -680,9 +683,12 @@ class OpenAIDiagnosisService:
 
         # Build input summary
         input_summary_parts = [f"Paciente: {animal.name} ({animal.species})"]
-        input_summary_parts.append(f"Notas clínicas analisadas: {len(clinical_notes)}")
+        if clinical_notes:
+            input_summary_parts.append(f"Notas clínicas: {len(clinical_notes)}")
         if sessions_data:
             input_summary_parts.append(f"Sessões de teste: {len(sessions_data)}")
+        if not clinical_notes and not sessions_data:
+            input_summary_parts.append("Apenas dados do paciente")
         input_summary = " | ".join(input_summary_parts)
 
         # Select appropriate system prompt based on report type
@@ -808,24 +814,31 @@ def create_diagnosis_report(
     if not animal:
         raise ValueError(f"Animal with ID {animal_id} not found")
 
-    # Get clinical notes
-    clinical_notes = db.get_clinical_notes_for_animal(animal_id)
-    if not clinical_notes:
-        raise ValueError("No clinical notes found for this animal. Please add clinical notes first.")
+    # Get clinical notes (may be empty)
+    clinical_notes = db.get_clinical_notes_for_animal(animal_id) or []
 
-    # Get test data for comprehensive analysis
-    sessions_data = None
-    if report_type == "comprehensive":
-        sessions = db.get_sessions_for_animal(animal_id)
-        sessions_data = []
-        for session in sessions:
-            session_info = {
-                "session": session,
-                "results": db.get_results_for_session(session.id),
-                "biochemistry": db.get_biochemistry_for_session(session.id),
-                "urinalysis": db.get_urinalysis_for_session(session.id)
-            }
-            sessions_data.append(session_info)
+    # Get test data (always get it for comprehensive analysis)
+    sessions = db.get_sessions_for_animal(animal_id)
+    sessions_data = []
+    for session in sessions:
+        session_info = {
+            "session": session,
+            "results": db.get_results_for_session(session.id),
+            "biochemistry": db.get_biochemistry_for_session(session.id),
+            "urinalysis": db.get_urinalysis_for_session(session.id)
+        }
+        sessions_data.append(session_info)
+
+    # Check if we have any data to analyze
+    if not clinical_notes and not sessions_data:
+        raise ValueError("No data available for analysis. Please add clinical notes or upload test results first.")
+
+    # Auto-detect report type based on available data
+    # If we have test data, always use comprehensive (to include lab interpretations)
+    if sessions_data:
+        report_type = "comprehensive"
+    else:
+        report_type = "clinical_notes_only"
 
     # Initialize results
     claude_result = {

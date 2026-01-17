@@ -1,7 +1,7 @@
 {
     "app": {
-        "title": "Vet Protein Analysis",
-        "title_short": "Vet Protein"
+        "title": "Vetscan",
+        "title_short": "Vetscan"
     },
     "nav": {
         "dashboard": "Dashboard",
