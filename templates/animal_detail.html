@@ -360,26 +360,128 @@
 
 <!-- Diagnosis Loading Modal -->
 <div id="diagnosisLoadingModal" class="modal">
-    <div class="modal-content" style="max-width: 400px; text-align: center;">
+    <div class="modal-content" style="max-width: 500px; text-align: center;">
         <div style="padding: 2rem;">
-            <div class="spinner" style="margin: 0 auto 1.5rem;"></div>
-            <h3>{{ t(lang, 'diagnosis.generating') }}</h3>
-            <p class="text-muted" style="margin-top: 0.5rem;">{{ t(lang, 'diagnosis.generating_desc') }}</p>
+            <h2 style="color: var(--primary); margin-bottom: 0.5rem;">🔮 Miracle Diagnosis Loading</h2>
+            <p class="text-muted" style="margin-bottom: 1.5rem;">Our AI veterinarians are analyzing...</p>
+
+            <!-- Cat chasing mouse animation -->
+            <div class="chase-container">
+                <div class="chase-track">
+                    <div class="chase-line"></div>
+                    <div class="mouse">🐭</div>
+                    <div class="cat">🐱</div>
+                </div>
+            </div>
+
+            <!-- Progress indicator -->
+            <div class="progress-container">
+                <div class="progress-bar"></div>
+            </div>
+            <p class="progress-text">0%</p>
+
+            <!-- Fun messages that rotate -->
+            <p class="loading-message" style="font-style: italic; color: var(--gray-500); min-height: 1.5em;">
+                Consulting with Dr. Whiskers...
+            </p>
         </div>
     </div>
 </div>
 
 <style>
-    .spinner {
-        width: 48px;
-        height: 48px;
-        border: 4px solid var(--gray-200);
-        border-top-color: var(--primary);
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
+    .chase-container {
+        position: relative;
+        height: 60px;
+        margin: 1.5rem 0;
+        overflow: hidden;
     }
-    @keyframes spin {
-        to { transform: rotate(360deg); }
+
+    .chase-track {
+        position: relative;
+        width: 100%;
+        height: 100%;
+    }
+
+    .chase-line {
+        position: absolute;
+        bottom: 15px;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, var(--gray-200) 0%, var(--gray-300) 50%, var(--gray-200) 100%);
+        border-radius: 2px;
+    }
+
+    .mouse {
+        position: absolute;
+        bottom: 20px;
+        left: 0;
+        font-size: 1.8rem;
+        animation: mouseRun 180s linear forwards, mouseWiggle 0.3s ease-in-out infinite;
+        z-index: 2;
+    }
+
+    .cat {
+        position: absolute;
+        bottom: 18px;
+        left: -40px;
+        font-size: 2.2rem;
+        animation: catRun 180s linear forwards, catBounce 0.5s ease-in-out infinite;
+        z-index: 1;
+    }
+
+    @keyframes mouseRun {
+        0% { left: 5%; }
+        100% { left: 85%; }
+    }
+
+    @keyframes mouseWiggle {
+        0%, 100% { transform: translateY(0) scaleX(1); }
+        50% { transform: translateY(-3px) scaleX(1.1); }
+    }
+
+    @keyframes catRun {
+        0% { left: -5%; }
+        100% { left: 75%; }
+    }
+
+    @keyframes catBounce {
+        0%, 100% { transform: translateY(0) rotate(0deg); }
+        25% { transform: translateY(-8px) rotate(-5deg); }
+        75% { transform: translateY(-4px) rotate(5deg); }
+    }
+
+    .progress-container {
+        width: 100%;
+        height: 8px;
+        background: var(--gray-200);
+        border-radius: 4px;
+        overflow: hidden;
+        margin-top: 1rem;
+    }
+
+    .progress-bar {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, var(--primary), var(--success));
+        border-radius: 4px;
+        animation: progressGrow 180s linear forwards;
+    }
+
+    @keyframes progressGrow {
+        0% { width: 0%; }
+        100% { width: 100%; }
+    }
+
+    .progress-text {
+        font-size: 0.875rem;
+        color: var(--gray-500);
+        margin-top: 0.5rem;
+    }
+
+    .loading-message {
+        margin-top: 1rem;
+        transition: opacity 0.3s ease;
     }
 </style>
 
@@ -428,9 +530,86 @@
     };
 
     // Diagnosis functions
+    // Fun loading messages for diagnosis
+    const loadingMessages = [
+        "Consulting with Dr. Whiskers... 🐱",
+        "Analyzing protein patterns... 🔬",
+        "Reading the tea leaves... 🍵",
+        "Asking the wise owl... 🦉",
+        "Checking veterinary textbooks... 📚",
+        "Running differential algorithms... 🧮",
+        "Cross-referencing symptoms... 📋",
+        "Channeling veterinary wisdom... ✨",
+        "Almost there, stay pawsitive! 🐾",
+        "The diagnosis is brewing... ☕",
+        "Consulting the crystal ball... 🔮",
+        "Decoding lab results... 🧪",
+        "Summoning AI expertise... 🤖",
+        "Connecting the dots... 🔗",
+        "Miracle in progress... ⭐"
+    ];
+
+    let diagnosisProgressInterval = null;
+    let diagnosisMessageInterval = null;
+    let diagnosisStartTime = null;
+
+    function startDiagnosisAnimation() {
+        diagnosisStartTime = Date.now();
+        const totalDuration = 180000; // 3 minutes in ms
+        let messageIndex = 0;
+
+        // Update progress text
+        diagnosisProgressInterval = setInterval(() => {
+            const elapsed = Date.now() - diagnosisStartTime;
+            const progress = Math.min((elapsed / totalDuration) * 100, 99);
+            const progressText = document.querySelector('.progress-text');
+            if (progressText) {
+                progressText.textContent = Math.round(progress) + '%';
+            }
+        }, 1000);
+
+        // Rotate messages
+        diagnosisMessageInterval = setInterval(() => {
+            const messageEl = document.querySelector('.loading-message');
+            if (messageEl) {
+                messageEl.style.opacity = '0';
+                setTimeout(() => {
+                    messageIndex = (messageIndex + 1) % loadingMessages.length;
+                    messageEl.textContent = loadingMessages[messageIndex];
+                    messageEl.style.opacity = '1';
+                }, 300);
+            }
+        }, 4000);
+    }
+
+    function stopDiagnosisAnimation() {
+        if (diagnosisProgressInterval) {
+            clearInterval(diagnosisProgressInterval);
+            diagnosisProgressInterval = null;
+        }
+        if (diagnosisMessageInterval) {
+            clearInterval(diagnosisMessageInterval);
+            diagnosisMessageInterval = null;
+        }
+        // Reset animations for next time
+        const progressBar = document.querySelector('.progress-bar');
+        const cat = document.querySelector('.cat');
+        const mouse = document.querySelector('.mouse');
+        if (progressBar) progressBar.style.animation = 'none';
+        if (cat) cat.style.animation = 'none';
+        if (mouse) mouse.style.animation = 'none';
+        // Trigger reflow to restart animations next time
+        setTimeout(() => {
+            if (progressBar) progressBar.style.animation = '';
+            if (cat) cat.style.animation = '';
+            if (mouse) mouse.style.animation = '';
+        }, 10);
+    }
+
     async function generateDiagnosis(reportType) {
-        // Show loading modal
+        // Show loading modal and start animation
         openModal('diagnosisLoadingModal');
+        startDiagnosisAnimation();
 
         try {
             const formData = new FormData();
@@ -442,6 +621,7 @@
             });
             const data = await response.json();
 
+            stopDiagnosisAnimation();
             closeModal('diagnosisLoadingModal');
 
             if (data.success) {
@@ -458,6 +638,7 @@
                 alert(errorMsg);
             }
         } catch (error) {
+            stopDiagnosisAnimation();
             closeModal('diagnosisLoadingModal');
             alert(translations.errorCommunication);
         }
