@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(lang, 'compare.title') }} - {{ animal.name }} - {{ t(lang, 'app.title') }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <a href="/animal/{{ animal.id }}" class="text-muted" style="text-decoration: none;">← {{ t(lang, 'common.back_to') }} {{ animal.name }}</a>
+    <h1 style="margin-top: 0.5rem;">{{ t(lang, 'compare.title') }} - {{ animal.name }}</h1>
+</div>
+
+{% if error %}
+<div class="alert alert-info">
+    {{ error }}
+</div>
+{% else %}
+
+<!-- Test Sessions Overview -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ t(lang, 'compare.compared_tests') }}</h2>
+    </div>
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+        {% for session in sessions %}
+        <div style="background: var(--gray-50); padding: 1rem; border-radius: 0.375rem; min-width: 150px;">
+            <div style="font-weight: bold;">{{ session.test_date|format_date }}</div>
+            <div class="text-muted" style="font-size: 0.875rem;">{{ session.report_number or 'N/A' }}</div>
+            <a href="/session/{{ session.id }}" class="text-muted" style="font-size: 0.75rem;">{{ t(lang, 'common.view_details') }} →</a>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Comparison Table -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ t(lang, 'compare.marker_evolution') }}</h2>
+    </div>
+
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th style="position: sticky; left: 0; background: var(--gray-50);">{{ t(lang, 'session_detail.marker') }}</th>
+                    {% for session in sessions %}
+                    <th style="text-align: center;">{{ session.test_date|format_date_short }}</th>
+                    {% endfor %}
+                    <th style="text-align: center;">{{ t(lang, 'session_detail.trend') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in comparison_data %}
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">
+                        <strong>{{ row.marker }}</strong>
+                    </td>
+                    {% for val in row['values'] %}
+                    <td style="text-align: center;">
+                        {% if val %}
+                            <span style="
+                                {% if val.flag == 'high' %}color: var(--danger);{% elif val.flag == 'low' %}color: var(--warning);{% else %}color: var(--success);{% endif %}
+                                font-weight: 600;
+                            ">
+                                {# Bug fix #2: Check for 'is not none' instead of truthy to handle zero values #}
+                                {{ "%.1f"|format(val.value) if val.value is not none else '--' }}
+                            </span>
+                            {% if val.flag == 'high' %}
+                                <small>↑</small>
+                            {% elif val.flag == 'low' %}
+                                <small>↓</small>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-muted">--</span>
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                    <td style="text-align: center;">
+                        {# Bug fix #1: Sessions are DESC sorted (newest first at index 0) #}
+                        {# Trend should compare newest vs oldest: (newest - oldest) / oldest #}
+                        {% set newest = row['values'][0] %}
+                        {% set oldest = row['values'][-1] %}
+                        {# Bug fix #4: Add zero division check with 'oldest.value != 0' #}
+                        {% if newest and oldest and newest.value is not none and oldest.value is not none and oldest.value != 0 %}
+                            {% set change = ((newest.value - oldest.value) / oldest.value * 100) %}
+                            {% if change > 10 %}
+                                <span class="badge badge-high">↑ {{ "%.0f"|format(change) }}%</span>
+                            {% elif change < -10 %}
+                                <span class="badge badge-normal">↓ {{ "%.0f"|format(change) }}%</span>
+                            {% else %}
+                                <span class="badge badge-info">→ {{ t(lang, 'common.stable') }}</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-muted">--</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Visual Chart -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ t(lang, 'compare.evolution_chart') }}</h2>
+    </div>
+    <canvas id="evolutionChart" height="300"></canvas>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    {% if not error %}
+    const ctx = document.getElementById('evolutionChart').getContext('2d');
+
+    // Prepare data for chart
+    const labels = [{% for session in sessions %}'{{ session.test_date|format_date_short }}'{% if not loop.last %}, {% endif %}{% endfor %}];
+
+    // Colors for different markers
+    const colors = [
+        'rgb(59, 130, 246)',   // blue
+        'rgb(16, 185, 129)',   // green
+        'rgb(245, 158, 11)',   // amber
+        'rgb(239, 68, 68)',    // red
+        'rgb(139, 92, 246)',   // purple
+        'rgb(236, 72, 153)',   // pink
+        'rgb(20, 184, 166)',   // teal
+    ];
+
+    const datasets = [];
+    {% for row in comparison_data %}
+    datasets.push({
+        label: '{{ row.marker }}',
+        {# Bug fix #3: Check 'is not none' to properly handle zero values in chart data #}
+        data: [{% for val in row['values'] %}{{ val.value if val and val.value is not none else 'null' }}{% if not loop.last %}, {% endif %}{% endfor %}],
+        borderColor: colors[{{ loop.index0 }} % colors.length],
+        backgroundColor: colors[{{ loop.index0 }} % colors.length] + '20',
+        tension: 0.3,
+        fill: false
+    });
+    {% endfor %}
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                },
+                title: {
+                    display: true,
+                    text: '{{ t(lang, "compare.chart_title") }}'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: false
+                }
+            }
+        }
+    });
+    {% endif %}
+</script>
+{% endblock %}

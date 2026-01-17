@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(lang, 'animals.title') }} - {{ t(lang, 'app.title') }}{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+    <h1>{{ t(lang, 'animals.title') }}</h1>
+    <a href="/upload" class="btn btn-primary">{{ t(lang, 'animals.upload_pdf') }}</a>
+</div>
+
+<div class="card">
+    {% if animals %}
+    <table>
+        <thead>
+            <tr>
+                <th>{{ t(lang, 'common.name') }}</th>
+                <th>{{ t(lang, 'common.species') }}</th>
+                <th>{{ t(lang, 'common.breed') }}</th>
+                <th>{{ t(lang, 'common.age') }}</th>
+                <th>{{ t(lang, 'common.sex') }}</th>
+                <th>{{ t(lang, 'common.tests') }}</th>
+                <th>{{ t(lang, 'common.last_test') }}</th>
+                <th>{{ t(lang, 'common.actions') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in animals %}
+            <tr>
+                <td><strong>{{ item.animal.name }}</strong></td>
+                <td>{{ item.animal.species }}</td>
+                <td>{{ item.animal.breed }}</td>
+                <td>{{ item.animal.age_display }}</td>
+                <td>
+                    {% if item.animal.sex == 'M' %}
+                    {{ t(lang, 'common.male') }}
+                    {% elif item.animal.sex == 'F' %}
+                    {{ t(lang, 'common.female') }}
+                    {% else %}
+                    --
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="badge badge-info">{{ item.test_count }}</span>
+                </td>
+                <td>{{ item.last_test|format_date }}</td>
+                <td>
+                    <a href="/animal/{{ item.animal.id }}" class="btn btn-secondary">
+                        {{ t(lang, 'common.view_details') }}
+                    </a>
+                    {% if item.test_count >= 2 %}
+                    <a href="/compare/{{ item.animal.id }}" class="btn btn-secondary">
+                        {{ t(lang, 'common.compare') }}
+                    </a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="text-center" style="padding: 3rem;">
+        <p style="font-size: 3rem; margin-bottom: 1rem;">🐕</p>
+        <h3>{{ t(lang, 'animals.no_animals_title') }}</h3>
+        <p class="text-muted mb-2">{{ t(lang, 'animals.no_animals_description') }}</p>
+        <a href="/upload" class="btn btn-primary">{{ t(lang, 'animals.upload_pdf') }}</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

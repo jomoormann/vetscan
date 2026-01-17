@@ -1,0 +1,634 @@
+{% extends "base.html" %}
+
+{% block title %}{{ animal.name }} - {{ t(lang, 'app.title') }}{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+    <div>
+        <a href="/animals" class="text-muted" style="text-decoration: none;">← {{ t(lang, 'common.back') }}</a>
+        <h1 style="margin-top: 0.5rem;">
+            {% if animal.species == 'Canideo' %}🐕{% else %}🐱{% endif %}
+            {{ animal.name }}
+        </h1>
+    </div>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end;">
+        {% if diagnosis_available %}
+        <button onclick="generateDiagnosis('clinical_notes_only')" class="btn btn-primary" title="{{ t(lang, 'diagnosis.analyze_notes_desc') }}">
+            {{ t(lang, 'diagnosis.analyze_notes') }}
+        </button>
+        <button onclick="generateDiagnosis('comprehensive')" class="btn btn-success" title="{{ t(lang, 'diagnosis.full_analysis_desc') }}">
+            {{ t(lang, 'diagnosis.full_analysis') }}
+        </button>
+        {% endif %}
+        {% if sessions|length >= 2 %}
+        <a href="/compare/{{ animal.id }}" class="btn btn-secondary">{{ t(lang, 'animal_detail.compare_tests') }}</a>
+        {% endif %}
+        <button onclick="openClinicalNoteModal()" class="btn btn-secondary">{{ t(lang, 'animal_detail.clinical_note') }}</button>
+        <button onclick="openModal('symptomModal')" class="btn btn-secondary">{{ t(lang, 'animal_detail.symptom') }}</button>
+        <button onclick="openModal('observationModal')" class="btn btn-secondary">{{ t(lang, 'animal_detail.observation') }}</button>
+    </div>
+</div>
+
+<!-- Animal Info Card -->
+<div class="card">
+    <div class="grid-3">
+        <div>
+            <div class="text-muted mb-1">{{ t(lang, 'common.species') }}</div>
+            <strong>{{ animal.species }}</strong>
+        </div>
+        <div>
+            <div class="text-muted mb-1">{{ t(lang, 'common.breed') }}</div>
+            <strong>{{ animal.breed }}</strong>
+        </div>
+        <div>
+            <div class="text-muted mb-1">{{ t(lang, 'common.age') }}</div>
+            <strong>{{ animal.age_display }}</strong>
+        </div>
+        <div>
+            <div class="text-muted mb-1">{{ t(lang, 'common.sex') }}</div>
+            <strong>
+                {% if animal.sex == 'M' %}{{ t(lang, 'common.male') }}{% elif animal.sex == 'F' %}{{ t(lang, 'common.female') }}{% else %}--{% endif %}
+            </strong>
+        </div>
+        <div>
+            <div class="text-muted mb-1">{{ t(lang, 'animal_detail.microchip') }}</div>
+            <strong>{{ animal.microchip or 'N/A' }}</strong>
+        </div>
+        <div>
+            <div class="text-muted mb-1">{{ t(lang, 'animal_detail.total_tests') }}</div>
+            <strong>{{ sessions|length }}</strong>
+        </div>
+    </div>
+</div>
+
+<!-- Test Sessions -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ t(lang, 'animal_detail.test_history') }}</h2>
+    </div>
+
+    {% if sessions %}
+    <table>
+        <thead>
+            <tr>
+                <th>{{ t(lang, 'common.date') }}</th>
+                <th>{{ t(lang, 'common.report') }}</th>
+                <th>{{ t(lang, 'common.sample') }}</th>
+                <th>{{ t(lang, 'animal_detail.results') }}</th>
+                <th>{{ t(lang, 'animal_detail.upc_ratio') }}</th>
+                <th>{{ t(lang, 'common.actions') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in sessions %}
+            <tr>
+                <td>
+                    <strong>{{ item.session.test_date|format_date }}</strong>
+                </td>
+                <td>{{ item.session.report_number or 'N/A' }}</td>
+                <td>{{ item.session.sample_type or 'N/A' }}</td>
+                <td>
+                    {% if item.abnormal_count > 0 %}
+                    <span class="badge badge-high">{{ item.abnormal_count }} {{ t(lang, 'animal_detail.abnormal_results') }}</span>
+                    {% else %}
+                    <span class="badge badge-normal">{{ t(lang, 'animal_detail.all_normal') }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if item.biochemistry %}
+                        {{ item.biochemistry.upc_ratio }}
+                        {% if item.biochemistry.upc_status == 'proteinurico' %}
+                        <span class="badge badge-high">{{ t(lang, 'animal_detail.proteinuric') }}</span>
+                        {% elif item.biochemistry.upc_status == 'suspeito' %}
+                        <span class="badge badge-low">{{ t(lang, 'animal_detail.suspect') }}</span>
+                        {% else %}
+                        <span class="badge badge-normal">{{ t(lang, 'common.normal') }}</span>
+                        {% endif %}
+                    {% else %}
+                    --
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="/session/{{ item.session.id }}" class="btn btn-secondary">{{ t(lang, 'common.view_details') }}</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted text-center" style="padding: 2rem;">
+        {{ t(lang, 'animal_detail.no_tests') }}
+    </p>
+    {% endif %}
+</div>
+
+<!-- Clinical Notes -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ t(lang, 'animal_detail.clinical_notes') }}</h2>
+        <button onclick="openClinicalNoteModal()" class="btn btn-primary">{{ t(lang, 'common.add') }}</button>
+    </div>
+    {% if clinical_notes %}
+    <div class="clinical-notes-list">
+        {% for note in clinical_notes %}
+        <div class="clinical-note-item" style="border-bottom: 1px solid var(--gray-200); padding: 1rem 0;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
+                <div>
+                    <strong>{% if note.title %}{{ note.title }}{% else %}{{ t(lang, 'animal_detail.clinical_note') }}{% endif %}</strong>
+                    <span class="text-muted" style="margin-left: 1rem;">{{ note.note_date|format_date }}</span>
+                </div>
+                <div>
+                    <button onclick="editClinicalNote({{ note.id }})" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">{{ t(lang, 'common.edit') }}</button>
+                    <button onclick="deleteClinicalNote({{ note.id }})" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; color: var(--danger);">{{ t(lang, 'common.delete') }}</button>
+                </div>
+            </div>
+            <div class="clinical-note-content" style="white-space: pre-wrap; font-family: inherit; line-height: 1.6; color: var(--gray-700);">{{ note.content }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted text-center" style="padding: 2rem;">{{ t(lang, 'animal_detail.no_clinical_notes') }}</p>
+    {% endif %}
+</div>
+
+<!-- Diagnosis Reports -->
+{% if diagnosis_available %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ t(lang, 'diagnosis.reports') }}</h2>
+        <div style="display: flex; gap: 0.5rem;">
+            <button onclick="generateDiagnosis('clinical_notes_only')" class="btn btn-primary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
+                {{ t(lang, 'diagnosis.analyze_notes') }}
+            </button>
+            <button onclick="generateDiagnosis('comprehensive')" class="btn btn-success" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
+                {{ t(lang, 'diagnosis.full_analysis') }}
+            </button>
+        </div>
+    </div>
+    {% if diagnosis_reports %}
+    <table>
+        <thead>
+            <tr>
+                <th>{{ t(lang, 'common.date') }}</th>
+                <th>{{ t(lang, 'diagnosis.type') }}</th>
+                <th>{{ t(lang, 'diagnosis.summary') }}</th>
+                <th>{{ t(lang, 'common.actions') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for report in diagnosis_reports %}
+            <tr>
+                <td>
+                    <strong>{{ report.report_date|format_date }}</strong>
+                </td>
+                <td>
+                    {% if report.report_type == 'comprehensive' %}
+                    <span class="badge badge-info">{{ t(lang, 'diagnosis.comprehensive') }}</span>
+                    {% else %}
+                    <span class="badge badge-normal">{{ t(lang, 'diagnosis.clinical_notes_only') }}</span>
+                    {% endif %}
+                </td>
+                <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    {{ report.input_summary }}
+                </td>
+                <td>
+                    <a href="/animal/{{ animal.id }}/diagnosis/{{ report.id }}" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">{{ t(lang, 'common.view_details') }}</a>
+                    <button onclick="deleteDiagnosisReport({{ report.id }})" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; color: var(--danger);">{{ t(lang, 'common.delete') }}</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted text-center" style="padding: 2rem;">
+        {{ t(lang, 'diagnosis.no_reports') }}
+        <br><small>{{ t(lang, 'diagnosis.no_reports_hint') }}</small>
+    </p>
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="grid-2">
+    <!-- Symptoms -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">{{ t(lang, 'animal_detail.symptoms') }}</h2>
+            <button onclick="openModal('symptomModal')" class="btn btn-secondary">{{ t(lang, 'common.add') }}</button>
+        </div>
+        {% if symptoms %}
+        <table>
+            <thead>
+                <tr>
+                    <th>{{ t(lang, 'common.date') }}</th>
+                    <th>{{ t(lang, 'animal_detail.description') }}</th>
+                    <th>{{ t(lang, 'animal_detail.severity') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for symptom in symptoms %}
+                <tr>
+                    <td>{{ symptom.observed_date|format_date }}</td>
+                    <td>{{ symptom.description }}</td>
+                    <td>
+                        {% if symptom.severity == 'severe' %}
+                        <span class="badge badge-high">{{ t(lang, 'animal_detail.severe') }}</span>
+                        {% elif symptom.severity == 'moderate' %}
+                        <span class="badge badge-low">{{ t(lang, 'animal_detail.moderate') }}</span>
+                        {% else %}
+                        <span class="badge badge-normal">{{ t(lang, 'animal_detail.mild') }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted text-center" style="padding: 1rem;">{{ t(lang, 'animal_detail.no_symptoms') }}</p>
+        {% endif %}
+    </div>
+
+    <!-- Observations -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">{{ t(lang, 'animal_detail.observations') }}</h2>
+            <button onclick="openModal('observationModal')" class="btn btn-secondary">{{ t(lang, 'common.add') }}</button>
+        </div>
+        {% if observations %}
+        <table>
+            <thead>
+                <tr>
+                    <th>{{ t(lang, 'common.date') }}</th>
+                    <th>{{ t(lang, 'animal_detail.type') }}</th>
+                    <th>{{ t(lang, 'common.details') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for obs in observations %}
+                <tr>
+                    <td>{{ obs.observation_date|format_date }}</td>
+                    <td><span class="badge badge-info">{{ obs.observation_type }}</span></td>
+                    <td>
+                        {{ obs.details }}
+                        {% if obs.value %}
+                        <br><strong>{{ obs.value }} {{ obs.unit or '' }}</strong>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted text-center" style="padding: 1rem;">{{ t(lang, 'animal_detail.no_observations') }}</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Symptom Modal -->
+<div id="symptomModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>{{ t(lang, 'animal_detail.add_symptom') }}</h3>
+            <button class="modal-close" onclick="closeModal('symptomModal')">&times;</button>
+        </div>
+        <form id="symptomForm">
+            <div class="form-group">
+                <label for="symptomDesc">{{ t(lang, 'animal_detail.description') }}</label>
+                <textarea id="symptomDesc" name="description" rows="3" required></textarea>
+            </div>
+            <div class="form-group">
+                <label for="symptomSeverity">{{ t(lang, 'animal_detail.severity') }}</label>
+                <select id="symptomSeverity" name="severity">
+                    <option value="mild">{{ t(lang, 'animal_detail.mild') }}</option>
+                    <option value="moderate">{{ t(lang, 'animal_detail.moderate') }}</option>
+                    <option value="severe">{{ t(lang, 'animal_detail.severe') }}</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="symptomCategory">{{ t(lang, 'animal_detail.category') }}</label>
+                <select id="symptomCategory" name="category">
+                    <option value="">{{ t(lang, 'animal_detail.select') }}</option>
+                    <option value="gastrointestinal">{{ t(lang, 'animal_detail.categories.gastrointestinal') }}</option>
+                    <option value="respiratory">{{ t(lang, 'animal_detail.categories.respiratory') }}</option>
+                    <option value="neurological">{{ t(lang, 'animal_detail.categories.neurological') }}</option>
+                    <option value="dermatological">{{ t(lang, 'animal_detail.categories.dermatological') }}</option>
+                    <option value="metabolic">{{ t(lang, 'animal_detail.categories.metabolic') }}</option>
+                    <option value="renal">{{ t(lang, 'animal_detail.categories.renal') }}</option>
+                    <option value="general">{{ t(lang, 'animal_detail.categories.general') }}</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">{{ t(lang, 'common.save') }}</button>
+        </form>
+    </div>
+</div>
+
+<!-- Observation Modal -->
+<div id="observationModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>{{ t(lang, 'animal_detail.add_observation') }}</h3>
+            <button class="modal-close" onclick="closeModal('observationModal')">&times;</button>
+        </div>
+        <form id="observationForm">
+            <div class="form-group">
+                <label for="obsType">{{ t(lang, 'animal_detail.type') }}</label>
+                <select id="obsType" name="obs_type" required>
+                    <option value="weight">{{ t(lang, 'animal_detail.obs_types.weight') }}</option>
+                    <option value="medication">{{ t(lang, 'animal_detail.obs_types.medication') }}</option>
+                    <option value="vaccination">{{ t(lang, 'animal_detail.obs_types.vaccination') }}</option>
+                    <option value="diet">{{ t(lang, 'animal_detail.obs_types.diet') }}</option>
+                    <option value="other">{{ t(lang, 'animal_detail.obs_types.other') }}</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="obsDetails">{{ t(lang, 'common.details') }}</label>
+                <textarea id="obsDetails" name="details" rows="3" required></textarea>
+            </div>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label for="obsValue">{{ t(lang, 'animal_detail.value_optional') }}</label>
+                    <input type="number" id="obsValue" name="value" step="0.01">
+                </div>
+                <div class="form-group">
+                    <label for="obsUnit">{{ t(lang, 'animal_detail.unit') }}</label>
+                    <input type="text" id="obsUnit" name="unit" placeholder="{{ t(lang, 'animal_detail.unit_placeholder') }}">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">{{ t(lang, 'common.save') }}</button>
+        </form>
+    </div>
+</div>
+
+<!-- Diagnosis Loading Modal -->
+<div id="diagnosisLoadingModal" class="modal">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+        <div style="padding: 2rem;">
+            <div class="spinner" style="margin: 0 auto 1.5rem;"></div>
+            <h3>{{ t(lang, 'diagnosis.generating') }}</h3>
+            <p class="text-muted" style="margin-top: 0.5rem;">{{ t(lang, 'diagnosis.generating_desc') }}</p>
+        </div>
+    </div>
+</div>
+
+<style>
+    .spinner {
+        width: 48px;
+        height: 48px;
+        border: 4px solid var(--gray-200);
+        border-top-color: var(--primary);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+</style>
+
+<!-- Clinical Note Modal -->
+<div id="clinicalNoteModal" class="modal">
+    <div class="modal-content" style="max-width: 700px;">
+        <div class="modal-header">
+            <h3 id="clinicalNoteModalTitle">{{ t(lang, 'animal_detail.add_clinical_note') }}</h3>
+            <button class="modal-close" onclick="closeModal('clinicalNoteModal')">&times;</button>
+        </div>
+        <form id="clinicalNoteForm">
+            <input type="hidden" id="clinicalNoteId" name="note_id" value="">
+            <div class="grid-2">
+                <div class="form-group">
+                    <label for="noteTitle">{{ t(lang, 'animal_detail.note_title') }}</label>
+                    <input type="text" id="noteTitle" name="title" placeholder="{{ t(lang, 'animal_detail.note_title_placeholder') }}">
+                </div>
+                <div class="form-group">
+                    <label for="noteDate">{{ t(lang, 'common.date') }}</label>
+                    <input type="date" id="noteDate" name="note_date" value="{{ today }}">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="noteContent">{{ t(lang, 'animal_detail.note_content') }}</label>
+                <textarea id="noteContent" name="content" rows="15" required style="font-family: inherit; line-height: 1.6;" placeholder="{{ t(lang, 'animal_detail.note_content_placeholder') }}"></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">{{ t(lang, 'common.save') }}</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const translations = {
+        errorSaveSymptom: "{{ t(lang, 'errors.save_symptom') }}",
+        errorSaveObservation: "{{ t(lang, 'errors.save_observation') }}",
+        errorSaveClinicalNote: "{{ t(lang, 'errors.save_clinical_note') }}",
+        errorCommunication: "{{ t(lang, 'errors.communication') }}",
+        confirmDelete: "{{ t(lang, 'errors.confirm_delete') }}",
+        addClinicalNote: "{{ t(lang, 'animal_detail.add_clinical_note') }}",
+        editClinicalNote: "{{ t(lang, 'animal_detail.edit_clinical_note') }}",
+        diagnosisError: "{{ t(lang, 'diagnosis.error') }}",
+        diagnosisNoNotes: "{{ t(lang, 'diagnosis.no_notes_error') }}",
+        diagnosisApiKeyError: "{{ t(lang, 'diagnosis.api_key_error') }}"
+    };
+
+    // Diagnosis functions
+    async function generateDiagnosis(reportType) {
+        // Show loading modal
+        openModal('diagnosisLoadingModal');
+
+        try {
+            const formData = new FormData();
+            formData.append('report_type', reportType);
+
+            const response = await fetch(`/animal/{{ animal.id }}/diagnosis`, {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+
+            closeModal('diagnosisLoadingModal');
+
+            if (data.success) {
+                // Redirect to the new report
+                window.location.href = `/animal/{{ animal.id }}/diagnosis/${data.report_id}`;
+            } else {
+                // Show error message
+                let errorMsg = data.message || translations.diagnosisError;
+                if (errorMsg.includes('No clinical notes')) {
+                    errorMsg = translations.diagnosisNoNotes;
+                } else if (errorMsg.includes('API_KEY')) {
+                    errorMsg = translations.diagnosisApiKeyError;
+                }
+                alert(errorMsg);
+            }
+        } catch (error) {
+            closeModal('diagnosisLoadingModal');
+            alert(translations.errorCommunication);
+        }
+    }
+
+    async function deleteDiagnosisReport(reportId) {
+        if (!confirm(translations.confirmDelete)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/animal/{{ animal.id }}/diagnosis/${reportId}`, {
+                method: 'DELETE'
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert(translations.errorCommunication);
+            }
+        } catch (error) {
+            alert(translations.errorCommunication);
+        }
+    }
+
+    function openModal(id) {
+        document.getElementById(id).classList.add('active');
+    }
+
+    function closeModal(id) {
+        document.getElementById(id).classList.remove('active');
+    }
+
+    // Close modal on outside click
+    document.querySelectorAll('.modal').forEach(modal => {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.classList.remove('active');
+            }
+        });
+    });
+
+    // Clinical Note functions
+    function openClinicalNoteModal(noteId = null) {
+        document.getElementById('clinicalNoteId').value = noteId || '';
+        document.getElementById('clinicalNoteModalTitle').textContent =
+            noteId ? translations.editClinicalNote : translations.addClinicalNote;
+
+        if (!noteId) {
+            // New note - clear form and set today's date
+            document.getElementById('noteTitle').value = '';
+            document.getElementById('noteContent').value = '';
+            document.getElementById('noteDate').value = new Date().toISOString().split('T')[0];
+        }
+
+        openModal('clinicalNoteModal');
+    }
+
+    async function editClinicalNote(noteId) {
+        try {
+            const response = await fetch(`/api/clinical-note/${noteId}`);
+            const data = await response.json();
+
+            if (data.success) {
+                document.getElementById('clinicalNoteId').value = data.note.id;
+                document.getElementById('noteTitle').value = data.note.title || '';
+                document.getElementById('noteContent').value = data.note.content || '';
+                document.getElementById('noteDate').value = data.note.note_date || '';
+                openClinicalNoteModal(noteId);
+            } else {
+                alert(translations.errorCommunication);
+            }
+        } catch (error) {
+            alert(translations.errorCommunication);
+        }
+    }
+
+    async function deleteClinicalNote(noteId) {
+        if (!confirm(translations.confirmDelete)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/animal/{{ animal.id }}/clinical-note/${noteId}`, {
+                method: 'DELETE'
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert(translations.errorCommunication);
+            }
+        } catch (error) {
+            alert(translations.errorCommunication);
+        }
+    }
+
+    // Clinical Note form submission
+    document.getElementById('clinicalNoteForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+        const noteId = document.getElementById('clinicalNoteId').value;
+
+        const url = noteId
+            ? `/animal/{{ animal.id }}/clinical-note/${noteId}`
+            : `/animal/{{ animal.id }}/clinical-note`;
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert(translations.errorSaveClinicalNote);
+            }
+        } catch (error) {
+            alert(translations.errorCommunication);
+        }
+    });
+
+    // Symptom form submission
+    document.getElementById('symptomForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+
+        try {
+            const response = await fetch('/animal/{{ animal.id }}/symptom', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert(translations.errorSaveSymptom);
+            }
+        } catch (error) {
+            alert(translations.errorCommunication);
+        }
+    });
+
+    // Observation form submission
+    document.getElementById('observationForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+
+        try {
+            const response = await fetch('/animal/{{ animal.id }}/observation', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert(translations.errorSaveObservation);
+            }
+        } catch (error) {
+            alert(translations.errorCommunication);
+        }
+    });
+</script>
+{% endblock %}

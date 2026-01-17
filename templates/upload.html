@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(lang, 'upload.title') }} - {{ t(lang, 'app.title') }}{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 2rem;">{{ t(lang, 'upload.title') }}</h1>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ t(lang, 'upload.load_report') }}</h2>
+    </div>
+
+    <div id="uploadArea" class="upload-area">
+        <div class="upload-icon">📁</div>
+        <h3>{{ t(lang, 'upload.drag_file') }}</h3>
+        <p class="text-muted">{{ t(lang, 'upload.or_click') }}</p>
+        <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+    </div>
+
+    <div id="uploadProgress" style="display: none; margin-top: 1rem;">
+        <div style="display: flex; align-items: center; gap: 1rem;">
+            <div class="spinner" style="width: 24px; height: 24px; border: 3px solid var(--gray-200); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <span>{{ t(lang, 'upload.processing') }}</span>
+        </div>
+    </div>
+
+    <div id="uploadResult" style="display: none; margin-top: 1rem;"></div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ t(lang, 'upload.info') }}</h2>
+    </div>
+    <ul style="margin-left: 1.5rem;">
+        <li>{{ t(lang, 'upload.info_dnatech_only') }}</li>
+        <li>{{ t(lang, 'upload.info_auto_extract') }}</li>
+        <li>{{ t(lang, 'upload.info_existing_animal') }}</li>
+        <li>{{ t(lang, 'upload.info_supported_tests') }}
+            <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+                <li>{{ t(lang, 'upload.test_proteinogram') }}</li>
+                <li>{{ t(lang, 'upload.test_biochemistry') }}</li>
+                <li>{{ t(lang, 'upload.test_urinalysis') }}</li>
+            </ul>
+        </li>
+    </ul>
+</div>
+
+<style>
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const translations = {
+        success: "{{ t(lang, 'upload.success') }}",
+        animalLabel: "{{ t(lang, 'upload.animal_label') }}",
+        reportLabel: "{{ t(lang, 'upload.report_label') }}",
+        dateLabel: "{{ t(lang, 'upload.date_label') }}",
+        viewResults: "{{ t(lang, 'upload.view_results') }}",
+        viewAnimal: "{{ t(lang, 'upload.view_animal') }}",
+        newUpload: "{{ t(lang, 'upload.new_upload') }}",
+        onlyPdf: "{{ t(lang, 'upload.only_pdf') }}",
+        communicationError: "{{ t(lang, 'upload.communication_error') }}"
+    };
+
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const uploadProgress = document.getElementById('uploadProgress');
+    const uploadResult = document.getElementById('uploadResult');
+
+    // Click to upload
+    uploadArea.addEventListener('click', () => {
+        fileInput.click();
+    });
+
+    // File selected
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            uploadFile(e.target.files[0]);
+        }
+    });
+
+    // Drag and drop
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            uploadFile(files[0]);
+        }
+    });
+
+    async function uploadFile(file) {
+        if (!file.name.toLowerCase().endsWith('.pdf')) {
+            showResult(false, translations.onlyPdf);
+            return;
+        }
+
+        // Show progress
+        uploadArea.style.display = 'none';
+        uploadProgress.style.display = 'block';
+        uploadResult.style.display = 'none';
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const response = await fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            uploadProgress.style.display = 'none';
+
+            if (data.success) {
+                showResult(true, `
+                    <h3>✓ ${translations.success}</h3>
+                    <p style="margin: 1rem 0;">
+                        <strong>${translations.animalLabel}:</strong> ${data.animal_name}<br>
+                        <strong>${translations.reportLabel}:</strong> ${data.report_number}<br>
+                        <strong>${translations.dateLabel}:</strong> ${data.test_date}
+                    </p>
+                    <div style="display: flex; gap: 1rem;">
+                        <a href="/session/${data.session_id}" class="btn btn-primary">${translations.viewResults}</a>
+                        <a href="/animal/${data.animal_id}" class="btn btn-secondary">${translations.viewAnimal}</a>
+                        <button onclick="resetUpload()" class="btn btn-secondary">${translations.newUpload}</button>
+                    </div>
+                `);
+            } else {
+                showResult(false, data.message || translations.communicationError);
+            }
+        } catch (error) {
+            uploadProgress.style.display = 'none';
+            showResult(false, translations.communicationError);
+        }
+    }
+
+    function showResult(success, content) {
+        uploadResult.style.display = 'block';
+        uploadResult.className = success ? 'alert alert-success' : 'alert alert-error';
+        uploadResult.innerHTML = content;
+    }
+
+    function resetUpload() {
+        uploadArea.style.display = 'block';
+        uploadProgress.style.display = 'none';
+        uploadResult.style.display = 'none';
+        fileInput.value = '';
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(lang, 'session_detail.report') }} {{ session.report_number }} - {{ t(lang, 'app.title') }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <a href="/animal/{{ animal.id }}" class="text-muted" style="text-decoration: none;">← {{ t(lang, 'common.back_to') }} {{ animal.name }}</a>
+    <h1 style="margin-top: 0.5rem;">{{ t(lang, 'session_detail.report') }} {{ session.report_number }}</h1>
+</div>
+
+<!-- Session Info -->
+<div class="card">
+    <div class="grid-3">
+        <div>
+            <div class="text-muted mb-1">{{ t(lang, 'session_detail.animal') }}</div>
+            <strong>
+                <a href="/animal/{{ animal.id }}">{{ animal.name }}</a>
+            </strong>
+            <br><small class="text-muted">{{ animal.species }} - {{ animal.breed }}</small>
+        </div>
+        <div>
+            <div class="text-muted mb-1">{{ t(lang, 'session_detail.test_date') }}</div>
+            <strong>{{ session.test_date|format_date }}</strong>
+        </div>
+        <div>
+            <div class="text-muted mb-1">{{ t(lang, 'session_detail.sample') }}</div>
+            <strong>{{ session.sample_type or 'N/A' }}</strong>
+        </div>
+        <div>
+            <div class="text-muted mb-1">{{ t(lang, 'session_detail.laboratory') }}</div>
+            <strong>{{ session.lab_name or 'DNAtech' }}</strong>
+        </div>
+        <div>
+            <div class="text-muted mb-1">{{ t(lang, 'session_detail.report_number') }}</div>
+            <strong>{{ session.report_number or 'N/A' }}</strong>
+        </div>
+        <div>
+            <div class="text-muted mb-1">{{ t(lang, 'session_detail.closing_date') }}</div>
+            <strong>{{ session.closing_date|format_date }}</strong>
+        </div>
+    </div>
+</div>
+
+{% if biochemistry %}
+<!-- Biochemistry Results (UPC) -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ t(lang, 'session_detail.biochemistry') }}</h2>
+    </div>
+
+    <div class="grid-3">
+        <div style="text-align: center; padding: 1rem;">
+            <div class="text-muted mb-1">{{ t(lang, 'session_detail.upc_ratio') }}</div>
+            <div style="font-size: 2rem; font-weight: bold;
+                color: {% if biochemistry.upc_status == 'proteinurico' %}var(--danger){% elif biochemistry.upc_status == 'suspeito' %}var(--warning){% else %}var(--success){% endif %}">
+                {{ biochemistry.upc_ratio }}
+            </div>
+            <span class="badge {% if biochemistry.upc_status == 'proteinurico' %}badge-high{% elif biochemistry.upc_status == 'suspeito' %}badge-low{% else %}badge-normal{% endif %}">
+                {% if biochemistry.upc_status == 'proteinurico' %}
+                    {{ t(lang, 'session_detail.proteinuric') }} ({{ t(lang, 'session_detail.proteinuric_threshold') }})
+                {% elif biochemistry.upc_status == 'suspeito' %}
+                    {{ t(lang, 'session_detail.suspect') }} ({{ t(lang, 'session_detail.suspect_range') }})
+                {% else %}
+                    {{ t(lang, 'session_detail.non_proteinuric') }} ({{ t(lang, 'session_detail.non_proteinuric_threshold') }})
+                {% endif %}
+            </span>
+        </div>
+        <div style="text-align: center; padding: 1rem;">
+            <div class="text-muted mb-1">{{ t(lang, 'session_detail.total_protein_urine') }}</div>
+            <div style="font-size: 1.5rem; font-weight: bold;">
+                {{ biochemistry.urine_total_protein }} <small>mg/dL</small>
+            </div>
+        </div>
+        <div style="text-align: center; padding: 1rem;">
+            <div class="text-muted mb-1">{{ t(lang, 'session_detail.creatinine_urine') }}</div>
+            <div style="font-size: 1.5rem; font-weight: bold;">
+                {{ biochemistry.urine_creatinine }} <small>mg/dL</small>
+            </div>
+        </div>
+    </div>
+
+    <div style="background: var(--gray-50); padding: 1rem; border-radius: 0.375rem; margin-top: 1rem;">
+        <strong>{{ t(lang, 'session_detail.iris_staging') }}</strong>
+        <ul style="margin: 0.5rem 0 0 1.5rem;">
+            <li>{{ t(lang, 'session_detail.iris_non_proteinuric') }}</li>
+            <li>{{ t(lang, 'session_detail.iris_suspect') }}</li>
+            <li>{{ t(lang, 'session_detail.iris_proteinuric') }}</li>
+        </ul>
+    </div>
+</div>
+{% endif %}
+
+<!-- Protein Results -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ t(lang, 'session_detail.proteinogram') }}</h2>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>{{ t(lang, 'session_detail.marker') }}</th>
+                <th>{{ t(lang, 'session_detail.value_percent') }}</th>
+                <th>{{ t(lang, 'session_detail.value_gdl') }}</th>
+                <th>{{ t(lang, 'session_detail.reference_percent') }}</th>
+                <th>{{ t(lang, 'session_detail.reference_gdl') }}</th>
+                <th>{{ t(lang, 'session_detail.status') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for result in results %}
+            <tr>
+                <td><strong>{{ result.marker_name }}</strong></td>
+                <td>
+                    {% if result.value is not none %}
+                        {{ "%.1f"|format(result.value) }}{% if result.unit == '%' %}%{% endif %}
+                    {% else %}
+                        --
+                    {% endif %}
+                </td>
+                <td>
+                    {% if result.value_absolute is not none %}
+                        {{ "%.2f"|format(result.value_absolute) }}
+                    {% else %}
+                        --
+                    {% endif %}
+                </td>
+                <td class="text-muted">
+                    {% if result.reference_min is not none and result.reference_max is not none %}
+                        {{ "%.1f"|format(result.reference_min) }} - {{ "%.1f"|format(result.reference_max) }}
+                    {% else %}
+                        --
+                    {% endif %}
+                </td>
+                <td class="text-muted">
+                    {% if result.reference_min_absolute is not none and result.reference_max_absolute is not none %}
+                        {{ "%.2f"|format(result.reference_min_absolute) }} - {{ "%.2f"|format(result.reference_max_absolute) }}
+                    {% else %}
+                        --
+                    {% endif %}
+                </td>
+                <td>
+                    {% if result.flag == 'high' %}
+                        <span class="badge badge-high">↑ {{ t(lang, 'common.high') }}</span>
+                    {% elif result.flag == 'low' %}
+                        <span class="badge badge-low">↓ {{ t(lang, 'common.low') }}</span>
+                    {% else %}
+                        <span class="badge badge-normal">✓ {{ t(lang, 'common.normal') }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if urinalysis %}
+<!-- Urinalysis Results -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ t(lang, 'session_detail.urinalysis') }}</h2>
+    </div>
+
+    <div class="grid-2">
+        <!-- General Characteristics -->
+        <div>
+            <h4 style="margin-bottom: 1rem;">{{ t(lang, 'session_detail.general_characteristics') }}</h4>
+            <table>
+                <tr>
+                    <td class="text-muted">{{ t(lang, 'session_detail.color') }}</td>
+                    <td><strong>{{ urinalysis.color or '--' }}</strong></td>
+                </tr>
+                <tr>
+                    <td class="text-muted">{{ t(lang, 'session_detail.appearance') }}</td>
+                    <td><strong>{{ urinalysis.appearance or '--' }}</strong></td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- Biochemistry -->
+        <div>
+            <h4 style="margin-bottom: 1rem;">{{ t(lang, 'session_detail.urinary_biochemistry') }}</h4>
+            <table>
+                <tr>
+                    <td class="text-muted">{{ t(lang, 'session_detail.glucose') }}</td>
+                    <td>{{ urinalysis.glucose or '--' }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted">{{ t(lang, 'session_detail.bilirubin') }}</td>
+                    <td>{{ urinalysis.bilirubin or '--' }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted">{{ t(lang, 'session_detail.ketones') }}</td>
+                    <td>{{ urinalysis.ketones or '--' }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted">{{ t(lang, 'session_detail.density') }}</td>
+                    <td>
+                        <strong>{{ urinalysis.specific_gravity or '--' }}</strong>
+                        <small class="text-muted">({{ t(lang, 'session_detail.ref') }}: 1.012-1.050)</small>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="text-muted">{{ t(lang, 'session_detail.ph') }}</td>
+                    <td>
+                        <strong>{{ urinalysis.ph or '--' }}</strong>
+                        {% if urinalysis.ph and (urinalysis.ph < 5.0 or urinalysis.ph > 7.0) %}
+                        <span class="badge badge-high">{{ t(lang, 'common.abnormal') }}</span>
+                        {% endif %}
+                        <small class="text-muted">({{ t(lang, 'session_detail.ref') }}: 5.0-7.0)</small>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="text-muted">{{ t(lang, 'session_detail.proteins') }}</td>
+                    <td>
+                        <strong>{{ urinalysis.proteins or '--' }}</strong>
+                        {% if urinalysis.proteins and urinalysis.proteins.lower() != 'negativo' %}
+                        <span class="badge badge-high">{{ t(lang, 'common.present') }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td class="text-muted">{{ t(lang, 'session_detail.urobilinogen') }}</td>
+                    <td>{{ urinalysis.urobilinogen or '--' }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted">{{ t(lang, 'session_detail.nitrites') }}</td>
+                    <td>{{ urinalysis.nitrites or '--' }}</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- Microscopic Sediment -->
+    <h4 style="margin: 1.5rem 0 1rem;">{{ t(lang, 'session_detail.microscopic_exam') }}</h4>
+    <div class="grid-3">
+        <div>
+            <table>
+                <tr>
+                    <td class="text-muted">{{ t(lang, 'session_detail.leukocytes') }}</td>
+                    <td>{{ urinalysis.leukocytes or '--' }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted">{{ t(lang, 'session_detail.erythrocytes') }}</td>
+                    <td>{{ urinalysis.erythrocytes or '--' }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted">{{ t(lang, 'session_detail.epithelial_cells') }}</td>
+                    <td>{{ urinalysis.epithelial_cells or '--' }}</td>
+                </tr>
+            </table>
+        </div>
+        <div>
+            <table>
+                <tr>
+                    <td class="text-muted">{{ t(lang, 'session_detail.casts') }}</td>
+                    <td>{{ urinalysis.casts or '--' }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted">{{ t(lang, 'session_detail.crystals') }}</td>
+                    <td>
+                        {{ urinalysis.crystals or '--' }}
+                        {% if urinalysis.crystals and urinalysis.crystals.lower() not in ['ausentes', 'ausente'] %}
+                        <span class="badge badge-high">⚠️</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td class="text-muted">{{ t(lang, 'session_detail.mucus') }}</td>
+                    <td>{{ urinalysis.mucus or '--' }}</td>
+                </tr>
+            </table>
+        </div>
+        <div>
+            <table>
+                <tr>
+                    <td class="text-muted">{{ t(lang, 'session_detail.bacteria') }}</td>
+                    <td>
+                        {{ urinalysis.bacteria or '--' }}
+                        {% if urinalysis.bacteria and urinalysis.bacteria.lower() not in ['ausentes', 'ausente'] %}
+                        <span class="badge badge-low">⚠️</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    {% if urinalysis.observations %}
+    <div style="background: var(--gray-50); padding: 1rem; border-radius: 0.375rem; margin-top: 1rem;">
+        <strong>{{ t(lang, 'session_detail.observations') }}:</strong>
+        <p style="margin: 0.5rem 0 0;">{{ urinalysis.observations }}</p>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if comparison %}
+<!-- Comparison with Previous Test -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ t(lang, 'session_detail.comparison_previous') }}</h2>
+        <span class="text-muted">vs {{ previous_session.test_date|format_date }}</span>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>{{ t(lang, 'session_detail.marker') }}</th>
+                <th>{{ t(lang, 'session_detail.previous') }}</th>
+                <th>{{ t(lang, 'session_detail.current') }}</th>
+                <th>{{ t(lang, 'session_detail.variation') }}</th>
+                <th>{{ t(lang, 'session_detail.trend') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for comp in comparison %}
+            <tr>
+                <td><strong>{{ comp.marker_name }}</strong></td>
+                <td>{{ "%.1f"|format(comp.previous_value) if comp.previous_value is not none else '--' }}</td>
+                <td>{{ "%.1f"|format(comp.current_value) if comp.current_value is not none else '--' }}</td>
+                <td>
+                    {% if comp.change_percent is not none %}
+                        {% if comp.change_percent > 0 %}
+                            <span class="text-danger">+{{ "%.1f"|format(comp.change_percent) }}%</span>
+                        {% elif comp.change_percent < 0 %}
+                            <span class="text-success">{{ "%.1f"|format(comp.change_percent) }}%</span>
+                        {% else %}
+                            0%
+                        {% endif %}
+                    {% else %}
+                        --
+                    {% endif %}
+                </td>
+                <td>
+                    {% if comp.trend == 'improved' %}
+                        <span class="badge badge-normal">✓ {{ t(lang, 'session_detail.improved') }}</span>
+                    {% elif comp.trend == 'worsened' %}
+                        <span class="badge badge-high">⚠ {{ t(lang, 'session_detail.worsened') }}</span>
+                    {% elif comp.trend == 'stable' %}
+                        <span class="badge badge-info">→ {{ t(lang, 'common.stable') }}</span>
+                    {% else %}
+                        --
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

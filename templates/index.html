@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(lang, 'nav.dashboard') }} - {{ t(lang, 'app.title') }}{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 2rem;">{{ t(lang, 'dashboard.title') }}</h1>
+
+<!-- Stats -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ total_animals }}</div>
+        <div class="stat-label">{{ t(lang, 'dashboard.registered_animals') }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ total_tests }}</div>
+        <div class="stat-label">{{ t(lang, 'dashboard.tests_performed') }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ recent_sessions|length }}</div>
+        <div class="stat-label">{{ t(lang, 'dashboard.recent_tests') }}</div>
+    </div>
+</div>
+
+<div class="grid-2">
+    <!-- Quick Actions -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">{{ t(lang, 'dashboard.quick_actions') }}</h2>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+            <a href="/upload" class="btn btn-primary" style="justify-content: center;">
+                {{ t(lang, 'dashboard.upload_pdf') }}
+            </a>
+            <a href="/animals" class="btn btn-secondary" style="justify-content: center;">
+                {{ t(lang, 'dashboard.view_all_animals') }}
+            </a>
+        </div>
+    </div>
+
+    <!-- Recent Animals -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">{{ t(lang, 'dashboard.animals') }}</h2>
+            <a href="/animals" class="btn btn-secondary">{{ t(lang, 'dashboard.view_all') }}</a>
+        </div>
+        {% if animals %}
+        <table>
+            <thead>
+                <tr>
+                    <th>{{ t(lang, 'common.name') }}</th>
+                    <th>{{ t(lang, 'common.species') }}</th>
+                    <th>{{ t(lang, 'common.breed') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for animal in animals[:5] %}
+                <tr onclick="window.location='/animal/{{ animal.id }}'" style="cursor: pointer;">
+                    <td><strong>{{ animal.name }}</strong></td>
+                    <td>{{ animal.species }}</td>
+                    <td>{{ animal.breed }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted text-center" style="padding: 2rem;">
+            {{ t(lang, 'dashboard.no_animals') }} <a href="/upload">{{ t(lang, 'dashboard.upload_to_start') }}</a> {{ t(lang, 'dashboard.to_start') }}
+        </p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Recent Tests -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ t(lang, 'dashboard.recent_tests') }}</h2>
+    </div>
+    {% if recent_sessions %}
+    <table>
+        <thead>
+            <tr>
+                <th>{{ t(lang, 'common.date') }}</th>
+                <th>{{ t(lang, 'session_detail.animal') }}</th>
+                <th>{{ t(lang, 'common.report') }}</th>
+                <th>{{ t(lang, 'common.sample') }}</th>
+                <th>{{ t(lang, 'common.actions') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in recent_sessions %}
+            <tr>
+                <td>{{ item.session.test_date|format_date }}</td>
+                <td>
+                    <a href="/animal/{{ item.animal.id }}">
+                        <strong>{{ item.animal.name }}</strong>
+                    </a>
+                    <br>
+                    <small class="text-muted">{{ item.animal.species }} - {{ item.animal.breed }}</small>
+                </td>
+                <td>{{ item.session.report_number or 'N/A' }}</td>
+                <td>{{ item.session.sample_type or 'N/A' }}</td>
+                <td>
+                    <a href="/session/{{ item.session.id }}" class="btn btn-secondary">
+                        {{ t(lang, 'common.view_details') }}
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted text-center" style="padding: 2rem;">
+        {{ t(lang, 'dashboard.no_animals') }} <a href="/upload">{{ t(lang, 'dashboard.upload_to_start') }}</a> {{ t(lang, 'dashboard.to_start') }}
+    </p>
+    {% endif %}
+</div>
+{% endblock %}

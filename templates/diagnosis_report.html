@@ -1,0 +1,385 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(lang, 'diagnosis.title') }} - {{ animal.name }} - {{ t(lang, 'app.title') }}{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+    <div>
+        <a href="/animal/{{ animal.id }}" class="text-muted" style="text-decoration: none;">← {{ t(lang, 'common.back_to') }} {{ animal.name }}</a>
+        <h1 style="margin-top: 0.5rem;">{{ t(lang, 'diagnosis.title') }}</h1>
+    </div>
+    <div>
+        <button onclick="window.print()" class="btn btn-secondary">{{ t(lang, 'diagnosis.print') }}</button>
+        <button onclick="deleteDiagnosisReport()" class="btn btn-secondary" style="color: var(--danger);">{{ t(lang, 'common.delete') }}</button>
+    </div>
+</div>
+
+<!-- Report Metadata -->
+<div class="card">
+    <div class="grid-3">
+        <div>
+            <div class="text-muted mb-1">{{ t(lang, 'diagnosis.patient') }}</div>
+            <strong>
+                {% if animal.species == 'Canideo' %}🐕{% else %}🐱{% endif %}
+                {{ animal.name }}
+            </strong>
+            <div class="text-muted" style="font-size: 0.875rem;">{{ animal.species }} - {{ animal.breed }}</div>
+        </div>
+        <div>
+            <div class="text-muted mb-1">{{ t(lang, 'diagnosis.report_date') }}</div>
+            <strong>{{ report.report_date|format_date }}</strong>
+        </div>
+        <div>
+            <div class="text-muted mb-1">{{ t(lang, 'diagnosis.type') }}</div>
+            <strong>
+                {% if report.report_type == 'comprehensive' %}
+                <span class="badge badge-info">{{ t(lang, 'diagnosis.comprehensive') }}</span>
+                {% else %}
+                <span class="badge badge-normal">{{ t(lang, 'diagnosis.clinical_notes_only') }}</span>
+                {% endif %}
+            </strong>
+        </div>
+    </div>
+    {% if report.input_summary %}
+    <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--gray-200);">
+        <div class="text-muted mb-1">{{ t(lang, 'diagnosis.input_data') }}</div>
+        <div style="font-size: 0.875rem;">{{ report.input_summary }}</div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ============================================== -->
+<!-- EXECUTIVE SUMMARY (Only for comprehensive reports) -->
+<!-- ============================================== -->
+{% if report.executive_summary %}
+<div class="ai-section executive-section">
+    <div class="ai-header executive-header">
+        <h2>{{ t(lang, 'diagnosis.executive_summary') }}</h2>
+        <span class="ai-model-badge">{{ t(lang, 'diagnosis.consolidated_analysis') }}</span>
+    </div>
+
+    <div class="card">
+        <div class="diagnosis-content markdown-content">
+            {{ report.executive_summary | safe }}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- ============================================== -->
+<!-- CLAUDE (ANTHROPIC) ANALYSIS -->
+<!-- ============================================== -->
+<div class="ai-section claude-section">
+    <div class="ai-header claude-header">
+        <h2>{{ t(lang, 'diagnosis.claude_analysis') }}</h2>
+        <span class="ai-model-badge">{{ report.model_used }}</span>
+    </div>
+
+    <!-- Claude: Test Interpretation (comprehensive only) -->
+    {% if report.test_interpretation %}
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">{{ t(lang, 'diagnosis.test_interpretation') }}</h3>
+        </div>
+        <div class="diagnosis-content markdown-content">
+            {{ report.test_interpretation | safe }}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Claude: Differential Diagnoses -->
+    {% if report.differential_diagnosis %}
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">{{ t(lang, 'diagnosis.differential_diagnoses') }}</h3>
+        </div>
+        <div class="diagnosis-content markdown-content">
+            {{ report.differential_diagnosis | safe }}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Claude: Recommendations -->
+    {% if report.recommendations %}
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">{{ t(lang, 'diagnosis.recommendations') }}</h3>
+        </div>
+        <div class="diagnosis-content markdown-content">
+            {{ report.recommendations | safe }}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Claude: References -->
+    {% if report.references %}
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">{{ t(lang, 'diagnosis.references') }}</h3>
+        </div>
+        <div class="diagnosis-content markdown-content">
+            {{ report.references | safe }}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ============================================== -->
+<!-- OPENAI (GPT-5 MINI) ANALYSIS -->
+<!-- ============================================== -->
+<div class="ai-section openai-section">
+    <div class="ai-header openai-header">
+        <h2>{{ t(lang, 'diagnosis.openai_analysis') }}</h2>
+        <span class="ai-model-badge">{{ report.openai_model_used }}</span>
+    </div>
+
+    <!-- OpenAI: Test Interpretation (comprehensive only) -->
+    {% if report.openai_test_interpretation %}
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">{{ t(lang, 'diagnosis.test_interpretation') }}</h3>
+        </div>
+        <div class="diagnosis-content markdown-content">
+            {{ report.openai_test_interpretation | safe }}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- OpenAI: Differential Diagnoses -->
+    {% if report.openai_differential_diagnosis %}
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">{{ t(lang, 'diagnosis.differential_diagnoses') }}</h3>
+        </div>
+        <div class="diagnosis-content markdown-content">
+            {{ report.openai_differential_diagnosis | safe }}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- OpenAI: Recommendations -->
+    {% if report.openai_recommendations %}
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">{{ t(lang, 'diagnosis.recommendations') }}</h3>
+        </div>
+        <div class="diagnosis-content markdown-content">
+            {{ report.openai_recommendations | safe }}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- OpenAI: References -->
+    {% if report.openai_references %}
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">{{ t(lang, 'diagnosis.references') }}</h3>
+        </div>
+        <div class="diagnosis-content markdown-content">
+            {{ report.openai_references | safe }}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Disclaimer -->
+<div class="card" style="background: var(--gray-50);">
+    <div style="font-size: 0.75rem; color: var(--gray-500);">
+        {{ t(lang, 'diagnosis.generated_at') }}: {{ report.created_at }}
+    </div>
+    <div style="font-size: 0.75rem; color: var(--gray-500); margin-top: 0.5rem;">
+        {{ t(lang, 'diagnosis.disclaimer') }}
+    </div>
+</div>
+
+<style>
+    /* AI Section Styling */
+    .ai-section {
+        margin-bottom: 2rem;
+    }
+
+    .ai-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 1.5rem;
+        border-radius: 0.5rem 0.5rem 0 0;
+        margin-bottom: 0;
+    }
+
+    .ai-header h2 {
+        margin: 0;
+        font-size: 1.25rem;
+        color: white;
+    }
+
+    .ai-model-badge {
+        background: rgba(255,255,255,0.2);
+        color: white;
+        padding: 0.25rem 0.75rem;
+        border-radius: 1rem;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+
+    .claude-header {
+        background: linear-gradient(135deg, #d97706, #b45309);
+    }
+
+    .openai-header {
+        background: linear-gradient(135deg, #10a37f, #0d8a6a);
+    }
+
+    .executive-header {
+        background: linear-gradient(135deg, #6366f1, #4f46e5);
+    }
+
+    .ai-section .card {
+        border-radius: 0;
+        margin-bottom: 0;
+        border-top: none;
+    }
+
+    .ai-section .card:last-of-type {
+        border-radius: 0 0 0.5rem 0.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .ai-section .card-title {
+        font-size: 1rem;
+    }
+
+    /* Markdown Content Styling */
+    .markdown-content {
+        line-height: 1.7;
+    }
+
+    .markdown-content h2 {
+        font-size: 1.25rem;
+        margin-top: 1.5rem;
+        margin-bottom: 0.75rem;
+        color: var(--gray-900);
+    }
+
+    .markdown-content h3 {
+        font-size: 1.1rem;
+        margin-top: 1.25rem;
+        margin-bottom: 0.5rem;
+        color: var(--gray-800);
+    }
+
+    .markdown-content p {
+        margin-bottom: 0.75rem;
+    }
+
+    .markdown-content ul, .markdown-content ol {
+        margin-left: 1.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .markdown-content li {
+        margin-bottom: 0.5rem;
+    }
+
+    .markdown-content strong {
+        color: var(--gray-900);
+    }
+
+    .markdown-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+    }
+
+    .markdown-content th,
+    .markdown-content td {
+        padding: 0.5rem;
+        border: 1px solid var(--gray-200);
+        text-align: left;
+    }
+
+    .markdown-content th {
+        background: var(--gray-50);
+        font-weight: 600;
+    }
+
+    /* Print styles */
+    @media print {
+        nav, .btn {
+            display: none !important;
+        }
+
+        .card {
+            box-shadow: none;
+            border: 1px solid var(--gray-200);
+            break-inside: avoid;
+        }
+
+        .ai-header {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        body {
+            background: white;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function deleteDiagnosisReport() {
+        if (!confirm("{{ t(lang, 'errors.confirm_delete') }}")) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/animal/{{ animal.id }}/diagnosis/{{ report.id }}`, {
+                method: 'DELETE'
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                window.location.href = '/animal/{{ animal.id }}';
+            } else {
+                alert("{{ t(lang, 'errors.communication') }}");
+            }
+        } catch (error) {
+            alert("{{ t(lang, 'errors.communication') }}");
+        }
+    }
+
+    // Simple markdown-like rendering for diagnosis content
+    document.querySelectorAll('.diagnosis-content').forEach(el => {
+        let html = el.innerHTML;
+
+        // Convert markdown-style formatting to HTML
+        // Bold
+        html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+        // Headers
+        html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+        html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+
+        // Lists
+        html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+        html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+
+        // Paragraphs (lines not already wrapped)
+        const lines = html.split('\n');
+        html = lines.map(line => {
+            line = line.trim();
+            if (line && !line.startsWith('<') && !line.endsWith('>')) {
+                return `<p>${line}</p>`;
+            }
+            return line;
+        }).join('\n');
+
+        // Clean up empty paragraphs
+        html = html.replace(/<p>\s*<\/p>/g, '');
+
+        el.innerHTML = html;
+    });
+</script>
+{% endblock %}
