@@ -617,6 +617,23 @@ CREATE TABLE IF NOT EXISTS diagnosis_reports (
 );
 CREATE INDEX IF NOT EXISTS idx_diagnosis_animal ON diagnosis_reports(animal_id);
 
+-- Email import audit log table
+CREATE TABLE IF NOT EXISTS email_import_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    import_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    email_uid TEXT,
+    email_subject TEXT,
+    email_from TEXT,
+    attachment_name TEXT,
+    validation_result TEXT,
+    import_success INTEGER,
+    error_message TEXT,
+    report_number TEXT,
+    animal_id INTEGER,
+    session_id INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_import_log_timestamp ON email_import_log(import_timestamp);
+
 -- View for easy result querying with animal info
 CREATE VIEW IF NOT EXISTS v_results_with_animal AS
 SELECT 
