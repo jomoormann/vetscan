@@ -54,12 +54,11 @@ class PDFValidator:
     PDF_MAGIC = b'%PDF-'
 
     # Suspicious patterns that could indicate malicious content
+    # Note: /AA and /OpenAction removed - commonly used in legitimate PDFs
     SUSPICIOUS_PATTERNS = [
         b'/JavaScript',
         b'/JS',
         b'/Launch',
-        b'/OpenAction',
-        b'/AA',  # Additional Actions
         b'/EmbeddedFile',
         b'/RichMedia',
         b'/XFA',
