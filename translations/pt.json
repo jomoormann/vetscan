@@ -6,7 +6,8 @@
     "nav": {
         "dashboard": "Dashboard",
         "animals": "Animais",
-        "upload": "Upload PDF"
+        "upload": "Upload PDF",
+        "imports": "Importações"
     },
     "lang_switcher": {
         "en": "EN",
@@ -254,5 +255,37 @@
         "openai_analysis": "Análise OpenAI (GPT-5 mini)",
         "executive_summary": "Resumo Executivo",
         "consolidated_analysis": "Análise Consolidada"
+    },
+    "imports": {
+        "title": "Importações Automáticas por Email",
+        "description": "Relatórios DNAtech importados automaticamente de",
+        "total_imports": "Total de Importações",
+        "successful": "Sucesso",
+        "failed": "Falhados",
+        "skipped": "Ignorados",
+        "no_imports": "Ainda sem importações",
+        "no_imports_hint": "Emails com anexos PDF da DNAtech enviados para o endereço configurado aparecerão aqui.",
+        "table": {
+            "time": "Recebido",
+            "email_from": "De",
+            "subject": "Assunto",
+            "attachment": "Anexo",
+            "status": "Estado",
+            "report": "Relatório",
+            "animal": "Animal"
+        },
+        "status": {
+            "success": "Importado",
+            "duplicate": "Duplicado",
+            "failed": "Falhou",
+            "rate_limited": "Limite Excedido"
+        },
+        "time": {
+            "just_now": "agora mesmo",
+            "minutes_ago": "min atrás",
+            "hours_ago": "horas atrás",
+            "yesterday": "ontem",
+            "days_ago": "dias atrás"
+        }
     }
 }

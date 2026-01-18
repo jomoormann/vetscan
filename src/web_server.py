@@ -478,6 +478,86 @@ async def upload_page(request: Request):
     return set_lang_cookie(response, lang)
 
 
+@app.get("/imports", response_class=HTMLResponse)
+async def view_imports(request: Request):
+    """View automatic email imports"""
+    lang = get_lang(request)
+    service = get_service()
+    try:
+        # Get email address from config
+        email_address = os.getenv("EMAIL_ADDRESS", "reports@vetscan.net")
+
+        # Query import log with animal names
+        cursor = service.db.conn.execute("""
+            SELECT
+                eil.*,
+                a.name as animal_name
+            FROM email_import_log eil
+            LEFT JOIN animals a ON eil.animal_id = a.id
+            ORDER BY eil.import_timestamp DESC
+            LIMIT 100
+        """)
+
+        imports = []
+        now = datetime.now()
+
+        for row in cursor.fetchall():
+            imp = dict(row)
+
+            # Calculate human-readable time ago
+            if imp.get('import_timestamp'):
+                try:
+                    if isinstance(imp['import_timestamp'], str):
+                        ts = datetime.fromisoformat(imp['import_timestamp'].replace('Z', '+00:00'))
+                    else:
+                        ts = imp['import_timestamp']
+
+                    delta = now - ts
+
+                    if delta.total_seconds() < 60:
+                        imp['time_ago'] = get_text(lang, 'imports.time.just_now')
+                    elif delta.total_seconds() < 3600:
+                        mins = int(delta.total_seconds() / 60)
+                        imp['time_ago'] = f"{mins} {get_text(lang, 'imports.time.minutes_ago')}"
+                    elif delta.total_seconds() < 86400:
+                        hours = int(delta.total_seconds() / 3600)
+                        imp['time_ago'] = f"{hours} {get_text(lang, 'imports.time.hours_ago')}"
+                    elif delta.days == 1:
+                        imp['time_ago'] = get_text(lang, 'imports.time.yesterday')
+                    else:
+                        imp['time_ago'] = f"{delta.days} {get_text(lang, 'imports.time.days_ago')}"
+                except:
+                    imp['time_ago'] = str(imp['import_timestamp'])[:16]
+            else:
+                imp['time_ago'] = '--'
+
+            imports.append(imp)
+
+        # Calculate stats
+        stats = {
+            'total': len(imports),
+            'successful': sum(1 for i in imports if i.get('import_success')),
+            'failed': sum(1 for i in imports if not i.get('import_success') and i.get('validation_result') not in ('duplicate', 'rate_limited')),
+            'skipped': sum(1 for i in imports if i.get('validation_result') in ('duplicate', 'rate_limited'))
+        }
+
+        response = templates.TemplateResponse("imports.html", {
+            "request": request,
+            "lang": lang,
+            "email_address": email_address,
+            "imports": imports,
+            "stats": stats
+        })
+        return set_lang_cookie(response, lang)
+    except Exception as e:
+        print(f"Error in view_imports: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        service.close()
+
+
 @app.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)):
     """Handle PDF upload"""

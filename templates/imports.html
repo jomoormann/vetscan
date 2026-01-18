@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(lang, 'imports.title') }} - {{ t(lang, 'app.title') }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h1 class="card-title">{{ t(lang, 'imports.title') }}</h1>
+    </div>
+
+    <p class="text-muted mb-2">
+        {{ t(lang, 'imports.description') }} <strong>{{ email_address }}</strong>
+    </p>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.total }}</div>
+            <div class="stat-label">{{ t(lang, 'imports.total_imports') }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="color: var(--success);">{{ stats.successful }}</div>
+            <div class="stat-label">{{ t(lang, 'imports.successful') }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="color: var(--danger);">{{ stats.failed }}</div>
+            <div class="stat-label">{{ t(lang, 'imports.failed') }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="color: var(--warning);">{{ stats.skipped }}</div>
+            <div class="stat-label">{{ t(lang, 'imports.skipped') }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    {% if imports %}
+    <table>
+        <thead>
+            <tr>
+                <th>{{ t(lang, 'imports.table.time') }}</th>
+                <th>{{ t(lang, 'imports.table.email_from') }}</th>
+                <th>{{ t(lang, 'imports.table.attachment') }}</th>
+                <th>{{ t(lang, 'imports.table.status') }}</th>
+                <th>{{ t(lang, 'imports.table.report') }}</th>
+                <th>{{ t(lang, 'imports.table.animal') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for imp in imports %}
+            <tr>
+                <td>
+                    <span title="{{ imp.import_timestamp }}">{{ imp.time_ago }}</span>
+                </td>
+                <td>
+                    <div style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ imp.email_from }}">
+                        {{ imp.email_from | truncate(30) if imp.email_from else '--' }}
+                    </div>
+                </td>
+                <td>
+                    <div style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ imp.attachment_name }}">
+                        {{ imp.attachment_name | truncate(25) if imp.attachment_name else '--' }}
+                    </div>
+                </td>
+                <td>
+                    {% if imp.import_success %}
+                        <span class="badge badge-normal">{{ t(lang, 'imports.status.success') }}</span>
+                    {% elif imp.validation_result == 'duplicate' %}
+                        <span class="badge badge-info">{{ t(lang, 'imports.status.duplicate') }}</span>
+                    {% elif imp.validation_result == 'rate_limited' %}
+                        <span class="badge badge-low">{{ t(lang, 'imports.status.rate_limited') }}</span>
+                    {% else %}
+                        <span class="badge badge-high" title="{{ imp.error_message }}">{{ t(lang, 'imports.status.failed') }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if imp.report_number %}
+                        {% if imp.session_id %}
+                            <a href="/session/{{ imp.session_id }}">{{ imp.report_number }}</a>
+                        {% else %}
+                            {{ imp.report_number }}
+                        {% endif %}
+                    {% else %}
+                        <span class="text-muted">--</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if imp.animal_id and imp.animal_name %}
+                        <a href="/animal/{{ imp.animal_id }}">{{ imp.animal_name }}</a>
+                    {% else %}
+                        <span class="text-muted">--</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="text-center" style="padding: 3rem;">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">📧</div>
+        <h3>{{ t(lang, 'imports.no_imports') }}</h3>
+        <p class="text-muted">{{ t(lang, 'imports.no_imports_hint') }}</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
