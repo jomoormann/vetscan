@@ -119,15 +119,15 @@
     // Prepare data for chart
     const labels = [{% for session in sessions %}'{{ session.test_date|format_date_short }}'{% if not loop.last %}, {% endif %}{% endfor %}];
 
-    // Colors for different markers
+    // Colors for different markers (Emerald Spring Whisper palette)
     const colors = [
-        'rgb(59, 130, 246)',   // blue
-        'rgb(16, 185, 129)',   // green
-        'rgb(245, 158, 11)',   // amber
-        'rgb(239, 68, 68)',    // red
-        'rgb(139, 92, 246)',   // purple
-        'rgb(236, 72, 153)',   // pink
-        'rgb(20, 184, 166)',   // teal
+        'rgb(19, 94, 75)',     // emerald (primary)
+        'rgb(76, 181, 114)',   // green (accent)
+        'rgb(242, 80, 22)',    // orange (warning)
+        'rgb(196, 33, 74)',    // rose (danger)
+        'rgb(161, 216, 181)',  // mint (primary-light)
+        'rgb(52, 84, 44)',     // forest green
+        'rgb(174, 82, 100)',   // mauve
     ];
 
     const datasets = [];

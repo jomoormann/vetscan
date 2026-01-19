@@ -17,7 +17,9 @@
         "title": "Dashboard",
         "registered_animals": "Animais Registados",
         "tests_performed": "Testes Realizados",
-        "recent_tests": "Testes Recentes",
+        "weekly_tests": "Esta Semana",
+        "weekly_tests_title": "Novos Testes (Semanal)",
+        "no_weekly_tests": "Nenhum teste esta semana.",
         "quick_actions": "Ações Rápidas",
         "upload_pdf": "Upload PDF Report",
         "view_all_animals": "Ver Todos os Animais",
@@ -265,6 +267,11 @@
         "password_placeholder": "Introduza a sua palavra-passe",
         "submit": "Entrar",
         "error": "Utilizador ou palavra-passe inválidos"
+    },
+    "logout": {
+        "title": "Terminar Sessão",
+        "message": "Tem a certeza que deseja terminar sessão?",
+        "confirm": "Terminar Sessão"
     },
     "imports": {
         "title": "Importações Automáticas por Email",

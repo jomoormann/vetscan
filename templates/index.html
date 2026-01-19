@@ -16,8 +16,8 @@
         <div class="stat-label">{{ t(lang, 'dashboard.tests_performed') }}</div>
     </div>
     <div class="stat-card">
-        <div class="stat-value">{{ recent_sessions|length }}</div>
-        <div class="stat-label">{{ t(lang, 'dashboard.recent_tests') }}</div>
+        <div class="stat-value">{{ weekly_sessions|length }}</div>
+        <div class="stat-label">{{ t(lang, 'dashboard.weekly_tests') }}</div>
     </div>
 </div>
 
@@ -70,12 +70,14 @@
     </div>
 </div>
 
-<!-- Recent Tests -->
+<!-- Weekly Tests -->
 <div class="card">
     <div class="card-header">
-        <h2 class="card-title">{{ t(lang, 'dashboard.recent_tests') }}</h2>
+        <h2 class="card-title">{{ t(lang, 'dashboard.weekly_tests_title') }}</h2>
+        <span class="text-muted">{{ week_start|format_date }} - {{ week_end|format_date }}</span>
     </div>
-    {% if recent_sessions %}
+    {% if weekly_sessions %}
+    <div class="table-responsive">
     <table>
         <thead>
             <tr>
@@ -87,7 +89,7 @@
             </tr>
         </thead>
         <tbody>
-            {% for item in recent_sessions %}
+            {% for item in weekly_sessions %}
             <tr>
                 <td>{{ item.session.test_date|format_date }}</td>
                 <td>
@@ -108,9 +110,10 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <p class="text-muted text-center" style="padding: 2rem;">
-        {{ t(lang, 'dashboard.no_animals') }} <a href="/upload">{{ t(lang, 'dashboard.upload_to_start') }}</a> {{ t(lang, 'dashboard.to_start') }}
+        {{ t(lang, 'dashboard.no_weekly_tests') }}
     </p>
     {% endif %}
 </div>

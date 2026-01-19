@@ -15,7 +15,7 @@ import secrets
 import base64
 import hmac
 import hashlib
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional, List
 from pathlib import Path
 
@@ -371,30 +371,44 @@ async def home(request: Request):
     try:
         animals = service.db.list_animals()
 
-        # Get recent sessions
-        recent_sessions = []
-        for animal in animals:
-            sessions = service.db.get_sessions_for_animal(animal.id)
-            for session in sessions[:3]:  # Last 3 per animal
-                recent_sessions.append({
-                    'animal': animal,
-                    'session': session
-                })
+        # Calculate current week boundaries (Monday to Sunday)
+        today = date.today()
+        monday = today - timedelta(days=today.weekday())  # Monday of current week
+        sunday = monday + timedelta(days=6)  # Sunday of current week
 
-        # Sort by date, most recent first (handle None, string, and date objects)
-        def get_sort_date(item):
-            d = item['session'].test_date
+        # Helper to parse date
+        def parse_session_date(d):
             if d is None:
-                return date.min
+                return None
+            if isinstance(d, date) and not isinstance(d, datetime):
+                return d
+            if isinstance(d, datetime):
+                return d.date()
             if isinstance(d, str):
                 try:
-                    # Try to parse string date (YYYY-MM-DD format from SQLite)
                     return datetime.strptime(d, "%Y-%m-%d").date()
                 except:
-                    return date.min
-            return d
+                    return None
+            return None
 
-        recent_sessions.sort(key=get_sort_date, reverse=True)
+        # Get sessions from current week only
+        weekly_sessions = []
+        for animal in animals:
+            sessions = service.db.get_sessions_for_animal(animal.id)
+            for session in sessions:
+                session_date = parse_session_date(session.test_date)
+                if session_date and monday <= session_date <= sunday:
+                    weekly_sessions.append({
+                        'animal': animal,
+                        'session': session
+                    })
+
+        # Sort by date, most recent first
+        def get_sort_date(item):
+            d = parse_session_date(item['session'].test_date)
+            return d if d else date.min
+
+        weekly_sessions.sort(key=get_sort_date, reverse=True)
 
         # Calculate total tests
         total_tests = 0
@@ -406,7 +420,9 @@ async def home(request: Request):
             "request": request,
             "lang": lang,
             "animals": animals,
-            "recent_sessions": recent_sessions[:10],
+            "weekly_sessions": weekly_sessions,
+            "week_start": monday,
+            "week_end": sunday,
             "total_animals": len(animals),
             "total_tests": total_tests
         })
