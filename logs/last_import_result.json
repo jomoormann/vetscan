@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-01-18T09:52:54.426640",
+  "start_time": "2026-01-18T09:52:53.640120",
+  "end_time": "2026-01-18T09:52:54.426615",
+  "duration_seconds": 0.786495,
+  "emails_processed": 1,
+  "pdfs_found": 0,
+  "imports_successful": 0,
+  "imports_failed": 0,
+  "imports_skipped": 0,
+  "error": null,
+  "results": []
+}
