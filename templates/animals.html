@@ -16,11 +16,11 @@
             <tr>
                 <th>{{ t(lang, 'common.name') }}</th>
                 <th>{{ t(lang, 'common.species') }}</th>
-                <th>{{ t(lang, 'common.breed') }}</th>
-                <th>{{ t(lang, 'common.age') }}</th>
-                <th>{{ t(lang, 'common.sex') }}</th>
+                <th class="mobile-hide">{{ t(lang, 'common.breed') }}</th>
+                <th class="mobile-hide">{{ t(lang, 'common.age') }}</th>
+                <th class="mobile-hide">{{ t(lang, 'common.sex') }}</th>
                 <th>{{ t(lang, 'common.tests') }}</th>
-                <th>{{ t(lang, 'common.last_test') }}</th>
+                <th class="mobile-hide">{{ t(lang, 'common.last_test') }}</th>
                 <th>{{ t(lang, 'common.actions') }}</th>
             </tr>
         </thead>
@@ -29,9 +29,9 @@
             <tr>
                 <td><strong>{{ item.animal.name }}</strong></td>
                 <td>{{ item.animal.species }}</td>
-                <td>{{ item.animal.breed }}</td>
-                <td>{{ item.animal.age_display }}</td>
-                <td>
+                <td class="mobile-hide">{{ item.animal.breed }}</td>
+                <td class="mobile-hide">{{ item.animal.age_display }}</td>
+                <td class="mobile-hide">
                     {% if item.animal.sex == 'M' %}
                     {{ t(lang, 'common.male') }}
                     {% elif item.animal.sex == 'F' %}
@@ -43,16 +43,11 @@
                 <td>
                     <span class="badge badge-info">{{ item.test_count }}</span>
                 </td>
-                <td>{{ item.last_test|format_date }}</td>
+                <td class="mobile-hide">{{ item.last_test|format_date }}</td>
                 <td>
                     <a href="/animal/{{ item.animal.id }}" class="btn btn-secondary">
                         {{ t(lang, 'common.view_details') }}
                     </a>
-                    {% if item.test_count >= 2 %}
-                    <a href="/compare/{{ item.animal.id }}" class="btn btn-secondary">
-                        {{ t(lang, 'common.compare') }}
-                    </a>
-                    {% endif %}
                 </td>
             </tr>
             {% endfor %}

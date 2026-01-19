@@ -3,7 +3,7 @@
 {% block title %}{{ animal.name }} - {{ t(lang, 'app.title') }}{% endblock %}
 
 {% block content %}
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+<div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
     <div>
         <a href="/animals" class="text-muted" style="text-decoration: none;">← {{ t(lang, 'common.back') }}</a>
         <h1 style="margin-top: 0.5rem;">
@@ -11,7 +11,7 @@
             {{ animal.name }}
         </h1>
     </div>
-    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end;">
+    <div class="action-buttons" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
         <button onclick="generateDiagnosis('comprehensive')" class="btn btn-success" title="{{ t(lang, 'diagnosis.full_analysis_desc') }}">
             {{ t(lang, 'diagnosis.full_analysis') }}
         </button>
@@ -66,8 +66,8 @@
         <thead>
             <tr>
                 <th>{{ t(lang, 'common.date') }}</th>
-                <th>{{ t(lang, 'common.report') }}</th>
-                <th>{{ t(lang, 'common.sample') }}</th>
+                <th class="mobile-hide">{{ t(lang, 'common.report') }}</th>
+                <th class="mobile-hide">{{ t(lang, 'common.sample') }}</th>
                 <th>{{ t(lang, 'animal_detail.results') }}</th>
                 <th>{{ t(lang, 'animal_detail.upc_ratio') }}</th>
                 <th>{{ t(lang, 'common.actions') }}</th>
@@ -79,8 +79,8 @@
                 <td>
                     <strong>{{ item.session.test_date|format_date }}</strong>
                 </td>
-                <td>{{ item.session.report_number or 'N/A' }}</td>
-                <td>{{ item.session.sample_type or 'N/A' }}</td>
+                <td class="mobile-hide">{{ item.session.report_number or 'N/A' }}</td>
+                <td class="mobile-hide">{{ item.session.sample_type or 'N/A' }}</td>
                 <td>
                     {% if item.abnormal_count > 0 %}
                     <span class="badge badge-high">{{ item.abnormal_count }} {{ t(lang, 'animal_detail.abnormal_results') }}</span>
@@ -166,7 +166,7 @@
             <tr>
                 <th>{{ t(lang, 'common.date') }}</th>
                 <th>{{ t(lang, 'diagnosis.type') }}</th>
-                <th>{{ t(lang, 'diagnosis.summary') }}</th>
+                <th class="mobile-hide">{{ t(lang, 'diagnosis.summary') }}</th>
                 <th>{{ t(lang, 'common.actions') }}</th>
             </tr>
         </thead>
@@ -183,7 +183,7 @@
                     <span class="badge badge-normal">{{ t(lang, 'diagnosis.clinical_notes_only') }}</span>
                     {% endif %}
                 </td>
-                <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                <td class="mobile-hide" style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                     {{ report.input_summary }}
                 </td>
                 <td>

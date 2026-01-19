@@ -44,12 +44,13 @@
             <a href="/animals" class="btn btn-secondary">{{ t(lang, 'dashboard.view_all') }}</a>
         </div>
         {% if animals %}
+        <div class="table-responsive">
         <table>
             <thead>
                 <tr>
                     <th>{{ t(lang, 'common.name') }}</th>
                     <th>{{ t(lang, 'common.species') }}</th>
-                    <th>{{ t(lang, 'common.breed') }}</th>
+                    <th class="mobile-hide">{{ t(lang, 'common.breed') }}</th>
                 </tr>
             </thead>
             <tbody>
@@ -57,11 +58,12 @@
                 <tr onclick="window.location='/animal/{{ animal.id }}'" style="cursor: pointer;">
                     <td><strong>{{ animal.name }}</strong></td>
                     <td>{{ animal.species }}</td>
-                    <td>{{ animal.breed }}</td>
+                    <td class="mobile-hide">{{ animal.breed }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
+        </div>
         {% else %}
         <p class="text-muted text-center" style="padding: 2rem;">
             {{ t(lang, 'dashboard.no_animals') }} <a href="/upload">{{ t(lang, 'dashboard.upload_to_start') }}</a> {{ t(lang, 'dashboard.to_start') }}
@@ -83,7 +85,7 @@
             <tr>
                 <th>{{ t(lang, 'imports.table.time') }}</th>
                 <th>{{ t(lang, 'session_detail.animal') }}</th>
-                <th>{{ t(lang, 'common.sample') }}</th>
+                <th class="mobile-hide">{{ t(lang, 'common.sample') }}</th>
                 <th>{{ t(lang, 'common.actions') }}</th>
             </tr>
         </thead>
@@ -96,9 +98,9 @@
                         <strong>{{ item.animal.name }}</strong>
                     </a>
                     <br>
-                    <small class="text-muted">{{ item.animal.species }} - {{ item.animal.breed }}</small>
+                    <small class="text-muted">{{ item.animal.species }}</small>
                 </td>
-                <td>{{ item.session.sample_type or 'N/A' }}</td>
+                <td class="mobile-hide">{{ item.session.sample_type or 'N/A' }}</td>
                 <td>
                     <a href="/session/{{ item.session.id }}" class="btn btn-secondary">
                         {{ t(lang, 'common.view_details') }}

@@ -40,7 +40,7 @@
         <thead>
             <tr>
                 <th>{{ t(lang, 'imports.table.time') }}</th>
-                <th>{{ t(lang, 'imports.table.email_from') }}</th>
+                <th class="mobile-hide">{{ t(lang, 'imports.table.email_from') }}</th>
                 <th>{{ t(lang, 'imports.table.status') }}</th>
                 <th>{{ t(lang, 'imports.table.animal') }}</th>
             </tr>
@@ -51,7 +51,7 @@
                 <td>
                     <span title="{{ imp.import_timestamp }}">{{ imp.time_ago }}</span>
                 </td>
-                <td>
+                <td class="mobile-hide">
                     <div style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ imp.email_from }}">
                         {{ imp.email_from | truncate(30) if imp.email_from else '--' }}
                     </div>
