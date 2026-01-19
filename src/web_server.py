@@ -177,6 +177,13 @@ app.add_middleware(HTTPSRedirectMiddleware)
 # Templates
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
+# Static files directory
+STATIC_DIR = BASE_DIR / "static"
+STATIC_DIR.mkdir(exist_ok=True)
+
+# Mount static files for game assets and other static content
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
 
 # =============================================================================
 # TEMPLATE FILTERS

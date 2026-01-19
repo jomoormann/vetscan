@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Vet Protein Analysis{% endblock %}</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔬</text></svg>">
     <style>
         :root {
             --primary: #135E4B;
@@ -749,6 +750,53 @@
             cursor: pointer;
             color: var(--gray-500);
         }
+
+        /* Dino Game Easter Egg */
+        .dino-game-container {
+            background: white;
+            border-radius: 0.5rem;
+            width: 95%;
+            max-width: 800px;
+            height: 300px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .dino-close {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            z-index: 10;
+            background: rgba(0,0,0,0.5);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            cursor: pointer;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+
+        .dino-close:hover {
+            background: rgba(0,0,0,0.7);
+        }
+
+        #dinoFrame {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        /* Long-press visual feedback */
+        nav .logo {
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
     </style>
 </head>
 <body>
@@ -788,6 +836,14 @@
                 <button class="btn btn-secondary" id="logoutCancel">{{ t(lang, 'common.cancel') }}</button>
                 <a href="/logout" class="btn btn-primary">{{ t(lang, 'logout.confirm') }}</a>
             </div>
+        </div>
+    </div>
+
+    <!-- Hidden Dino Game Easter Egg -->
+    <div class="modal" id="dinoModal">
+        <div class="dino-game-container">
+            <button class="dino-close" id="dinoClose" title="Close game">✕</button>
+            <iframe id="dinoFrame" src="" title="T-Rex Runner Game"></iframe>
         </div>
     </div>
 
@@ -844,6 +900,72 @@
                 document.addEventListener('keydown', function(e) {
                     if (e.key === 'Escape' && logoutModal.classList.contains('active')) {
                         logoutModal.classList.remove('active');
+                    }
+                });
+            }
+        })();
+
+        // Easter egg: Long-press logo for 2 seconds to open dino game
+        (function() {
+            const logo = document.querySelector('nav .logo');
+            const dinoModal = document.getElementById('dinoModal');
+            const dinoClose = document.getElementById('dinoClose');
+            const dinoFrame = document.getElementById('dinoFrame');
+            let pressTimer = null;
+            let pressStart = 0;
+
+            if (logo && dinoModal && dinoFrame) {
+                // Prevent default link behavior during long-press
+                logo.addEventListener('pointerdown', function(e) {
+                    pressStart = Date.now();
+                    pressTimer = setTimeout(function() {
+                        e.preventDefault();
+                        // Load the game only when modal opens (lazy loading)
+                        dinoFrame.src = '/static/dino/index.html';
+                        dinoModal.classList.add('active');
+                    }, 2000); // 2 second hold
+                });
+
+                logo.addEventListener('pointerup', function(e) {
+                    clearTimeout(pressTimer);
+                    // Only navigate if it was a short click (< 500ms)
+                    if (Date.now() - pressStart < 500) {
+                        window.location.href = '/';
+                    }
+                    e.preventDefault();
+                });
+
+                logo.addEventListener('pointerleave', function() {
+                    clearTimeout(pressTimer);
+                });
+
+                logo.addEventListener('pointercancel', function() {
+                    clearTimeout(pressTimer);
+                });
+
+                // Prevent context menu on long press (mobile)
+                logo.addEventListener('contextmenu', function(e) {
+                    e.preventDefault();
+                });
+
+                // Close game modal
+                dinoClose.addEventListener('click', function() {
+                    dinoModal.classList.remove('active');
+                    // Unload game to stop it
+                    dinoFrame.src = '';
+                });
+
+                dinoModal.addEventListener('click', function(e) {
+                    if (e.target === dinoModal) {
+                        dinoModal.classList.remove('active');
+                        dinoFrame.src = '';
+                    }
+                });
+
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape' && dinoModal.classList.contains('active')) {
+                        dinoModal.classList.remove('active');
+                        dinoFrame.src = '';
                     }
                 });
             }
