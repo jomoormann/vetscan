@@ -29,12 +29,20 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
+
+        html {
+            overflow-x: hidden;
+            width: 100%;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             background: var(--gray-50);
             color: var(--gray-900);
             line-height: 1.5;
+            overflow-x: hidden;
+            width: 100%;
+            max-width: 100vw;
         }
 
         /* Links */
@@ -155,6 +163,7 @@
             max-width: 1200px;
             margin: 0 auto;
             padding: 2rem;
+            overflow-x: hidden;
         }
         
         /* Cards */
@@ -164,6 +173,8 @@
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             padding: 1.5rem;
             margin-bottom: 1.5rem;
+            overflow: hidden;
+            max-width: 100%;
         }
         
         .card-header {
@@ -225,17 +236,24 @@
         }
         
         /* Tables */
+        .table-container {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
         }
-        
+
         th, td {
             padding: 0.75rem 1rem;
             text-align: left;
             border-bottom: 1px solid var(--gray-200);
+            white-space: nowrap;
         }
-        
+
         th {
             background: var(--gray-50);
             font-weight: 600;
@@ -244,9 +262,15 @@
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
-        
+
         tr:hover {
             background: var(--gray-50);
+        }
+
+        /* Allow text wrap in table cells on wider content */
+        td.wrap-text, th.wrap-text {
+            white-space: normal;
+            word-break: break-word;
         }
         
         /* Badges */
@@ -515,25 +539,42 @@
                 font-size: 0.75rem;
             }
 
-            /* Tables - Horizontal scroll */
-            .table-responsive {
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
+            /* Tables - Horizontal scroll within card */
+            .card {
+                overflow: visible;
+            }
+
+            .card > div[style*="overflow-x"],
+            .table-container,
+            [style*="overflow-x: auto"] {
                 margin: 0 -1rem;
                 padding: 0 1rem;
+                width: calc(100% + 2rem);
             }
 
             table {
-                min-width: 500px;
+                min-width: 450px;
             }
 
             th, td {
                 padding: 0.5rem 0.75rem;
-                font-size: 0.875rem;
+                font-size: 0.8rem;
             }
 
             th {
-                font-size: 0.7rem;
+                font-size: 0.65rem;
+            }
+
+            /* First column sticky on mobile for tables */
+            td:first-child, th:first-child {
+                position: sticky;
+                left: 0;
+                background: white;
+                z-index: 1;
+            }
+
+            th:first-child {
+                background: var(--gray-50);
             }
 
             /* Buttons - Touch friendly */
