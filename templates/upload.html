@@ -135,7 +135,7 @@
                         <strong>${translations.reportLabel}:</strong> ${data.report_number}<br>
                         <strong>${translations.dateLabel}:</strong> ${data.test_date}
                     </p>
-                    <div style="display: flex; gap: 1rem;">
+                    <div class="action-buttons" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
                         <a href="/session/${data.session_id}" class="btn btn-primary">${translations.viewResults}</a>
                         <a href="/animal/${data.animal_id}" class="btn btn-secondary">${translations.viewAnimal}</a>
                         <button onclick="resetUpload()" class="btn btn-secondary">${translations.newUpload}</button>

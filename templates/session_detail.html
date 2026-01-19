@@ -102,9 +102,9 @@
             <tr>
                 <th>{{ t(lang, 'session_detail.marker') }}</th>
                 <th>{{ t(lang, 'session_detail.value_percent') }}</th>
-                <th>{{ t(lang, 'session_detail.value_gdl') }}</th>
-                <th>{{ t(lang, 'session_detail.reference_percent') }}</th>
-                <th>{{ t(lang, 'session_detail.reference_gdl') }}</th>
+                <th class="mobile-hide">{{ t(lang, 'session_detail.value_gdl') }}</th>
+                <th class="mobile-hide">{{ t(lang, 'session_detail.reference_percent') }}</th>
+                <th class="mobile-hide">{{ t(lang, 'session_detail.reference_gdl') }}</th>
                 <th>{{ t(lang, 'session_detail.status') }}</th>
             </tr>
         </thead>
@@ -119,21 +119,21 @@
                         --
                     {% endif %}
                 </td>
-                <td>
+                <td class="mobile-hide">
                     {% if result.value_absolute is not none %}
                         {{ "%.2f"|format(result.value_absolute) }}
                     {% else %}
                         --
                     {% endif %}
                 </td>
-                <td class="text-muted">
+                <td class="mobile-hide text-muted">
                     {% if result.reference_min is not none and result.reference_max is not none %}
                         {{ "%.1f"|format(result.reference_min) }} - {{ "%.1f"|format(result.reference_max) }}
                     {% else %}
                         --
                     {% endif %}
                 </td>
-                <td class="text-muted">
+                <td class="mobile-hide text-muted">
                     {% if result.reference_min_absolute is not none and result.reference_max_absolute is not none %}
                         {{ "%.2f"|format(result.reference_min_absolute) }} - {{ "%.2f"|format(result.reference_max_absolute) }}
                     {% else %}
@@ -310,7 +310,7 @@
         <thead>
             <tr>
                 <th>{{ t(lang, 'session_detail.marker') }}</th>
-                <th>{{ t(lang, 'session_detail.previous') }}</th>
+                <th class="mobile-hide">{{ t(lang, 'session_detail.previous') }}</th>
                 <th>{{ t(lang, 'session_detail.current') }}</th>
                 <th>{{ t(lang, 'session_detail.variation') }}</th>
                 <th>{{ t(lang, 'session_detail.trend') }}</th>
@@ -320,7 +320,7 @@
             {% for comp in comparison %}
             <tr>
                 <td><strong>{{ comp.marker_name }}</strong></td>
-                <td>{{ "%.1f"|format(comp.previous_value) if comp.previous_value is not none else '--' }}</td>
+                <td class="mobile-hide">{{ "%.1f"|format(comp.previous_value) if comp.previous_value is not none else '--' }}</td>
                 <td>{{ "%.1f"|format(comp.current_value) if comp.current_value is not none else '--' }}</td>
                 <td>
                     {% if comp.change_percent is not none %}
