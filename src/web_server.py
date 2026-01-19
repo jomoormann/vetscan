@@ -1080,6 +1080,8 @@ async def compare_sessions_page(request: Request, animal_id: int):
                 "animal": animal,
                 "sessions": sessions,
                 "comparison_data": [],
+                "urinalysis_data": [],
+                "has_urinalysis": False,
                 "error": get_text(lang, "compare.need_two_tests")
             })
             return set_lang_cookie(response, lang)
@@ -1109,12 +1111,23 @@ async def compare_sessions_page(request: Request, animal_id: int):
                     row['values'].append(None)
             comparison_data.append(row)
 
+        # Get urinalysis data for each session
+        urinalysis_data = []
+        has_urinalysis = False
+        for session in sessions:
+            urin = service.db.get_urinalysis_for_session(session.id)
+            urinalysis_data.append(urin)
+            if urin:
+                has_urinalysis = True
+
         response = templates.TemplateResponse("compare.html", {
             "request": request,
             "lang": lang,
             "animal": animal,
             "sessions": sessions,
             "comparison_data": comparison_data,
+            "urinalysis_data": urinalysis_data,
+            "has_urinalysis": has_urinalysis,
             "error": None
         })
         return set_lang_cookie(response, lang)

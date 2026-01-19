@@ -30,7 +30,7 @@
     </div>
 </div>
 
-<!-- Comparison Table -->
+<!-- Protein Comparison Table -->
 <div class="card">
     <div class="card-header">
         <h2 class="card-title">{{ t(lang, 'compare.marker_evolution') }}</h2>
@@ -60,7 +60,6 @@
                                 {% if val.flag == 'high' %}color: var(--danger);{% elif val.flag == 'low' %}color: var(--warning);{% else %}color: var(--success);{% endif %}
                                 font-weight: 600;
                             ">
-                                {# Bug fix #2: Check for 'is not none' instead of truthy to handle zero values #}
                                 {{ "%.1f"|format(val.value) if val.value is not none else '--' }}
                             </span>
                             {% if val.flag == 'high' %}
@@ -74,11 +73,8 @@
                     </td>
                     {% endfor %}
                     <td style="text-align: center;">
-                        {# Bug fix #1: Sessions are DESC sorted (newest first at index 0) #}
-                        {# Trend should compare newest vs oldest: (newest - oldest) / oldest #}
                         {% set newest = row['values'][0] %}
                         {% set oldest = row['values'][-1] %}
-                        {# Bug fix #4: Add zero division check with 'oldest.value != 0' #}
                         {% if newest and oldest and newest.value is not none and oldest.value is not none and oldest.value != 0 %}
                             {% set change = ((newest.value - oldest.value) / oldest.value * 100) %}
                             {% if change > 10 %}
@@ -99,74 +95,151 @@
     </div>
 </div>
 
-<!-- Visual Chart -->
+<!-- Urinalysis Comparison Table -->
+{% if has_urinalysis %}
 <div class="card">
     <div class="card-header">
-        <h2 class="card-title">{{ t(lang, 'compare.evolution_chart') }}</h2>
+        <h2 class="card-title">{{ t(lang, 'session_detail.urinalysis') }}</h2>
     </div>
-    <canvas id="evolutionChart" height="300"></canvas>
+
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th style="position: sticky; left: 0; background: var(--gray-50);">{{ t(lang, 'session_detail.parameter') }}</th>
+                    {% for session in sessions %}
+                    <th style="text-align: center;">{{ session.test_date|format_date_short }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                <!-- General Characteristics -->
+                <tr style="background: var(--gray-50);">
+                    <td colspan="{{ sessions|length + 1 }}"><strong>{{ t(lang, 'urinalysis.general_characteristics') }}</strong></td>
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ t(lang, 'urinalysis.color') }}</td>
+                    {% for urin in urinalysis_data %}
+                    <td style="text-align: center;">{{ urin.color if urin and urin.color else '--' }}</td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ t(lang, 'urinalysis.appearance') }}</td>
+                    {% for urin in urinalysis_data %}
+                    <td style="text-align: center;">{{ urin.appearance if urin and urin.appearance else '--' }}</td>
+                    {% endfor %}
+                </tr>
+
+                <!-- Biochemistry -->
+                <tr style="background: var(--gray-50);">
+                    <td colspan="{{ sessions|length + 1 }}"><strong>{{ t(lang, 'urinalysis.biochemistry') }}</strong></td>
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ t(lang, 'urinalysis.specific_gravity') }}</td>
+                    {% for urin in urinalysis_data %}
+                    <td style="text-align: center;">
+                        {% if urin and urin.specific_gravity %}
+                            {{ "%.3f"|format(urin.specific_gravity) }}
+                        {% else %}
+                            --
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">pH</td>
+                    {% for urin in urinalysis_data %}
+                    <td style="text-align: center;">
+                        {% if urin and urin.ph %}
+                            {{ "%.1f"|format(urin.ph) }}
+                        {% else %}
+                            --
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ t(lang, 'urinalysis.glucose') }}</td>
+                    {% for urin in urinalysis_data %}
+                    <td style="text-align: center;">{{ urin.glucose if urin and urin.glucose else '--' }}</td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ t(lang, 'urinalysis.proteins') }}</td>
+                    {% for urin in urinalysis_data %}
+                    <td style="text-align: center;">{{ urin.proteins if urin and urin.proteins else '--' }}</td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ t(lang, 'urinalysis.bilirubin') }}</td>
+                    {% for urin in urinalysis_data %}
+                    <td style="text-align: center;">{{ urin.bilirubin if urin and urin.bilirubin else '--' }}</td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ t(lang, 'urinalysis.ketones') }}</td>
+                    {% for urin in urinalysis_data %}
+                    <td style="text-align: center;">{{ urin.ketones if urin and urin.ketones else '--' }}</td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ t(lang, 'urinalysis.urobilinogen') }}</td>
+                    {% for urin in urinalysis_data %}
+                    <td style="text-align: center;">{{ urin.urobilinogen if urin and urin.urobilinogen else '--' }}</td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ t(lang, 'urinalysis.nitrites') }}</td>
+                    {% for urin in urinalysis_data %}
+                    <td style="text-align: center;">{{ urin.nitrites if urin and urin.nitrites else '--' }}</td>
+                    {% endfor %}
+                </tr>
+
+                <!-- Sediment -->
+                <tr style="background: var(--gray-50);">
+                    <td colspan="{{ sessions|length + 1 }}"><strong>{{ t(lang, 'urinalysis.sediment') }}</strong></td>
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ t(lang, 'urinalysis.leukocytes') }}</td>
+                    {% for urin in urinalysis_data %}
+                    <td style="text-align: center;">{{ urin.leukocytes if urin and urin.leukocytes else '--' }}</td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ t(lang, 'urinalysis.erythrocytes') }}</td>
+                    {% for urin in urinalysis_data %}
+                    <td style="text-align: center;">{{ urin.erythrocytes if urin and urin.erythrocytes else '--' }}</td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ t(lang, 'urinalysis.epithelial_cells') }}</td>
+                    {% for urin in urinalysis_data %}
+                    <td style="text-align: center;">{{ urin.epithelial_cells if urin and urin.epithelial_cells else '--' }}</td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ t(lang, 'urinalysis.casts') }}</td>
+                    {% for urin in urinalysis_data %}
+                    <td style="text-align: center;">{{ urin.casts if urin and urin.casts else '--' }}</td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ t(lang, 'urinalysis.crystals') }}</td>
+                    {% for urin in urinalysis_data %}
+                    <td style="text-align: center;">{{ urin.crystals if urin and urin.crystals else '--' }}</td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ t(lang, 'urinalysis.bacteria') }}</td>
+                    {% for urin in urinalysis_data %}
+                    <td style="text-align: center;">{{ urin.bacteria if urin and urin.bacteria else '--' }}</td>
+                    {% endfor %}
+                </tr>
+            </tbody>
+        </table>
+    </div>
 </div>
+{% endif %}
 
 {% endif %}
-{% endblock %}
-
-{% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-    {% if not error %}
-    const ctx = document.getElementById('evolutionChart').getContext('2d');
-
-    // Prepare data for chart
-    const labels = [{% for session in sessions %}'{{ session.test_date|format_date_short }}'{% if not loop.last %}, {% endif %}{% endfor %}];
-
-    // Colors for different markers (Emerald Spring Whisper palette)
-    const colors = [
-        'rgb(19, 94, 75)',     // emerald (primary)
-        'rgb(76, 181, 114)',   // green (accent)
-        'rgb(242, 80, 22)',    // orange (warning)
-        'rgb(196, 33, 74)',    // rose (danger)
-        'rgb(161, 216, 181)',  // mint (primary-light)
-        'rgb(52, 84, 44)',     // forest green
-        'rgb(174, 82, 100)',   // mauve
-    ];
-
-    const datasets = [];
-    {% for row in comparison_data %}
-    datasets.push({
-        label: '{{ row.marker }}',
-        {# Bug fix #3: Check 'is not none' to properly handle zero values in chart data #}
-        data: [{% for val in row['values'] %}{{ val.value if val and val.value is not none else 'null' }}{% if not loop.last %}, {% endif %}{% endfor %}],
-        borderColor: colors[{{ loop.index0 }} % colors.length],
-        backgroundColor: colors[{{ loop.index0 }} % colors.length] + '20',
-        tension: 0.3,
-        fill: false
-    });
-    {% endfor %}
-
-    new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: datasets
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: {
-                    position: 'bottom'
-                },
-                title: {
-                    display: true,
-                    text: '{{ t(lang, "compare.chart_title") }}'
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: false
-                }
-            }
-        }
-    });
-    {% endif %}
-</script>
 {% endblock %}
