@@ -13,6 +13,8 @@ import sys
 import json
 import secrets
 import base64
+import hmac
+import hashlib
 from datetime import date, datetime
 from typing import Optional, List
 from pathlib import Path
@@ -75,12 +77,50 @@ app = FastAPI(
 # Get credentials from environment variables
 AUTH_USERNAME = os.getenv("AUTH_USERNAME", "admin")
 AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "")  # Empty = no auth required
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", secrets.token_hex(32))  # For signing cookies
+
+# Session cookie name
+AUTH_COOKIE_NAME = "vetscan_session"
 
 
-class BasicAuthMiddleware(BaseHTTPMiddleware):
+def create_auth_token(username: str) -> str:
+    """Create a signed authentication token"""
+    message = f"{username}:{AUTH_SECRET_KEY[:16]}"
+    signature = hmac.new(
+        AUTH_SECRET_KEY.encode(),
+        message.encode(),
+        hashlib.sha256
+    ).hexdigest()
+    token = base64.b64encode(f"{username}:{signature}".encode()).decode()
+    return token
+
+
+def verify_auth_token(token: str) -> Optional[str]:
+    """Verify an authentication token and return the username if valid"""
+    try:
+        decoded = base64.b64decode(token).decode()
+        username, signature = decoded.rsplit(":", 1)
+
+        # Recreate expected signature
+        message = f"{username}:{AUTH_SECRET_KEY[:16]}"
+        expected_signature = hmac.new(
+            AUTH_SECRET_KEY.encode(),
+            message.encode(),
+            hashlib.sha256
+        ).hexdigest()
+
+        # Timing-safe comparison
+        if hmac.compare_digest(signature, expected_signature):
+            return username
+    except Exception:
+        pass
+    return None
+
+
+class CookieAuthMiddleware(BaseHTTPMiddleware):
     """
-    HTTP Basic Authentication middleware.
-    Protects all routes with username/password authentication.
+    Cookie-based authentication middleware.
+    Redirects unauthenticated users to the login page.
     """
 
     async def dispatch(self, request: Request, call_next):
@@ -88,31 +128,21 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
         if not AUTH_PASSWORD:
             return await call_next(request)
 
-        # Check for Authorization header
-        auth_header = request.headers.get("Authorization")
+        # Allow access to login page and static assets
+        path = request.url.path
+        if path in ["/login", "/logout"] or path.startswith("/static"):
+            return await call_next(request)
 
-        if auth_header and auth_header.startswith("Basic "):
-            try:
-                # Decode credentials
-                encoded_credentials = auth_header[6:]
-                decoded = base64.b64decode(encoded_credentials).decode("utf-8")
-                username, password = decoded.split(":", 1)
+        # Check for auth cookie
+        auth_cookie = request.cookies.get(AUTH_COOKIE_NAME)
 
-                # Use secrets.compare_digest for timing-safe comparison
-                username_correct = secrets.compare_digest(username, AUTH_USERNAME)
-                password_correct = secrets.compare_digest(password, AUTH_PASSWORD)
+        if auth_cookie:
+            username = verify_auth_token(auth_cookie)
+            if username:
+                return await call_next(request)
 
-                if username_correct and password_correct:
-                    return await call_next(request)
-            except Exception:
-                pass
-
-        # Return 401 with WWW-Authenticate header to trigger browser login prompt
-        return Response(
-            content="Authentication required",
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            headers={"WWW-Authenticate": 'Basic realm="Vet Protein Analysis"'},
-        )
+        # Redirect to login page
+        return RedirectResponse(url="/login", status_code=302)
 
 
 class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
@@ -140,7 +170,7 @@ class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
 
 
 # Add middleware (order matters: HTTPS redirect first, then auth)
-app.add_middleware(BasicAuthMiddleware)
+app.add_middleware(CookieAuthMiddleware)
 app.add_middleware(HTTPSRedirectMiddleware)
 
 
@@ -260,6 +290,72 @@ def set_lang_cookie(response, lang: str):
         httponly=True,
         samesite="lax"
     )
+    return response
+
+
+# =============================================================================
+# AUTHENTICATION ROUTES
+# =============================================================================
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, lang: Optional[str] = None):
+    """Display login page"""
+    # Get language from query param or detect from request
+    if lang and lang in SUPPORTED_LANGUAGES:
+        current_lang = lang
+    else:
+        current_lang = get_lang(request)
+
+    response = templates.TemplateResponse("login.html", {
+        "request": request,
+        "lang": current_lang,
+        "error": False
+    })
+    return set_lang_cookie(response, current_lang)
+
+
+@app.post("/login", response_class=HTMLResponse)
+async def login_submit(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...)
+):
+    """Handle login form submission"""
+    lang = get_lang(request)
+
+    # Validate credentials
+    username_correct = secrets.compare_digest(username, AUTH_USERNAME)
+    password_correct = secrets.compare_digest(password, AUTH_PASSWORD)
+
+    if username_correct and password_correct:
+        # Create auth token and redirect to home
+        token = create_auth_token(username)
+        response = RedirectResponse(url="/", status_code=302)
+        response.set_cookie(
+            key=AUTH_COOKIE_NAME,
+            value=token,
+            max_age=30 * 24 * 60 * 60,  # 30 days
+            httponly=True,
+            samesite="lax",
+            secure=True  # Only send over HTTPS
+        )
+        return response
+
+    # Invalid credentials - show error
+    response = templates.TemplateResponse("login.html", {
+        "request": request,
+        "lang": lang,
+        "error": True,
+        "username": username
+    })
+    return set_lang_cookie(response, lang)
+
+
+@app.get("/logout")
+async def logout():
+    """Log out user by clearing the auth cookie"""
+    response = RedirectResponse(url="/login", status_code=302)
+    response.delete_cookie(key=AUTH_COOKIE_NAME)
     return response
 
 

@@ -256,6 +256,16 @@
         "executive_summary": "Executive Summary",
         "consolidated_analysis": "Consolidated Analysis"
     },
+    "login": {
+        "title": "Login",
+        "subtitle": "Sign in to access your account",
+        "username": "Username",
+        "username_placeholder": "Enter your username",
+        "password": "Password",
+        "password_placeholder": "Enter your password",
+        "submit": "Sign In",
+        "error": "Invalid username or password"
+    },
     "imports": {
         "title": "Automatic Email Imports",
         "description": "DNAtech reports automatically imported from",

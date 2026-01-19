@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="{{ lang|default('pt') }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t(lang, 'login.title') }} - {{ t(lang, 'app.title') }}</title>
+    <style>
+        :root {
+            --primary: #8785A2;
+            --primary-dark: #6e6c8a;
+            --primary-light: #FFC7C7;
+            --accent: #FFC7C7;
+            --accent-light: #FFE2E2;
+            --danger: #dc2626;
+            --gray-50: #F6F6F6;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-500: #6b7280;
+            --gray-700: #374151;
+            --gray-900: #111827;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, var(--gray-100) 0%, var(--accent-light) 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .login-container {
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .login-card {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1), 0 8px 25px rgba(0, 0, 0, 0.08);
+            padding: 2.5rem;
+            text-align: center;
+        }
+
+        .login-logo {
+            font-size: 3.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .login-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 0.25rem;
+        }
+
+        .login-subtitle {
+            color: var(--gray-500);
+            font-size: 0.875rem;
+            margin-bottom: 2rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.25rem;
+            text-align: left;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: var(--gray-700);
+            font-size: 0.875rem;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            border: 1px solid var(--gray-300);
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            transition: all 0.2s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(135, 133, 162, 0.15);
+        }
+
+        .form-group input::placeholder {
+            color: var(--gray-400);
+        }
+
+        .btn-login {
+            width: 100%;
+            padding: 0.875rem 1.5rem;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 0.5rem;
+        }
+
+        .btn-login:hover {
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(135, 133, 162, 0.3);
+        }
+
+        .btn-login:active {
+            transform: translateY(0);
+        }
+
+        .error-message {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1.25rem;
+            font-size: 0.875rem;
+            text-align: left;
+        }
+
+        .lang-switcher {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--gray-200);
+        }
+
+        .lang-switcher a {
+            padding: 0.375rem 0.75rem;
+            border-radius: 0.375rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-decoration: none;
+            color: var(--gray-500);
+            transition: all 0.2s;
+        }
+
+        .lang-switcher a:hover {
+            color: var(--primary);
+            background: var(--gray-100);
+        }
+
+        .lang-switcher a.active {
+            color: white;
+            background: var(--primary);
+        }
+
+        /* Mobile adjustments */
+        @media (max-width: 480px) {
+            .login-card {
+                padding: 2rem 1.5rem;
+                border-radius: 0.75rem;
+            }
+
+            .login-logo {
+                font-size: 3rem;
+            }
+
+            .login-title {
+                font-size: 1.25rem;
+            }
+
+            .form-group input {
+                font-size: 16px; /* Prevents zoom on iOS */
+            }
+
+            .btn-login {
+                min-height: 48px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-card">
+            <div class="login-logo">🔬</div>
+            <h1 class="login-title">{{ t(lang, 'app.title') }}</h1>
+            <p class="login-subtitle">{{ t(lang, 'login.subtitle') }}</p>
+
+            {% if error %}
+            <div class="error-message">
+                {{ t(lang, 'login.error') }}
+            </div>
+            {% endif %}
+
+            <form method="POST" action="/login">
+                <div class="form-group">
+                    <label for="username">{{ t(lang, 'login.username') }}</label>
+                    <input
+                        type="text"
+                        id="username"
+                        name="username"
+                        placeholder="{{ t(lang, 'login.username_placeholder') }}"
+                        required
+                        autocomplete="username"
+                        value="{{ username|default('') }}"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="password">{{ t(lang, 'login.password') }}</label>
+                    <input
+                        type="password"
+                        id="password"
+                        name="password"
+                        placeholder="{{ t(lang, 'login.password_placeholder') }}"
+                        required
+                        autocomplete="current-password"
+                    >
+                </div>
+
+                <button type="submit" class="btn-login">
+                    {{ t(lang, 'login.submit') }}
+                </button>
+            </form>
+
+            <div class="lang-switcher">
+                <a href="/login?lang=en" class="{% if lang == 'en' %}active{% endif %}">EN</a>
+                <a href="/login?lang=pt" class="{% if lang == 'pt' %}active{% endif %}">PT</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

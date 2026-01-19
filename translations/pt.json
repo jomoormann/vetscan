@@ -256,6 +256,16 @@
         "executive_summary": "Resumo Executivo",
         "consolidated_analysis": "Análise Consolidada"
     },
+    "login": {
+        "title": "Login",
+        "subtitle": "Inicie sessão para aceder à sua conta",
+        "username": "Utilizador",
+        "username_placeholder": "Introduza o seu utilizador",
+        "password": "Palavra-passe",
+        "password_placeholder": "Introduza a sua palavra-passe",
+        "submit": "Entrar",
+        "error": "Utilizador ou palavra-passe inválidos"
+    },
     "imports": {
         "title": "Importações Automáticas por Email",
         "description": "Relatórios DNAtech importados automaticamente de",

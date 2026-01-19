@@ -115,6 +115,18 @@
             background: var(--primary);
         }
 
+        .lang-switcher .logout-link {
+            margin-left: 0.5rem;
+            padding-left: 0.75rem;
+            border-left: 1px solid var(--gray-200);
+            color: var(--gray-500);
+        }
+
+        .lang-switcher .logout-link:hover {
+            color: var(--danger);
+            background: #fee2e2;
+        }
+
         .nav-right {
             display: flex;
             align-items: center;
@@ -748,6 +760,7 @@
                 <div class="lang-switcher">
                     <a href="/set-language/en" class="{% if lang == 'en' %}active{% endif %}">EN</a>
                     <a href="/set-language/pt" class="{% if lang == 'pt' %}active{% endif %}">PT</a>
+                    <a href="/logout" class="logout-link" title="Logout">⏻</a>
                 </div>
             </div>
         </div>
