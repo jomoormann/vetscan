@@ -96,6 +96,7 @@
         <h2 class="card-title">{{ t(lang, 'session_detail.proteinogram') }}</h2>
     </div>
 
+    <div class="table-responsive">
     <table>
         <thead>
             <tr>
@@ -152,6 +153,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 
 {% if urinalysis %}
@@ -303,6 +305,7 @@
         <span class="text-muted">vs {{ previous_session.test_date|format_date }}</span>
     </div>
 
+    <div class="table-responsive">
     <table>
         <thead>
             <tr>
@@ -347,6 +350,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 {% endif %}
 {% endblock %}

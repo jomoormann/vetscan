@@ -120,6 +120,11 @@
             align-items: center;
         }
 
+        /* Hide hamburger on desktop */
+        .hamburger {
+            display: none;
+        }
+
         /* Main content */
         main {
             max-width: 1200px;
@@ -339,13 +344,279 @@
             gap: 1.5rem;
         }
         
+        /* ============================================
+           MOBILE RESPONSIVE STYLES (iPhone 16+)
+           ============================================ */
+
+        /* Tablet breakpoint */
         @media (max-width: 768px) {
             .grid-2, .grid-3 {
                 grid-template-columns: 1fr;
             }
-            
+
             nav ul {
                 gap: 1rem;
+            }
+        }
+
+        /* Mobile breakpoint (iPhone 16 = 390px viewport) */
+        @media (max-width: 480px) {
+            /* Navigation - Hamburger Menu */
+            nav {
+                padding: 0.75rem 1rem;
+            }
+
+            nav .container {
+                flex-wrap: wrap;
+            }
+
+            nav .logo {
+                font-size: 1.1rem;
+            }
+
+            nav .logo span {
+                font-size: 1.25rem;
+            }
+
+            .nav-right {
+                width: 100%;
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            nav ul {
+                display: none;
+                flex-direction: column;
+                width: 100%;
+                gap: 0;
+                padding-top: 0.75rem;
+                margin-top: 0.75rem;
+                border-top: 1px solid var(--gray-200);
+            }
+
+            nav ul.active {
+                display: flex;
+            }
+
+            nav ul li {
+                width: 100%;
+            }
+
+            nav ul a {
+                display: block;
+                padding: 0.75rem 0;
+                border-bottom: 1px solid var(--gray-100);
+            }
+
+            .lang-switcher {
+                margin: 0.75rem 0 0 0;
+                padding: 0.75rem 0 0 0;
+                border-left: none;
+                border-top: 1px solid var(--gray-200);
+                justify-content: center;
+            }
+
+            /* Hamburger button */
+            .hamburger {
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                width: 24px;
+                height: 18px;
+                background: none;
+                border: none;
+                cursor: pointer;
+                padding: 0;
+            }
+
+            .hamburger span {
+                display: block;
+                width: 100%;
+                height: 2px;
+                background: var(--gray-700);
+                border-radius: 1px;
+                transition: all 0.3s;
+            }
+
+            .hamburger.active span:nth-child(1) {
+                transform: rotate(45deg) translate(5px, 5px);
+            }
+
+            .hamburger.active span:nth-child(2) {
+                opacity: 0;
+            }
+
+            .hamburger.active span:nth-child(3) {
+                transform: rotate(-45deg) translate(5px, -5px);
+            }
+
+            /* Main content */
+            main {
+                padding: 1rem;
+            }
+
+            /* Cards */
+            .card {
+                padding: 1rem;
+                margin-bottom: 1rem;
+                border-radius: 0.375rem;
+            }
+
+            .card-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.75rem;
+            }
+
+            .card-title {
+                font-size: 1.1rem;
+            }
+
+            /* Stats Grid */
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 0.5rem;
+            }
+
+            .stat-card {
+                padding: 1rem;
+            }
+
+            .stat-value {
+                font-size: 1.5rem;
+            }
+
+            .stat-label {
+                font-size: 0.75rem;
+            }
+
+            /* Tables - Horizontal scroll */
+            .table-responsive {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                margin: 0 -1rem;
+                padding: 0 1rem;
+            }
+
+            table {
+                min-width: 500px;
+            }
+
+            th, td {
+                padding: 0.5rem 0.75rem;
+                font-size: 0.875rem;
+            }
+
+            th {
+                font-size: 0.7rem;
+            }
+
+            /* Buttons - Touch friendly */
+            .btn {
+                padding: 0.625rem 1rem;
+                font-size: 0.875rem;
+                min-height: 44px;
+            }
+
+            .btn-secondary {
+                width: 100%;
+                justify-content: center;
+            }
+
+            /* Forms */
+            input, select, textarea {
+                font-size: 16px; /* Prevents zoom on iOS */
+                padding: 0.75rem;
+            }
+
+            /* Grids on mobile */
+            .grid-2, .grid-3 {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+
+            /* Upload area */
+            .upload-area {
+                padding: 2rem 1rem;
+            }
+
+            .upload-icon {
+                font-size: 2rem;
+            }
+
+            /* Modal */
+            .modal-content {
+                width: 95%;
+                padding: 1.25rem;
+                max-height: 85vh;
+            }
+
+            .modal-header {
+                margin-bottom: 1rem;
+            }
+
+            /* Badges */
+            .badge {
+                font-size: 0.7rem;
+                padding: 0.2rem 0.4rem;
+            }
+
+            /* Typography adjustments */
+            h1 {
+                font-size: 1.5rem;
+            }
+
+            h2 {
+                font-size: 1.25rem;
+            }
+
+            h3 {
+                font-size: 1.1rem;
+            }
+
+            /* Utility overrides */
+            .text-muted {
+                font-size: 0.875rem;
+            }
+
+            /* Page-specific mobile styles */
+
+            /* Animal detail page header */
+            [style*="display: flex"][style*="justify-content: space-between"] {
+                flex-direction: column !important;
+                gap: 1rem !important;
+            }
+
+            /* Action buttons container */
+            [style*="display: flex"][style*="gap: 0.5rem"][style*="flex-wrap: wrap"] {
+                flex-direction: column !important;
+                width: 100% !important;
+            }
+
+            [style*="display: flex"][style*="gap: 0.5rem"][style*="flex-wrap: wrap"] .btn {
+                width: 100% !important;
+                justify-content: center !important;
+            }
+
+            /* Clinical notes item */
+            .clinical-note-item [style*="display: flex"][style*="justify-content: space-between"] {
+                flex-direction: column !important;
+                gap: 0.5rem !important;
+            }
+        }
+
+        /* Small mobile (iPhone SE, older devices) */
+        @media (max-width: 375px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .stat-value {
+                font-size: 1.25rem;
+            }
+
+            nav .logo {
+                font-size: 1rem;
             }
         }
         
@@ -462,8 +733,13 @@
             <a href="/" class="logo">
                 <span>🔬</span> {{ t(lang, 'app.title') }}
             </a>
-            <div class="nav-right">
-                <ul>
+            <button class="hamburger" id="hamburgerBtn" aria-label="Toggle menu">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            <div class="nav-right" id="navMenu">
+                <ul id="navLinks">
                     <li><a href="/">{{ t(lang, 'nav.dashboard') }}</a></li>
                     <li><a href="/animals">{{ t(lang, 'nav.animals') }}</a></li>
                     <li><a href="/upload">{{ t(lang, 'nav.upload') }}</a></li>
@@ -482,13 +758,34 @@
     </main>
     
     <script>
+        // Mobile navigation toggle
+        (function() {
+            const hamburger = document.getElementById('hamburgerBtn');
+            const navLinks = document.getElementById('navLinks');
+
+            if (hamburger && navLinks) {
+                hamburger.addEventListener('click', function() {
+                    hamburger.classList.toggle('active');
+                    navLinks.classList.toggle('active');
+                });
+
+                // Close menu when clicking a link
+                navLinks.querySelectorAll('a').forEach(link => {
+                    link.addEventListener('click', function() {
+                        hamburger.classList.remove('active');
+                        navLinks.classList.remove('active');
+                    });
+                });
+            }
+        })();
+
         // Utility functions
         function formatDate(dateStr) {
             if (!dateStr) return 'N/A';
             const d = new Date(dateStr);
             return d.toLocaleDateString('pt-PT');
         }
-        
+
         function showAlert(message, type = 'info') {
             const alert = document.createElement('div');
             alert.className = `alert alert-${type}`;

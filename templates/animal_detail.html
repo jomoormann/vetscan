@@ -61,6 +61,7 @@
     </div>
 
     {% if sessions %}
+    <div class="table-responsive">
     <table>
         <thead>
             <tr>
@@ -108,6 +109,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <p class="text-muted text-center" style="padding: 2rem;">
         {{ t(lang, 'animal_detail.no_tests') }}
@@ -158,6 +160,7 @@
         </button>
     </div>
     {% if diagnosis_reports %}
+    <div class="table-responsive">
     <table>
         <thead>
             <tr>
@@ -191,6 +194,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <p class="text-muted text-center" style="padding: 2rem;">
         {{ t(lang, 'diagnosis.no_reports') }}
