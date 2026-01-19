@@ -81,9 +81,8 @@
     <table>
         <thead>
             <tr>
-                <th>{{ t(lang, 'common.date') }}</th>
+                <th>{{ t(lang, 'imports.table.time') }}</th>
                 <th>{{ t(lang, 'session_detail.animal') }}</th>
-                <th>{{ t(lang, 'common.report') }}</th>
                 <th>{{ t(lang, 'common.sample') }}</th>
                 <th>{{ t(lang, 'common.actions') }}</th>
             </tr>
@@ -91,7 +90,7 @@
         <tbody>
             {% for item in weekly_sessions %}
             <tr>
-                <td>{{ item.session.test_date|format_date }}</td>
+                <td>{{ item.session.created_at|format_date if item.session.created_at else '--' }}</td>
                 <td>
                     <a href="/animal/{{ item.animal.id }}">
                         <strong>{{ item.animal.name }}</strong>
@@ -99,7 +98,6 @@
                     <br>
                     <small class="text-muted">{{ item.animal.species }} - {{ item.animal.breed }}</small>
                 </td>
-                <td>{{ item.session.report_number or 'N/A' }}</td>
                 <td>{{ item.session.sample_type or 'N/A' }}</td>
                 <td>
                     <a href="/session/{{ item.session.id }}" class="btn btn-secondary">
