@@ -41,9 +41,7 @@
             <tr>
                 <th>{{ t(lang, 'imports.table.time') }}</th>
                 <th>{{ t(lang, 'imports.table.email_from') }}</th>
-                <th>{{ t(lang, 'imports.table.attachment') }}</th>
                 <th>{{ t(lang, 'imports.table.status') }}</th>
-                <th>{{ t(lang, 'imports.table.report') }}</th>
                 <th>{{ t(lang, 'imports.table.animal') }}</th>
             </tr>
         </thead>
@@ -59,11 +57,6 @@
                     </div>
                 </td>
                 <td>
-                    <div style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ imp.attachment_name }}">
-                        {{ imp.attachment_name | truncate(25) if imp.attachment_name else '--' }}
-                    </div>
-                </td>
-                <td>
                     {% if imp.import_success %}
                         <span class="badge badge-normal">{{ t(lang, 'imports.status.success') }}</span>
                     {% elif imp.validation_result == 'duplicate' %}
@@ -72,17 +65,6 @@
                         <span class="badge badge-low">{{ t(lang, 'imports.status.rate_limited') }}</span>
                     {% else %}
                         <span class="badge badge-high" title="{{ imp.error_message }}">{{ t(lang, 'imports.status.failed') }}</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if imp.report_number %}
-                        {% if imp.session_id %}
-                            <a href="/session/{{ imp.session_id }}">{{ imp.report_number }}</a>
-                        {% else %}
-                            {{ imp.report_number }}
-                        {% endif %}
-                    {% else %}
-                        <span class="text-muted">--</span>
                     {% endif %}
                 </td>
                 <td>

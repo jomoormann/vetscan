@@ -383,36 +383,41 @@ async def home(request: Request):
         monday = today - timedelta(days=today.weekday())  # Monday of current week
         sunday = monday + timedelta(days=6)  # Sunday of current week
 
-        # Helper to parse date
-        def parse_session_date(d):
+        # Helper to parse datetime (for created_at / import date)
+        def parse_created_at(d):
             if d is None:
                 return None
-            if isinstance(d, date) and not isinstance(d, datetime):
-                return d
             if isinstance(d, datetime):
                 return d.date()
+            if isinstance(d, date):
+                return d
             if isinstance(d, str):
                 try:
-                    return datetime.strptime(d, "%Y-%m-%d").date()
+                    # Try ISO format with time
+                    return datetime.fromisoformat(d.replace('Z', '+00:00')).date()
                 except:
-                    return None
+                    try:
+                        return datetime.strptime(d, "%Y-%m-%d").date()
+                    except:
+                        return None
             return None
 
-        # Get sessions from current week only
+        # Get sessions imported/received in current week (by created_at, not test_date)
         weekly_sessions = []
         for animal in animals:
             sessions = service.db.get_sessions_for_animal(animal.id)
             for session in sessions:
-                session_date = parse_session_date(session.test_date)
-                if session_date and monday <= session_date <= sunday:
+                # Use created_at (import date) instead of test_date
+                import_date = parse_created_at(session.created_at)
+                if import_date and monday <= import_date <= sunday:
                     weekly_sessions.append({
                         'animal': animal,
                         'session': session
                     })
 
-        # Sort by date, most recent first
+        # Sort by import date, most recent first
         def get_sort_date(item):
-            d = parse_session_date(item['session'].test_date)
+            d = parse_created_at(item['session'].created_at)
             return d if d else date.min
 
         weekly_sessions.sort(key=get_sort_date, reverse=True)
