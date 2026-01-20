@@ -89,3 +89,4 @@ Thumbs.db
 
 # SSH key for deployment
 deploy/vetscan_ssh_key
+deploy/DEPLOYMENT_GUIDE.md
