@@ -7,7 +7,8 @@
         "dashboard": "Dashboard",
         "animals": "Animals",
         "upload": "Upload PDF",
-        "imports": "Auto Imports"
+        "imports": "Auto Imports",
+        "admin": "Admin"
     },
     "lang_switcher": {
         "en": "EN",
@@ -324,6 +325,110 @@
             "hours_ago": "hours ago",
             "yesterday": "yesterday",
             "days_ago": "days ago"
+        }
+    },
+    "auth": {
+        "login": {
+            "email": "Email",
+            "email_placeholder": "Enter your email",
+            "forgot_password": "Forgot password?",
+            "no_account": "Don't have an account?",
+            "register_link": "Sign up",
+            "error_disabled": "This account has been disabled"
+        },
+        "register": {
+            "title": "Create Account",
+            "subtitle": "Sign up to access VetScan",
+            "email": "Email",
+            "email_placeholder": "Enter your email",
+            "display_name": "Display Name",
+            "display_name_placeholder": "Your name (optional)",
+            "display_name_hint": "This name will be shown in the app",
+            "password": "Password",
+            "password_placeholder": "Create a password",
+            "password_hint": "Min 8 chars, 1 uppercase, 1 lowercase, 1 number",
+            "password_confirm": "Confirm Password",
+            "password_confirm_placeholder": "Repeat password",
+            "submit": "Create Account",
+            "have_account": "Already have an account?",
+            "login_link": "Sign in",
+            "error_password_mismatch": "Passwords do not match"
+        },
+        "pending": {
+            "title": "Awaiting Approval",
+            "subtitle": "Your account has been created and is waiting for administrator approval.",
+            "what_next": "What happens next?",
+            "what_next_description": "An administrator will review your registration request. You will receive an email when your account is approved.",
+            "registered_email": "Registered Email",
+            "logout": "Sign Out"
+        },
+        "forgot": {
+            "title": "Forgot Password",
+            "subtitle": "Enter your email address and we'll send you a link to reset your password.",
+            "email": "Email",
+            "email_placeholder": "Enter your email",
+            "submit": "Send Reset Link",
+            "back_to_login": "Back to login",
+            "success_title": "Email Sent",
+            "success_message": "If an account with this email exists, you will receive a password reset link shortly. Check your inbox and spam folder."
+        },
+        "reset": {
+            "title": "Reset Password",
+            "subtitle": "Enter your new password below.",
+            "password": "New Password",
+            "password_placeholder": "Enter new password",
+            "password_hint": "Min 8 chars, 1 uppercase, 1 lowercase, 1 number",
+            "password_confirm": "Confirm Password",
+            "password_confirm_placeholder": "Repeat new password",
+            "submit": "Reset Password",
+            "success_title": "Password Reset",
+            "success_message": "Your password has been successfully reset. You can now sign in with your new password.",
+            "login_link": "Sign In",
+            "invalid_token": "This reset link is invalid or has expired.",
+            "request_new_link": "Request a new reset link",
+            "error_password_mismatch": "Passwords do not match"
+        }
+    },
+    "admin": {
+        "users": {
+            "title": "User Management",
+            "subtitle": "Manage user accounts and approvals",
+            "stats": {
+                "total": "Total Users",
+                "approved": "Approved",
+                "pending": "Pending",
+                "disabled": "Disabled"
+            },
+            "pending_title": "Pending Approval",
+            "all_users_title": "All Users",
+            "table": {
+                "email": "Email",
+                "name": "Name",
+                "status": "Status",
+                "role": "Role",
+                "registered": "Registered",
+                "last_login": "Last Login"
+            },
+            "status": {
+                "active": "Active",
+                "pending": "Pending",
+                "disabled": "Disabled"
+            },
+            "role": {
+                "admin": "Admin",
+                "user": "User"
+            },
+            "action": {
+                "approve": "Approve",
+                "disable": "Disable",
+                "enable": "Enable"
+            },
+            "you": "You",
+            "never": "Never",
+            "no_users": "No users registered",
+            "no_users_hint": "Users who register will appear here.",
+            "confirm_approve": "Approve this user?",
+            "confirm_disable": "Disable this user? They will not be able to log in."
         }
     }
 }

@@ -32,10 +32,12 @@ load_dotenv()
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from models import Database, Animal, Symptom, Observation, TestSession, ClinicalNote, DiagnosisReport
+from models import Database, Animal, Symptom, Observation, TestSession, ClinicalNote, DiagnosisReport, User
 from pdf_parser import parse_dnatech_report
 from app import VetProteinService
 from i18n import get_text, get_language_from_request, SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE
+from auth import AuthService, hash_password, verify_password, validate_password, validate_email
+from email_sender import email_service
 
 # Import diagnosis service (optional - may not be installed)
 try:
@@ -83,26 +85,36 @@ AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", secrets.token_hex(32))  # For sig
 AUTH_COOKIE_NAME = "vetscan_session"
 
 
-def create_auth_token(username: str) -> str:
-    """Create a signed authentication token"""
-    message = f"{username}:{AUTH_SECRET_KEY[:16]}"
+def create_auth_token(identifier: str) -> str:
+    """
+    Create a signed authentication token.
+
+    Args:
+        identifier: Either a user ID (for multi-user) or username (for legacy)
+    """
+    message = f"{identifier}:{AUTH_SECRET_KEY[:16]}"
     signature = hmac.new(
         AUTH_SECRET_KEY.encode(),
         message.encode(),
         hashlib.sha256
     ).hexdigest()
-    token = base64.b64encode(f"{username}:{signature}".encode()).decode()
+    token = base64.b64encode(f"{identifier}:{signature}".encode()).decode()
     return token
 
 
 def verify_auth_token(token: str) -> Optional[str]:
-    """Verify an authentication token and return the username if valid"""
+    """
+    Verify an authentication token and return the identifier if valid.
+
+    Returns:
+        The identifier (user ID or username) if valid, None otherwise
+    """
     try:
         decoded = base64.b64decode(token).decode()
-        username, signature = decoded.rsplit(":", 1)
+        identifier, signature = decoded.rsplit(":", 1)
 
         # Recreate expected signature
-        message = f"{username}:{AUTH_SECRET_KEY[:16]}"
+        message = f"{identifier}:{AUTH_SECRET_KEY[:16]}"
         expected_signature = hmac.new(
             AUTH_SECRET_KEY.encode(),
             message.encode(),
@@ -111,7 +123,7 @@ def verify_auth_token(token: str) -> Optional[str]:
 
         # Timing-safe comparison
         if hmac.compare_digest(signature, expected_signature):
-            return username
+            return identifier
     except Exception:
         pass
     return None
@@ -120,26 +132,67 @@ def verify_auth_token(token: str) -> Optional[str]:
 class CookieAuthMiddleware(BaseHTTPMiddleware):
     """
     Cookie-based authentication middleware.
+    Supports both legacy single-user and multi-user database auth.
     Redirects unauthenticated users to the login page.
     """
 
+    # Public paths that don't require authentication
+    PUBLIC_PATHS = [
+        "/login", "/logout", "/register", "/forgot-password", "/reset-password"
+    ]
+
     async def dispatch(self, request: Request, call_next):
-        # Skip authentication if no password is set
+        # Skip authentication if no password is set (dev mode)
         if not AUTH_PASSWORD:
+            request.state.user = None
             return await call_next(request)
 
-        # Allow access to login page and static assets
+        # Allow access to public pages and static assets
         path = request.url.path
-        if path in ["/login", "/logout"] or path.startswith("/static"):
+        if any(path.startswith(p) for p in self.PUBLIC_PATHS) or path.startswith("/static"):
+            request.state.user = None
             return await call_next(request)
 
         # Check for auth cookie
         auth_cookie = request.cookies.get(AUTH_COOKIE_NAME)
 
         if auth_cookie:
-            username = verify_auth_token(auth_cookie)
-            if username:
-                return await call_next(request)
+            # Try to validate the token
+            token_data = verify_auth_token(auth_cookie)
+
+            if token_data:
+                # Check if it's a user ID (multi-user) or username (legacy)
+                if token_data.isdigit():
+                    # Multi-user mode: load user from database
+                    service = get_service()
+                    try:
+                        user = service.db.get_user(int(token_data))
+                        if user:
+                            if not user.is_active:
+                                # User disabled
+                                return RedirectResponse(url="/login?error=disabled", status_code=302)
+                            if not user.is_approved:
+                                # User pending approval
+                                request.state.user = user
+                                if path != "/pending-approval":
+                                    return RedirectResponse(url="/pending-approval", status_code=302)
+                                return await call_next(request)
+                            # Valid, active, approved user
+                            request.state.user = user
+                            return await call_next(request)
+                    finally:
+                        service.close()
+                else:
+                    # Legacy mode: username-based auth
+                    # Check if multi-user is enabled (users exist in DB)
+                    service = get_service()
+                    try:
+                        if service.db.user_count() == 0:
+                            # Legacy mode active
+                            request.state.user = None
+                            return await call_next(request)
+                    finally:
+                        service.close()
 
         # Redirect to login page
         return RedirectResponse(url="/login", status_code=302)
@@ -199,14 +252,22 @@ def parse_date_value(d):
         return d.date()
     if isinstance(d, str):
         try:
-            # Try YYYY-MM-DD format (SQLite default)
-            return datetime.strptime(d, "%Y-%m-%d").date()
+            # Try ISO datetime format (e.g., 2024-01-15T10:30:00)
+            return datetime.fromisoformat(d.replace('Z', '+00:00')).date()
         except:
             try:
-                # Try DD/MM/YYYY format
-                return datetime.strptime(d, "%d/%m/%Y").date()
+                # Try YYYY-MM-DD format (SQLite default)
+                return datetime.strptime(d, "%Y-%m-%d").date()
             except:
-                return None
+                try:
+                    # Try DD/MM/YYYY format
+                    return datetime.strptime(d, "%d/%m/%Y").date()
+                except:
+                    try:
+                        # Try YYYY-MM-DD HH:MM:SS format
+                        return datetime.strptime(d[:19], "%Y-%m-%d %H:%M:%S").date()
+                    except:
+                        return None
     return None
 
 def format_date_filter(d) -> str:
@@ -238,10 +299,27 @@ def format_number_filter(n, decimals=1) -> str:
     except:
         return "--"
 
+def format_datetime_filter(d) -> str:
+    """Format datetime for display in templates"""
+    if d is None:
+        return "N/A"
+    if isinstance(d, str):
+        try:
+            # Try ISO format
+            d = datetime.fromisoformat(d.replace('Z', '+00:00'))
+        except:
+            return d[:16] if len(d) > 16 else d
+    if isinstance(d, datetime):
+        return d.strftime("%d/%m/%Y %H:%M")
+    if isinstance(d, date):
+        return d.strftime("%d/%m/%Y")
+    return "N/A"
+
 # Register filters with Jinja2
 templates.env.filters["format_date"] = format_date_filter
 templates.env.filters["format_date_short"] = format_date_short_filter
 templates.env.filters["format_number"] = format_number_filter
+templates.env.filters["format_datetime"] = format_datetime_filter
 
 # Register translation function as Jinja2 global
 templates.env.globals["t"] = get_text
@@ -305,7 +383,7 @@ def set_lang_cookie(response, lang: str):
 # =============================================================================
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, lang: Optional[str] = None):
+async def login_page(request: Request, lang: Optional[str] = None, error: Optional[str] = None):
     """Display login page"""
     # Get language from query param or detect from request
     if lang and lang in SUPPORTED_LANGUAGES:
@@ -313,10 +391,25 @@ async def login_page(request: Request, lang: Optional[str] = None):
     else:
         current_lang = get_lang(request)
 
+    # Check if multi-user mode is enabled
+    service = get_service()
+    try:
+        multi_user_enabled = service.db.user_count() > 0
+    finally:
+        service.close()
+
+    # Map error codes to messages
+    error_message = None
+    if error == "disabled":
+        error_message = get_text(current_lang, "auth.login.error_disabled")
+    elif error == "invalid":
+        error_message = get_text(current_lang, "login.error")
+
     response = templates.TemplateResponse("login.html", {
         "request": request,
         "lang": current_lang,
-        "error": False
+        "error": error_message,
+        "multi_user_enabled": multi_user_enabled
     })
     return set_lang_cookie(response, current_lang)
 
@@ -324,36 +417,99 @@ async def login_page(request: Request, lang: Optional[str] = None):
 @app.post("/login", response_class=HTMLResponse)
 async def login_submit(
     request: Request,
-    username: str = Form(...),
+    username: str = Form(None),
+    email: str = Form(None),
     password: str = Form(...)
 ):
-    """Handle login form submission"""
+    """Handle login form submission - supports both legacy and multi-user auth"""
     lang = get_lang(request)
 
-    # Validate credentials
-    username_correct = secrets.compare_digest(username, AUTH_USERNAME)
-    password_correct = secrets.compare_digest(password, AUTH_PASSWORD)
+    # Use email field if provided, otherwise use username (for backwards compatibility)
+    login_identifier = email or username
 
-    if username_correct and password_correct:
-        # Create auth token and redirect to home
-        token = create_auth_token(username)
-        response = RedirectResponse(url="/", status_code=302)
-        response.set_cookie(
-            key=AUTH_COOKIE_NAME,
-            value=token,
-            max_age=30 * 24 * 60 * 60,  # 30 days
-            httponly=True,
-            samesite="lax",
-            secure=True  # Only send over HTTPS
-        )
-        return response
+    # Check if multi-user mode is enabled
+    service = get_service()
+    try:
+        user_count = service.db.user_count()
+    finally:
+        service.close()
+
+    if user_count > 0:
+        # Multi-user mode: authenticate against database
+        service = get_service()
+        try:
+            auth_service = AuthService(service.db)
+            user, error_code = auth_service.authenticate(login_identifier, password)
+
+            if user:
+                # Successful authentication
+                token = create_auth_token(str(user.id))
+                if user.is_approved:
+                    response = RedirectResponse(url="/", status_code=302)
+                else:
+                    response = RedirectResponse(url="/pending-approval", status_code=302)
+                response.set_cookie(
+                    key=AUTH_COOKIE_NAME,
+                    value=token,
+                    max_age=30 * 24 * 60 * 60,  # 30 days
+                    httponly=True,
+                    samesite="lax",
+                    secure=True
+                )
+                return response
+
+            # Handle specific errors
+            if error_code == "disabled":
+                return RedirectResponse(url="/login?error=disabled", status_code=302)
+            elif error_code == "pending_approval":
+                # User exists but not approved - create session anyway
+                user = service.db.get_user_by_email(login_identifier)
+                if user:
+                    token = create_auth_token(str(user.id))
+                    response = RedirectResponse(url="/pending-approval", status_code=302)
+                    response.set_cookie(
+                        key=AUTH_COOKIE_NAME,
+                        value=token,
+                        max_age=30 * 24 * 60 * 60,
+                        httponly=True,
+                        samesite="lax",
+                        secure=True
+                    )
+                    return response
+        finally:
+            service.close()
+    else:
+        # Legacy mode: authenticate against env vars
+        username_correct = secrets.compare_digest(login_identifier, AUTH_USERNAME)
+        password_correct = secrets.compare_digest(password, AUTH_PASSWORD)
+
+        if username_correct and password_correct:
+            # Create auth token and redirect to home
+            token = create_auth_token(login_identifier)
+            response = RedirectResponse(url="/", status_code=302)
+            response.set_cookie(
+                key=AUTH_COOKIE_NAME,
+                value=token,
+                max_age=30 * 24 * 60 * 60,  # 30 days
+                httponly=True,
+                samesite="lax",
+                secure=True
+            )
+            return response
 
     # Invalid credentials - show error
+    service = get_service()
+    try:
+        multi_user_enabled = service.db.user_count() > 0
+    finally:
+        service.close()
+
     response = templates.TemplateResponse("login.html", {
         "request": request,
         "lang": lang,
-        "error": True,
-        "username": username
+        "error": get_text(lang, "login.error"),
+        "username": login_identifier,
+        "multi_user_enabled": multi_user_enabled
     })
     return set_lang_cookie(response, lang)
 
@@ -367,6 +523,371 @@ async def logout():
 
 
 # =============================================================================
+# MULTI-USER AUTHENTICATION ROUTES
+# =============================================================================
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request, lang: Optional[str] = None):
+    """Display registration page"""
+    if lang and lang in SUPPORTED_LANGUAGES:
+        current_lang = lang
+    else:
+        current_lang = get_lang(request)
+
+    response = templates.TemplateResponse("auth/register.html", {
+        "request": request,
+        "lang": current_lang,
+        "error": None
+    })
+    return set_lang_cookie(response, current_lang)
+
+
+@app.post("/register", response_class=HTMLResponse)
+async def register_submit(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+    display_name: str = Form(None)
+):
+    """Handle registration form submission"""
+    lang = get_lang(request)
+
+    # Validate passwords match
+    if password != password_confirm:
+        response = templates.TemplateResponse("auth/register.html", {
+            "request": request,
+            "lang": lang,
+            "error": get_text(lang, "auth.register.error_password_mismatch"),
+            "email": email,
+            "display_name": display_name
+        })
+        return set_lang_cookie(response, lang)
+
+    service = get_service()
+    try:
+        auth_service = AuthService(service.db)
+        user, error = auth_service.register_user(email, password, display_name)
+
+        if error:
+            response = templates.TemplateResponse("auth/register.html", {
+                "request": request,
+                "lang": lang,
+                "error": error,
+                "email": email,
+                "display_name": display_name
+            })
+            return set_lang_cookie(response, lang)
+
+        # Send notification to admins
+        superusers = service.db.get_superusers()
+        if superusers and email_service.is_configured():
+            admin_emails = [u.email for u in superusers]
+            host = request.headers.get("host", "localhost")
+            scheme = "https" if request.headers.get("x-forwarded-proto") == "https" else "http"
+            admin_url = f"{scheme}://{host}/admin/users"
+            email_service.send_new_registration_alert(
+                admin_emails, email, display_name, admin_url, lang
+            )
+
+        # Create session and redirect to pending approval
+        token = create_auth_token(str(user.id))
+        response = RedirectResponse(url="/pending-approval", status_code=302)
+        response.set_cookie(
+            key=AUTH_COOKIE_NAME,
+            value=token,
+            max_age=30 * 24 * 60 * 60,
+            httponly=True,
+            samesite="lax",
+            secure=True
+        )
+        return response
+    finally:
+        service.close()
+
+
+@app.get("/pending-approval", response_class=HTMLResponse)
+async def pending_approval_page(request: Request, lang: Optional[str] = None):
+    """Display pending approval page"""
+    if lang and lang in SUPPORTED_LANGUAGES:
+        current_lang = lang
+    else:
+        current_lang = get_lang(request)
+
+    user = getattr(request.state, 'user', None)
+
+    response = templates.TemplateResponse("auth/pending_approval.html", {
+        "request": request,
+        "lang": current_lang,
+        "email": user.email if user else None
+    })
+    return set_lang_cookie(response, current_lang)
+
+
+@app.get("/forgot-password", response_class=HTMLResponse)
+async def forgot_password_page(request: Request, lang: Optional[str] = None):
+    """Display forgot password page"""
+    if lang and lang in SUPPORTED_LANGUAGES:
+        current_lang = lang
+    else:
+        current_lang = get_lang(request)
+
+    response = templates.TemplateResponse("auth/forgot_password.html", {
+        "request": request,
+        "lang": current_lang,
+        "error": None,
+        "success": False
+    })
+    return set_lang_cookie(response, current_lang)
+
+
+@app.post("/forgot-password", response_class=HTMLResponse)
+async def forgot_password_submit(
+    request: Request,
+    email: str = Form(...)
+):
+    """Handle forgot password form submission"""
+    lang = get_lang(request)
+
+    service = get_service()
+    try:
+        auth_service = AuthService(service.db)
+        token, _ = auth_service.create_password_reset_token(email)
+
+        if token and email_service.is_configured():
+            # Send password reset email
+            host = request.headers.get("host", "localhost")
+            scheme = "https" if request.headers.get("x-forwarded-proto") == "https" else "http"
+            reset_url = f"{scheme}://{host}/reset-password?token={token}"
+
+            user = service.db.get_user_by_email(email)
+            email_service.send_password_reset(
+                email, reset_url,
+                user.display_name if user else None,
+                lang
+            )
+    finally:
+        service.close()
+
+    # Always show success message (don't reveal if email exists)
+    response = templates.TemplateResponse("auth/forgot_password.html", {
+        "request": request,
+        "lang": lang,
+        "error": None,
+        "success": True
+    })
+    return set_lang_cookie(response, lang)
+
+
+@app.get("/reset-password", response_class=HTMLResponse)
+async def reset_password_page(
+    request: Request,
+    token: str,
+    lang: Optional[str] = None
+):
+    """Display reset password page"""
+    if lang and lang in SUPPORTED_LANGUAGES:
+        current_lang = lang
+    else:
+        current_lang = get_lang(request)
+
+    # Validate token exists and is not expired
+    from auth import hash_token
+    service = get_service()
+    try:
+        token_hash = hash_token(token)
+        reset_token = service.db.get_password_reset_token(token_hash)
+
+        if not reset_token or reset_token.used_at:
+            response = templates.TemplateResponse("auth/reset_password.html", {
+                "request": request,
+                "lang": current_lang,
+                "invalid_token": True,
+                "token": token
+            })
+            return set_lang_cookie(response, current_lang)
+
+        # Check expiry
+        from datetime import datetime
+        if isinstance(reset_token.expires_at, str):
+            expires_at = datetime.fromisoformat(reset_token.expires_at)
+        else:
+            expires_at = reset_token.expires_at
+
+        if expires_at < datetime.now():
+            response = templates.TemplateResponse("auth/reset_password.html", {
+                "request": request,
+                "lang": current_lang,
+                "invalid_token": True,
+                "token": token
+            })
+            return set_lang_cookie(response, current_lang)
+    finally:
+        service.close()
+
+    response = templates.TemplateResponse("auth/reset_password.html", {
+        "request": request,
+        "lang": current_lang,
+        "token": token,
+        "error": None,
+        "success": False
+    })
+    return set_lang_cookie(response, current_lang)
+
+
+@app.post("/reset-password", response_class=HTMLResponse)
+async def reset_password_submit(
+    request: Request,
+    token: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(...)
+):
+    """Handle reset password form submission"""
+    lang = get_lang(request)
+
+    # Validate passwords match
+    if password != password_confirm:
+        response = templates.TemplateResponse("auth/reset_password.html", {
+            "request": request,
+            "lang": lang,
+            "token": token,
+            "error": get_text(lang, "auth.reset.error_password_mismatch"),
+            "success": False
+        })
+        return set_lang_cookie(response, lang)
+
+    service = get_service()
+    try:
+        auth_service = AuthService(service.db)
+        success, error = auth_service.reset_password(token, password)
+
+        if not success:
+            response = templates.TemplateResponse("auth/reset_password.html", {
+                "request": request,
+                "lang": lang,
+                "token": token,
+                "error": error,
+                "success": False
+            })
+            return set_lang_cookie(response, lang)
+    finally:
+        service.close()
+
+    # Success
+    response = templates.TemplateResponse("auth/reset_password.html", {
+        "request": request,
+        "lang": lang,
+        "token": token,
+        "error": None,
+        "success": True
+    })
+    return set_lang_cookie(response, lang)
+
+
+# =============================================================================
+# ADMIN ROUTES
+# =============================================================================
+
+def require_superuser(request: Request) -> User:
+    """Helper to require superuser access"""
+    user = getattr(request.state, 'user', None)
+    if not user or not user.is_superuser:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+@app.get("/admin/users", response_class=HTMLResponse)
+async def admin_users_page(request: Request):
+    """Admin user management page"""
+    lang = get_lang(request)
+    current_user = require_superuser(request)
+
+    service = get_service()
+    try:
+        users = service.db.list_users(include_inactive=True)
+        pending_users = service.db.get_pending_users()
+
+        # Calculate stats
+        stats = {
+            "total": len(users),
+            "approved": sum(1 for u in users if u.is_approved and u.is_active),
+            "pending": len(pending_users),
+            "disabled": sum(1 for u in users if not u.is_active)
+        }
+
+        response = templates.TemplateResponse("admin/users.html", {
+            "request": request,
+            "lang": lang,
+            "users": users,
+            "pending_users": pending_users,
+            "stats": stats,
+            "current_user": current_user
+        })
+        return set_lang_cookie(response, lang)
+    finally:
+        service.close()
+
+
+@app.post("/admin/users/{user_id}/approve")
+async def admin_approve_user(request: Request, user_id: int):
+    """Approve a pending user"""
+    current_user = require_superuser(request)
+    lang = get_lang(request)
+
+    service = get_service()
+    try:
+        user = service.db.get_user(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        service.db.approve_user(user_id, current_user.id)
+
+        # Send approval notification email
+        if email_service.is_configured():
+            host = request.headers.get("host", "localhost")
+            scheme = "https" if request.headers.get("x-forwarded-proto") == "https" else "http"
+            login_url = f"{scheme}://{host}/login"
+            email_service.send_account_approved(
+                user.email, login_url, user.display_name, lang
+            )
+    finally:
+        service.close()
+
+    return RedirectResponse(url="/admin/users", status_code=302)
+
+
+@app.post("/admin/users/{user_id}/disable")
+async def admin_disable_user(request: Request, user_id: int):
+    """Disable a user account"""
+    current_user = require_superuser(request)
+
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot disable your own account")
+
+    service = get_service()
+    try:
+        service.db.disable_user(user_id)
+    finally:
+        service.close()
+
+    return RedirectResponse(url="/admin/users", status_code=302)
+
+
+@app.post("/admin/users/{user_id}/enable")
+async def admin_enable_user(request: Request, user_id: int):
+    """Re-enable a disabled user account"""
+    require_superuser(request)
+
+    service = get_service()
+    try:
+        service.db.enable_user(user_id)
+    finally:
+        service.close()
+
+    return RedirectResponse(url="/admin/users", status_code=302)
+
+
+# =============================================================================
 # API ROUTES
 # =============================================================================
 
@@ -374,6 +895,7 @@ async def logout():
 async def home(request: Request):
     """Home page - dashboard with overview"""
     lang = get_lang(request)
+    current_user = getattr(request.state, 'user', None)
     service = get_service()
     try:
         animals = service.db.list_animals()
@@ -436,7 +958,8 @@ async def home(request: Request):
             "week_start": monday,
             "week_end": sunday,
             "total_animals": len(animals),
-            "total_tests": total_tests
+            "total_tests": total_tests,
+            "current_user": current_user
         })
         return set_lang_cookie(response, lang)
     except Exception as e:
@@ -452,6 +975,7 @@ async def home(request: Request):
 async def list_animals(request: Request):
     """List all animals"""
     lang = get_lang(request)
+    current_user = getattr(request.state, 'user', None)
     service = get_service()
     try:
         animals = service.db.list_animals()
@@ -467,7 +991,8 @@ async def list_animals(request: Request):
         response = templates.TemplateResponse("animals.html", {
             "request": request,
             "lang": lang,
-            "animals": animals_with_counts
+            "animals": animals_with_counts,
+            "current_user": current_user
         })
         return set_lang_cookie(response, lang)
     except Exception as e:
@@ -483,6 +1008,7 @@ async def list_animals(request: Request):
 async def view_animal(request: Request, animal_id: int):
     """View animal details and test history"""
     lang = get_lang(request)
+    current_user = getattr(request.state, 'user', None)
     service = get_service()
     try:
         animal = service.db.get_animal(animal_id)
@@ -518,7 +1044,8 @@ async def view_animal(request: Request, animal_id: int):
             "observations": observations,
             "clinical_notes": clinical_notes,
             "diagnosis_reports": diagnosis_reports,
-            "diagnosis_available": DIAGNOSIS_AVAILABLE
+            "diagnosis_available": DIAGNOSIS_AVAILABLE,
+            "current_user": current_user
         })
         return set_lang_cookie(response, lang)
     except HTTPException:
@@ -536,6 +1063,7 @@ async def view_animal(request: Request, animal_id: int):
 async def view_session(request: Request, session_id: int):
     """View detailed test session results"""
     lang = get_lang(request)
+    current_user = getattr(request.state, 'user', None)
     service = get_service()
     try:
         # Get session
@@ -577,7 +1105,8 @@ async def view_session(request: Request, session_id: int):
             "biochemistry": biochem,
             "urinalysis": urinalysis,
             "previous_session": previous_session,
-            "comparison": comparison
+            "comparison": comparison,
+            "current_user": current_user
         })
         return set_lang_cookie(response, lang)
     except HTTPException:
@@ -595,9 +1124,11 @@ async def view_session(request: Request, session_id: int):
 async def upload_page(request: Request):
     """PDF upload page"""
     lang = get_lang(request)
+    current_user = getattr(request.state, 'user', None)
     response = templates.TemplateResponse("upload.html", {
         "request": request,
-        "lang": lang
+        "lang": lang,
+        "current_user": current_user
     })
     return set_lang_cookie(response, lang)
 
@@ -606,6 +1137,7 @@ async def upload_page(request: Request):
 async def view_imports(request: Request):
     """View automatic email imports"""
     lang = get_lang(request)
+    current_user = getattr(request.state, 'user', None)
     service = get_service()
     try:
         # Get email address from config
@@ -670,7 +1202,8 @@ async def view_imports(request: Request):
             "lang": lang,
             "email_address": email_address,
             "imports": imports,
-            "stats": stats
+            "stats": stats,
+            "current_user": current_user
         })
         return set_lang_cookie(response, lang)
     except Exception as e:
@@ -975,6 +1508,7 @@ async def generate_diagnosis(
 async def view_diagnosis_report(request: Request, animal_id: int, report_id: int):
     """View a diagnosis report"""
     lang = get_lang(request)
+    current_user = getattr(request.state, 'user', None)
     service = get_service()
     try:
         animal = service.db.get_animal(animal_id)
@@ -989,7 +1523,8 @@ async def view_diagnosis_report(request: Request, animal_id: int, report_id: int
             "request": request,
             "lang": lang,
             "animal": animal,
-            "report": report
+            "report": report,
+            "current_user": current_user
         })
         return set_lang_cookie(response, lang)
     except HTTPException:
@@ -1070,6 +1605,7 @@ async def api_get_diagnosis_report(report_id: int):
 async def compare_sessions_page(request: Request, animal_id: int):
     """Compare multiple sessions for an animal"""
     lang = get_lang(request)
+    current_user = getattr(request.state, 'user', None)
     service = get_service()
     try:
         animal = service.db.get_animal(animal_id)
@@ -1087,7 +1623,8 @@ async def compare_sessions_page(request: Request, animal_id: int):
                 "comparison_data": [],
                 "urinalysis_data": [],
                 "has_urinalysis": False,
-                "error": get_text(lang, "compare.need_two_tests")
+                "error": get_text(lang, "compare.need_two_tests"),
+                "current_user": current_user
             })
             return set_lang_cookie(response, lang)
 
@@ -1133,7 +1670,8 @@ async def compare_sessions_page(request: Request, animal_id: int):
             "comparison_data": comparison_data,
             "urinalysis_data": urinalysis_data,
             "has_urinalysis": has_urinalysis,
-            "error": None
+            "error": None,
+            "current_user": current_user
         })
         return set_lang_cookie(response, lang)
     except HTTPException:

@@ -250,6 +250,43 @@ class DiagnosisReport:
     created_at: Optional[datetime] = None
 
 
+@dataclass
+class User:
+    """
+    Represents an authenticated user of the system.
+
+    Users must be approved by an admin before they can access the system.
+    """
+    id: Optional[int] = None
+    email: str = ""
+    email_normalized: str = ""  # Lowercase version for case-insensitive lookups
+    password_hash: str = ""
+    display_name: Optional[str] = None
+    is_active: bool = True
+    is_approved: bool = False
+    is_superuser: bool = False
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    last_login_at: Optional[datetime] = None
+    approved_at: Optional[datetime] = None
+    approved_by_user_id: Optional[int] = None
+
+
+@dataclass
+class PasswordResetToken:
+    """
+    Represents a password reset token.
+
+    Tokens are hashed in the database and have a 1-hour expiry.
+    """
+    id: Optional[int] = None
+    user_id: int = 0
+    token_hash: str = ""
+    expires_at: Optional[datetime] = None
+    used_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
+
 # =============================================================================
 # ADDITIONAL RESULT CLASSES
 # =============================================================================
@@ -633,6 +670,38 @@ CREATE TABLE IF NOT EXISTS email_import_log (
     session_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_import_log_timestamp ON email_import_log(import_timestamp);
+
+-- Users table (multi-user authentication)
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    email_normalized TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    display_name TEXT,
+    is_active INTEGER DEFAULT 1,
+    is_approved INTEGER DEFAULT 0,
+    is_superuser INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login_at TIMESTAMP,
+    approved_at TIMESTAMP,
+    approved_by_user_id INTEGER,
+    FOREIGN KEY (approved_by_user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_email_normalized ON users(email_normalized);
+
+-- Password reset tokens
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TIMESTAMP NOT NULL,
+    used_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_reset_tokens_hash ON password_reset_tokens(token_hash);
 
 -- View for easy result querying with animal info
 CREATE VIEW IF NOT EXISTS v_results_with_animal AS
@@ -1076,6 +1145,149 @@ class Database:
             "DELETE FROM diagnosis_reports WHERE id = ?", (report_id,))
         self.conn.commit()
         return cursor.rowcount > 0
+
+    # -------------------------------------------------------------------------
+    # User CRUD
+    # -------------------------------------------------------------------------
+
+    def create_user(self, user: 'User') -> int:
+        """Insert a new user and return their ID"""
+        cursor = self.conn.execute("""
+            INSERT INTO users (email, email_normalized, password_hash, display_name,
+                              is_active, is_approved, is_superuser)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user.email, user.email_normalized, user.password_hash,
+              user.display_name, user.is_active, user.is_approved, user.is_superuser))
+        self.conn.commit()
+        return cursor.lastrowid
+
+    def get_user(self, user_id: int) -> Optional['User']:
+        """Get a user by ID"""
+        cursor = self.conn.execute(
+            "SELECT * FROM users WHERE id = ?", (user_id,))
+        row = cursor.fetchone()
+        if row:
+            return User(**dict(row))
+        return None
+
+    def get_user_by_email(self, email: str) -> Optional['User']:
+        """Get a user by email (case-insensitive)"""
+        email_normalized = email.lower().strip()
+        cursor = self.conn.execute(
+            "SELECT * FROM users WHERE email_normalized = ?", (email_normalized,))
+        row = cursor.fetchone()
+        if row:
+            return User(**dict(row))
+        return None
+
+    def list_users(self, include_inactive: bool = False) -> List['User']:
+        """List all users, optionally including inactive ones"""
+        if include_inactive:
+            cursor = self.conn.execute(
+                "SELECT * FROM users ORDER BY created_at DESC")
+        else:
+            cursor = self.conn.execute(
+                "SELECT * FROM users WHERE is_active = 1 ORDER BY created_at DESC")
+        return [User(**dict(row)) for row in cursor.fetchall()]
+
+    def get_pending_users(self) -> List['User']:
+        """Get users who are active but not yet approved"""
+        cursor = self.conn.execute("""
+            SELECT * FROM users
+            WHERE is_active = 1 AND is_approved = 0
+            ORDER BY created_at ASC
+        """)
+        return [User(**dict(row)) for row in cursor.fetchall()]
+
+    def get_superusers(self) -> List['User']:
+        """Get all superuser accounts"""
+        cursor = self.conn.execute("""
+            SELECT * FROM users
+            WHERE is_superuser = 1 AND is_active = 1
+            ORDER BY created_at ASC
+        """)
+        return [User(**dict(row)) for row in cursor.fetchall()]
+
+    def update_user(self, user_id: int, **kwargs) -> bool:
+        """Update user fields"""
+        allowed_fields = {'display_name', 'is_active', 'is_approved', 'is_superuser',
+                         'password_hash', 'last_login_at', 'approved_at', 'approved_by_user_id'}
+        update_fields = {k: v for k, v in kwargs.items() if k in allowed_fields}
+        if not update_fields:
+            return False
+
+        update_fields['updated_at'] = datetime.now().isoformat()
+        set_clause = ", ".join(f"{k} = ?" for k in update_fields.keys())
+        values = list(update_fields.values()) + [user_id]
+
+        cursor = self.conn.execute(
+            f"UPDATE users SET {set_clause} WHERE id = ?", values)
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def approve_user(self, user_id: int, approved_by_user_id: int) -> bool:
+        """Approve a user account"""
+        return self.update_user(
+            user_id,
+            is_approved=True,
+            approved_at=datetime.now().isoformat(),
+            approved_by_user_id=approved_by_user_id
+        )
+
+    def disable_user(self, user_id: int) -> bool:
+        """Disable a user account"""
+        return self.update_user(user_id, is_active=False)
+
+    def enable_user(self, user_id: int) -> bool:
+        """Re-enable a user account"""
+        return self.update_user(user_id, is_active=True)
+
+    def user_count(self) -> int:
+        """Get total number of users"""
+        cursor = self.conn.execute("SELECT COUNT(*) FROM users")
+        return cursor.fetchone()[0]
+
+    # -------------------------------------------------------------------------
+    # Password Reset Token CRUD
+    # -------------------------------------------------------------------------
+
+    def create_password_reset_token(self, user_id: int, token_hash: str,
+                                    expires_at: datetime) -> int:
+        """Create a password reset token"""
+        cursor = self.conn.execute("""
+            INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+            VALUES (?, ?, ?)
+        """, (user_id, token_hash, expires_at.isoformat()))
+        self.conn.commit()
+        return cursor.lastrowid
+
+    def get_password_reset_token(self, token_hash: str) -> Optional['PasswordResetToken']:
+        """Get a password reset token by its hash"""
+        cursor = self.conn.execute(
+            "SELECT * FROM password_reset_tokens WHERE token_hash = ?", (token_hash,))
+        row = cursor.fetchone()
+        if row:
+            return PasswordResetToken(**dict(row))
+        return None
+
+    def mark_token_used(self, token_id: int) -> bool:
+        """Mark a password reset token as used"""
+        cursor = self.conn.execute("""
+            UPDATE password_reset_tokens
+            SET used_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (token_id,))
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def cleanup_expired_tokens(self) -> int:
+        """Remove expired password reset tokens"""
+        cursor = self.conn.execute("""
+            DELETE FROM password_reset_tokens
+            WHERE expires_at < CURRENT_TIMESTAMP OR used_at IS NOT NULL
+        """)
+        self.conn.commit()
+        return cursor.rowcount
 
 
 # =============================================================================

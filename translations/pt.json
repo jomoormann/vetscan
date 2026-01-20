@@ -7,7 +7,8 @@
         "dashboard": "Dashboard",
         "animals": "Animais",
         "upload": "Upload PDF",
-        "imports": "Importações"
+        "imports": "Importações",
+        "admin": "Admin"
     },
     "lang_switcher": {
         "en": "EN",
@@ -324,6 +325,110 @@
             "hours_ago": "horas atrás",
             "yesterday": "ontem",
             "days_ago": "dias atrás"
+        }
+    },
+    "auth": {
+        "login": {
+            "email": "Email",
+            "email_placeholder": "Introduza o seu email",
+            "forgot_password": "Esqueceu a palavra-passe?",
+            "no_account": "Não tem conta?",
+            "register_link": "Registar",
+            "error_disabled": "Esta conta foi desativada"
+        },
+        "register": {
+            "title": "Criar Conta",
+            "subtitle": "Registe-se para aceder ao VetScan",
+            "email": "Email",
+            "email_placeholder": "Introduza o seu email",
+            "display_name": "Nome",
+            "display_name_placeholder": "O seu nome (opcional)",
+            "display_name_hint": "Este nome será mostrado na aplicação",
+            "password": "Palavra-passe",
+            "password_placeholder": "Crie uma palavra-passe",
+            "password_hint": "Mín 8 caract., 1 maiúscula, 1 minúscula, 1 número",
+            "password_confirm": "Confirmar Palavra-passe",
+            "password_confirm_placeholder": "Repita a palavra-passe",
+            "submit": "Criar Conta",
+            "have_account": "Já tem conta?",
+            "login_link": "Iniciar sessão",
+            "error_password_mismatch": "As palavras-passe não coincidem"
+        },
+        "pending": {
+            "title": "Aguarda Aprovação",
+            "subtitle": "A sua conta foi criada e aguarda aprovação do administrador.",
+            "what_next": "O que acontece a seguir?",
+            "what_next_description": "Um administrador irá rever o seu pedido de registo. Receberá um email quando a sua conta for aprovada.",
+            "registered_email": "Email Registado",
+            "logout": "Terminar Sessão"
+        },
+        "forgot": {
+            "title": "Recuperar Palavra-passe",
+            "subtitle": "Introduza o seu email e enviaremos um link para repor a sua palavra-passe.",
+            "email": "Email",
+            "email_placeholder": "Introduza o seu email",
+            "submit": "Enviar Link",
+            "back_to_login": "Voltar ao login",
+            "success_title": "Email Enviado",
+            "success_message": "Se existir uma conta com este email, receberá em breve um link para repor a palavra-passe. Verifique a sua caixa de entrada e pasta de spam."
+        },
+        "reset": {
+            "title": "Repor Palavra-passe",
+            "subtitle": "Introduza a sua nova palavra-passe abaixo.",
+            "password": "Nova Palavra-passe",
+            "password_placeholder": "Introduza nova palavra-passe",
+            "password_hint": "Mín 8 caract., 1 maiúscula, 1 minúscula, 1 número",
+            "password_confirm": "Confirmar Palavra-passe",
+            "password_confirm_placeholder": "Repita a nova palavra-passe",
+            "submit": "Repor Palavra-passe",
+            "success_title": "Palavra-passe Reposta",
+            "success_message": "A sua palavra-passe foi reposta com sucesso. Pode agora iniciar sessão com a nova palavra-passe.",
+            "login_link": "Iniciar Sessão",
+            "invalid_token": "Este link de reposição é inválido ou expirou.",
+            "request_new_link": "Pedir novo link",
+            "error_password_mismatch": "As palavras-passe não coincidem"
+        }
+    },
+    "admin": {
+        "users": {
+            "title": "Gestão de Utilizadores",
+            "subtitle": "Gerir contas de utilizadores e aprovações",
+            "stats": {
+                "total": "Total Utilizadores",
+                "approved": "Aprovados",
+                "pending": "Pendentes",
+                "disabled": "Desativados"
+            },
+            "pending_title": "Pendentes de Aprovação",
+            "all_users_title": "Todos os Utilizadores",
+            "table": {
+                "email": "Email",
+                "name": "Nome",
+                "status": "Estado",
+                "role": "Função",
+                "registered": "Registado",
+                "last_login": "Último Login"
+            },
+            "status": {
+                "active": "Ativo",
+                "pending": "Pendente",
+                "disabled": "Desativado"
+            },
+            "role": {
+                "admin": "Admin",
+                "user": "Utilizador"
+            },
+            "action": {
+                "approve": "Aprovar",
+                "disable": "Desativar",
+                "enable": "Ativar"
+            },
+            "you": "Você",
+            "never": "Nunca",
+            "no_users": "Sem utilizadores registados",
+            "no_users_hint": "Os utilizadores que se registarem aparecerão aqui.",
+            "confirm_approve": "Aprovar este utilizador?",
+            "confirm_disable": "Desativar este utilizador? Não poderá iniciar sessão."
         }
     }
 }

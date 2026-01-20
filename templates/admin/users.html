@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(lang, 'admin.users.title') }} - {{ t(lang, 'app.title') }}{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+    <div>
+        <h1 style="font-size: 1.5rem; font-weight: 700; color: var(--gray-900);">{{ t(lang, 'admin.users.title') }}</h1>
+        <p class="text-muted" style="margin-top: 0.25rem;">{{ t(lang, 'admin.users.subtitle') }}</p>
+    </div>
+</div>
+
+<!-- Stats -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.total }}</div>
+        <div class="stat-label">{{ t(lang, 'admin.users.stats.total') }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" style="color: var(--success);">{{ stats.approved }}</div>
+        <div class="stat-label">{{ t(lang, 'admin.users.stats.approved') }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" style="color: var(--warning);">{{ stats.pending }}</div>
+        <div class="stat-label">{{ t(lang, 'admin.users.stats.pending') }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" style="color: var(--gray-500);">{{ stats.disabled }}</div>
+        <div class="stat-label">{{ t(lang, 'admin.users.stats.disabled') }}</div>
+    </div>
+</div>
+
+{% if pending_users %}
+<!-- Pending Approval Section -->
+<div class="card" style="border-left: 4px solid var(--warning);">
+    <div class="card-header" style="border-bottom: none; padding-bottom: 0.5rem;">
+        <h2 class="card-title" style="display: flex; align-items: center; gap: 0.5rem;">
+            ⏳ {{ t(lang, 'admin.users.pending_title') }}
+            <span class="badge" style="background: var(--warning); color: white;">{{ pending_users|length }}</span>
+        </h2>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>{{ t(lang, 'admin.users.table.email') }}</th>
+                    <th>{{ t(lang, 'admin.users.table.name') }}</th>
+                    <th>{{ t(lang, 'admin.users.table.registered') }}</th>
+                    <th style="text-align: right;">{{ t(lang, 'common.actions') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in pending_users %}
+                <tr>
+                    <td>
+                        <strong>{{ user.email }}</strong>
+                    </td>
+                    <td>{{ user.display_name or '--' }}</td>
+                    <td>{{ user.created_at|format_date }}</td>
+                    <td style="text-align: right;">
+                        <form method="POST" action="/admin/users/{{ user.id }}/approve" style="display: inline;">
+                            <button type="submit" class="btn btn-success" onclick="return confirm('{{ t(lang, 'admin.users.confirm_approve') }}')">
+                                ✓ {{ t(lang, 'admin.users.action.approve') }}
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- All Users Section -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ t(lang, 'admin.users.all_users_title') }}</h2>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>{{ t(lang, 'admin.users.table.email') }}</th>
+                    <th>{{ t(lang, 'admin.users.table.name') }}</th>
+                    <th>{{ t(lang, 'admin.users.table.status') }}</th>
+                    <th class="mobile-hide">{{ t(lang, 'admin.users.table.role') }}</th>
+                    <th class="mobile-hide">{{ t(lang, 'admin.users.table.last_login') }}</th>
+                    <th style="text-align: right;">{{ t(lang, 'common.actions') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr {% if not user.is_active %}style="opacity: 0.6;"{% endif %}>
+                    <td>
+                        <strong>{{ user.email }}</strong>
+                        {% if user.id == current_user.id %}
+                        <span class="badge badge-info" style="margin-left: 0.25rem;">{{ t(lang, 'admin.users.you') }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ user.display_name or '--' }}</td>
+                    <td>
+                        {% if not user.is_active %}
+                        <span class="badge badge-low">{{ t(lang, 'admin.users.status.disabled') }}</span>
+                        {% elif not user.is_approved %}
+                        <span class="badge" style="background: var(--warning); color: white;">{{ t(lang, 'admin.users.status.pending') }}</span>
+                        {% else %}
+                        <span class="badge badge-normal">{{ t(lang, 'admin.users.status.active') }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="mobile-hide">
+                        {% if user.is_superuser %}
+                        <span class="badge badge-info">{{ t(lang, 'admin.users.role.admin') }}</span>
+                        {% else %}
+                        <span class="text-muted">{{ t(lang, 'admin.users.role.user') }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="mobile-hide">
+                        {% if user.last_login_at %}
+                        {{ user.last_login_at|format_date }}
+                        {% else %}
+                        <span class="text-muted">{{ t(lang, 'admin.users.never') }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: right;">
+                        {% if user.id != current_user.id %}
+                            {% if not user.is_approved and user.is_active %}
+                            <form method="POST" action="/admin/users/{{ user.id }}/approve" style="display: inline;">
+                                <button type="submit" class="btn btn-success" title="{{ t(lang, 'admin.users.action.approve') }}">✓</button>
+                            </form>
+                            {% endif %}
+
+                            {% if user.is_active %}
+                            <form method="POST" action="/admin/users/{{ user.id }}/disable" style="display: inline;">
+                                <button type="submit" class="btn btn-secondary" onclick="return confirm('{{ t(lang, 'admin.users.confirm_disable') }}')" title="{{ t(lang, 'admin.users.action.disable') }}">🚫</button>
+                            </form>
+                            {% else %}
+                            <form method="POST" action="/admin/users/{{ user.id }}/enable" style="display: inline;">
+                                <button type="submit" class="btn btn-secondary" title="{{ t(lang, 'admin.users.action.enable') }}">↩️</button>
+                            </form>
+                            {% endif %}
+                        {% else %}
+                        <span class="text-muted">--</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if not users %}
+<div class="card" style="text-align: center; padding: 3rem;">
+    <div style="font-size: 3rem; margin-bottom: 1rem;">👥</div>
+    <h3 style="margin-bottom: 0.5rem;">{{ t(lang, 'admin.users.no_users') }}</h3>
+    <p class="text-muted">{{ t(lang, 'admin.users.no_users_hint') }}</p>
+</div>
+{% endif %}
+
+<style>
+    /* Additional admin-specific styles */
+    .stats-grid {
+        margin-bottom: 1.5rem;
+    }
+
+    @media (max-width: 430px) {
+        .card-header {
+            flex-direction: row !important;
+            align-items: center !important;
+        }
+
+        td .btn {
+            padding: 0.3rem 0.5rem;
+            font-size: 0.75rem;
+            min-height: unset;
+        }
+    }
+</style>
+{% endblock %}
