@@ -40,6 +40,11 @@ from app import VetProteinService
 from i18n import get_text, get_language_from_request, SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE
 from auth import AuthService, hash_password, verify_password, validate_password, validate_email
 from email_sender import email_service
+from logging_config import get_logger, setup_logging
+from pdf_validator import PDFValidator, ValidationResult
+
+# Initialize logger for this module
+logger = get_logger("web_server")
 
 # Import diagnosis service (optional - may not be installed)
 try:
@@ -237,6 +242,7 @@ class CookieAuthMiddleware(BaseHTTPMiddleware):
     Cookie-based authentication middleware.
     Supports both legacy single-user and multi-user database auth.
     Redirects unauthenticated users to the login page.
+    Immediately invalidates sessions for disabled users.
     """
 
     # Public paths that don't require authentication
@@ -272,8 +278,12 @@ class CookieAuthMiddleware(BaseHTTPMiddleware):
                         user = service.db.get_user(int(token_data))
                         if user:
                             if not user.is_active:
-                                # User disabled
-                                return RedirectResponse(url="/login?error=disabled", status_code=302)
+                                # User disabled - invalidate session immediately
+                                logger.info(f"Session invalidated for disabled user: {user.email}")
+                                response = RedirectResponse(url="/login?error=disabled", status_code=302)
+                                # Clear the auth cookie to fully invalidate the session
+                                response.delete_cookie(key=AUTH_COOKIE_NAME)
+                                return response
                             if not user.is_approved:
                                 # User pending approval
                                 request.state.user = user
@@ -328,6 +338,45 @@ class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
 # Add middleware (order matters: HTTPS redirect first, then auth)
 app.add_middleware(CookieAuthMiddleware)
 app.add_middleware(HTTPSRedirectMiddleware)
+
+
+# =============================================================================
+# EXCEPTION HANDLERS
+# =============================================================================
+
+def sanitize_error_message(message: str) -> str:
+    """Remove sensitive data from error messages before returning to users."""
+    import re
+    patterns = [
+        (r'sk-[a-zA-Z0-9]{20,}', '[REDACTED]'),
+        (r'sk-ant-[a-zA-Z0-9-]+', '[REDACTED]'),
+        (r'password[=:]\s*\S+', 'password=[REDACTED]'),
+        (r'api[_-]?key[=:]\s*\S+', 'api_key=[REDACTED]'),
+        (r'secret[=:]\s*\S+', 'secret=[REDACTED]'),
+        (r'token[=:]\s*[a-zA-Z0-9._-]+', 'token=[REDACTED]'),
+    ]
+    for pattern, replacement in patterns:
+        message = re.sub(pattern, replacement, message, flags=re.IGNORECASE)
+    return message
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Global exception handler that sanitizes error messages."""
+    # Log the full exception with traceback (will be sanitized by logging_config)
+    logger.exception(f"Unhandled exception for {request.method} {request.url.path}")
+
+    # Sanitize the error message before returning to user
+    error_message = sanitize_error_message(str(exc))
+
+    # Don't expose internal details in production
+    if os.getenv("ENVIRONMENT", "production") != "development":
+        error_message = "An internal error occurred. Please try again later."
+
+    return JSONResponse(
+        status_code=500,
+        content={"detail": error_message}
+    )
 
 
 # Templates
@@ -1134,19 +1183,31 @@ async def admin_approve_user(request: Request, user_id: int, csrf_token: str = F
 
 @app.post("/admin/users/{user_id}/disable")
 async def admin_disable_user(request: Request, user_id: int, csrf_token: str = Form(None)):
-    """Disable a user account"""
+    """Disable a user account and invalidate their session"""
     current_user = require_superuser(request)
 
     # Validate CSRF token
     if not validate_csrf(request, csrf_token):
+        logger.warning(f"CSRF validation failed for user disable request by {current_user.email}")
         return RedirectResponse(url="/admin/users?error=csrf", status_code=302)
 
     if user_id == current_user.id:
+        logger.warning(f"User {current_user.email} attempted to disable their own account")
         raise HTTPException(status_code=400, detail="Cannot disable your own account")
 
     service = get_service()
     try:
-        service.db.disable_user(user_id)
+        # Get user info for logging before disabling
+        user_to_disable = service.db.get_user(user_id)
+        if user_to_disable:
+            service.db.disable_user(user_id)
+            logger.info(
+                f"User {user_to_disable.email} (ID: {user_id}) disabled by admin {current_user.email}"
+            )
+            # Note: The user's session will be invalidated on their next request
+            # because CookieAuthMiddleware checks is_active on every request
+        else:
+            logger.warning(f"Attempted to disable non-existent user ID: {user_id}")
     finally:
         service.close()
 
@@ -1528,35 +1589,78 @@ async def view_imports(request: Request):
 
 @app.post("/upload")
 async def upload_pdf(request: Request, file: UploadFile = File(...), csrf_token: str = Form(None)):
-    """Handle PDF upload"""
+    """Handle PDF upload with security validation"""
+    import re
+
     # Validate CSRF token
     if not validate_csrf(request, csrf_token):
+        logger.warning("PDF upload failed: invalid CSRF token")
         return JSONResponse({"success": False, "message": "Invalid request"}, status_code=403)
 
+    # Basic filename check
     if not file.filename.lower().endswith('.pdf'):
+        logger.warning(f"PDF upload rejected: invalid extension for {file.filename}")
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
     # Sanitize filename to prevent path traversal attacks
-    import re
     safe_filename = re.sub(r'[^\w\-_\.]', '_', os.path.basename(file.filename))
     if not safe_filename.lower().endswith('.pdf'):
         safe_filename = f"{safe_filename}.pdf"
 
-    # Save uploaded file temporarily
+    # Save uploaded file temporarily for validation
     temp_path = UPLOADS_DIR / safe_filename
     try:
         content = await file.read()
         with open(temp_path, "wb") as f:
             f.write(content)
-        
-        # Import the PDF
+
+        # Validate PDF content using PDFValidator (magic bytes, malicious content, structure)
+        validator = PDFValidator()
+        validation_result = validator.validate(str(temp_path))
+
+        if not validation_result.is_valid:
+            # Clean up invalid file
+            if temp_path.exists():
+                temp_path.unlink()
+
+            logger.warning(
+                f"PDF validation failed for {file.filename}: "
+                f"{validation_result.result_code.value} - {validation_result.message}"
+            )
+
+            # Map validation errors to user-friendly messages
+            error_messages = {
+                ValidationResult.INVALID_MAGIC_BYTES: "File is not a valid PDF",
+                ValidationResult.SUSPICIOUS_CONTENT: "PDF contains suspicious content and was rejected",
+                ValidationResult.FILE_TOO_LARGE: validation_result.message,
+                ValidationResult.PDF_PARSE_ERROR: "PDF file is corrupted or unreadable",
+                ValidationResult.MISSING_DNATECH_MARKERS: "PDF does not appear to be a valid lab report",
+            }
+            user_message = error_messages.get(
+                validation_result.result_code,
+                "PDF validation failed"
+            )
+
+            return JSONResponse({
+                "success": False,
+                "message": user_message
+            }, status_code=400)
+
+        logger.info(f"PDF validated successfully: {file.filename}")
+
+        # Import the validated PDF
         service = get_service()
         try:
             animal_id, session_id, parsed = service.import_pdf(
-                str(temp_path), 
+                str(temp_path),
                 copy_to_uploads=False
             )
-            
+
+            logger.info(
+                f"PDF imported: {parsed.animal.name}, "
+                f"report={parsed.session.report_number or 'N/A'}"
+            )
+
             return JSONResponse({
                 "success": True,
                 "message": f"Successfully imported report for {parsed.animal.name}",
@@ -1567,17 +1671,16 @@ async def upload_pdf(request: Request, file: UploadFile = File(...), csrf_token:
                 "test_date": format_date(parsed.session.test_date)
             })
         except ValueError as e:
+            logger.warning(f"PDF import failed: {e}")
             return JSONResponse({
                 "success": False,
                 "message": str(e)
             }, status_code=400)
         finally:
             service.close()
-            
+
     except Exception as e:
-        print(f"Upload error: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception(f"Upload error for {file.filename}")
         # Clean up temp file on error
         if temp_path.exists():
             temp_path.unlink()

@@ -86,3 +86,6 @@ Thumbs.db
 # Empty placeholder directories (keep the structure)
 !data/.gitkeep
 !uploads/.gitkeep
+
+# SSH key for deployment
+deploy/vetscan_ssh_key

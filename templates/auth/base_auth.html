@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="{{ lang|default('pt') }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ t(lang, 'app.title') }}{% endblock %}</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="stylesheet" href="/static/css/auth.css">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-logo">{% block logo %}🔬{% endblock %}</div>
+            <h1 class="auth-title">{{ t(lang, 'app.title') }}</h1>
+            <p class="auth-subtitle">{% block subtitle %}{% endblock %}</p>
+
+            {% block messages %}
+            {% if error %}
+            <div class="error-message">
+                {% block error_content %}{{ error }}{% endblock %}
+            </div>
+            {% endif %}
+
+            {% if success %}
+            <div class="success-message">
+                {% block success_content %}{{ success }}{% endblock %}
+            </div>
+            {% endif %}
+
+            {% if info %}
+            <div class="info-message">
+                {% block info_content %}{{ info }}{% endblock %}
+            </div>
+            {% endif %}
+            {% endblock %}
+
+            {% block content %}{% endblock %}
+
+            {% block footer_links %}
+            <div class="lang-switcher">
+                <a href="?lang=en" class="{% if lang == 'en' %}active{% endif %}">EN</a>
+                <a href="?lang=pt" class="{% if lang == 'pt' %}active{% endif %}">PT</a>
+            </div>
+            {% endblock %}
+        </div>
+    </div>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

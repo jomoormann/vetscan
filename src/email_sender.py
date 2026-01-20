@@ -28,6 +28,34 @@ def escape_html(text: str) -> str:
     return html.escape(str(text))
 
 
+def escape_url_for_href(url: str) -> str:
+    """
+    Safely escape a URL for use in href attributes.
+
+    This prevents XSS attacks while preserving valid URL structure.
+    - Validates scheme is http/https only (blocks javascript:, data:, etc.)
+    - Escapes quotes and special HTML chars that could break out of attribute
+    - Preserves query string parameters (unlike html.escape which corrupts &)
+    """
+    if url is None:
+        return ""
+
+    url = str(url).strip()
+
+    # Validate URL scheme to prevent javascript: and other XSS vectors
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme and parsed.scheme.lower() not in ('http', 'https'):
+            return ""  # Block non-http(s) URLs
+    except Exception:
+        return ""
+
+    # Escape only characters that could break out of the href attribute
+    # Don't escape & as it's valid in URLs
+    return url.replace('"', '%22').replace("'", '%27').replace('<', '%3C').replace('>', '%3E')
+
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -304,7 +332,7 @@ class EmailService:
                                        lang: str) -> str:
         """Fallback HTML for password reset email"""
         safe_name = escape_html(display_name) if display_name else ('utilizador' if lang == 'pt' else 'user')
-        safe_url = escape_html(reset_url)
+        safe_url = escape_url_for_href(reset_url)
         if lang == "pt":
             return f"""
             <html>
@@ -336,7 +364,7 @@ class EmailService:
                                          lang: str) -> str:
         """Fallback HTML for account approved email"""
         safe_name = escape_html(display_name) if display_name else ('utilizador' if lang == 'pt' else 'user')
-        safe_url = escape_html(login_url)
+        safe_url = escape_url_for_href(login_url)
         if lang == "pt":
             return f"""
             <html>
@@ -366,7 +394,7 @@ class EmailService:
         """Fallback HTML for new registration alert"""
         safe_email = escape_html(new_user_email)
         safe_name = escape_html(new_user_name) if new_user_name else ('Nao fornecido' if lang == 'pt' else 'Not provided')
-        safe_url = escape_html(admin_url)
+        safe_url = escape_url_for_href(admin_url)
         if lang == "pt":
             return f"""
             <html>
