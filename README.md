@@ -1,20 +1,40 @@
-# 🐕 Veterinary Protein Analysis Application
+# VetScan - Veterinary Protein Analysis Application
 
-A Python application for veterinary clinics to manage and analyze blood test results from protein electrophoresis, urinalysis, and kidney markers. Designed to work with DNAtech lab reports (Portuguese format).
+A comprehensive Python application for veterinary clinics to manage and analyze blood test results from protein electrophoresis, urinalysis, and kidney markers. Features AI-powered diagnosis generation, multi-user authentication, and automated email import.
 
 ## Features
 
-- **PDF Import**: Parse DNAtech reports automatically, extracting:
-  - Animal information (name, species, breed, age, sex)
-  - Protein electrophoresis (proteinogram) results
-  - Biochemistry results (UPC ratio for kidney disease staging)
-  - Complete urinalysis (Urina Tipo II)
-- **Database Storage**: SQLite-based storage for animals, tests, symptoms, and observations
+### Core Functionality
+- **PDF Import**: Parse DNAtech lab reports automatically (Portuguese format)
+- **Email Import**: Automatically fetch and process lab reports from email
+- **Database Storage**: SQLite-based storage with repository pattern
 - **Result Tracking**: Track all marker values over time for each animal
-- **Change Detection**: Automatically flag values outside reference ranges
-- **Comparison Reports**: Compare results between test sessions
-- **Symptom Correlation**: Associate clinical symptoms with test results
-- **Smart Animal Matching**: Automatically groups tests for the same animal
+- **Comparison Reports**: Side-by-side comparison between test sessions
+- **Clinical Notes**: Add and manage clinical notes per animal
+
+### AI-Powered Diagnosis
+- **Claude AI Integration**: Generate comprehensive diagnosis reports using Claude API
+- **GPT-4o Fallback**: Automatic fallback to OpenAI when Claude is unavailable
+- **Contextual Analysis**: AI considers symptoms, history, and all test results
+- **Multi-language**: Reports generated in Portuguese or English
+
+### Multi-User Authentication
+- **User Registration**: Email-based registration with admin approval workflow
+- **Role-Based Access**: Superuser and regular user roles
+- **Password Reset**: Secure email-based password recovery
+- **Session Management**: Secure cookie-based sessions with automatic expiry
+
+### Security Features
+- **CSRF Protection**: All forms protected against cross-site request forgery
+- **XSS Prevention**: Input sanitization and output escaping
+- **Rate Limiting**: Login attempt throttling to prevent brute force
+- **PDF Validation**: Magic byte verification and malicious content scanning
+- **Sensitive Data Filtering**: API keys and passwords redacted from logs
+
+### Internationalization
+- **Bilingual Interface**: Full support for English and Portuguese
+- **Date Formats**: Localized date parsing and display
+- **Number Formats**: Locale-aware number formatting
 
 ## Supported Test Types
 
@@ -40,30 +60,78 @@ A Python application for veterinary clinics to manage and analyze blood test res
 - **General**: Color, Appearance
 - **Biochemistry**: Glucose, Bilirubin, Ketones, Specific Gravity, pH, Proteins, Urobilinogen, Nitrites
 - **Sediment**: Leukocytes, Erythrocytes, Epithelial cells, Casts, Crystals, Mucus, Bacteria
-- **Observations**: Lab comments and findings
 
 ## Project Structure
 
 ```
 vet_protein_app/
 ├── src/
-│   ├── models.py      # Data models, database schema, and ORM
-│   ├── pdf_parser.py  # DNAtech PDF parser
-│   ├── app.py         # Application service layer
-│   └── web_server.py  # FastAPI web server
-├── templates/         # HTML templates (Jinja2)
-│   ├── base.html      # Base template with navigation
-│   ├── index.html     # Dashboard
-│   ├── animals.html   # Animals list
-│   ├── animal_detail.html  # Animal details & history
-│   ├── session_detail.html # Test session results
-│   ├── upload.html    # PDF upload page
-│   └── compare.html   # Test comparison view
-├── data/              # Database files (created at runtime)
-├── uploads/           # Stored PDF files
-├── run_server.py      # Web server launcher
-├── requirements.txt   # Python dependencies
-└── README.md
+│   ├── api/
+│   │   ├── dependencies.py      # Dependency injection container
+│   │   └── routes/
+│   │       ├── admin.py         # User management routes
+│   │       ├── animals.py       # Animal CRUD routes
+│   │       ├── auth.py          # Authentication routes
+│   │       ├── diagnosis.py     # AI diagnosis routes
+│   │       ├── sessions.py      # Test session routes
+│   │       └── upload.py        # PDF upload routes
+│   ├── database/
+│   │   ├── base.py              # Database connection manager
+│   │   └── repositories/
+│   │       ├── animal_repository.py
+│   │       ├── diagnosis_repository.py
+│   │       ├── session_repository.py
+│   │       └── user_repository.py
+│   ├── middleware/
+│   │   ├── auth.py              # Authentication middleware
+│   │   ├── csrf.py              # CSRF protection
+│   │   └── error_handler.py     # Global error handling
+│   ├── models/
+│   │   ├── domain.py            # Dataclasses (Animal, TestSession, etc.)
+│   │   ├── enums.py             # Enums (Species, ResultFlag, etc.)
+│   │   └── schema.py            # SQL schema definition
+│   ├── utils/
+│   │   ├── dates.py             # Date parsing and formatting
+│   │   └── template_filters.py  # Jinja2 template filters
+│   ├── app.py                   # Application service layer
+│   ├── config.py                # Centralized configuration
+│   ├── diagnosis_ai.py          # AI diagnosis generation
+│   ├── email_sender.py          # Email sending (SMTP)
+│   ├── exceptions.py            # Custom exception classes
+│   ├── logging_config.py        # Structured logging setup
+│   ├── pdf_parser.py            # DNAtech PDF parser
+│   ├── pdf_validator.py         # PDF security validation
+│   └── web_server.py            # FastAPI application
+├── templates/
+│   ├── auth/                    # Authentication templates
+│   │   ├── base_auth.html       # Auth page base template
+│   │   ├── forgot_password.html
+│   │   ├── pending_approval.html
+│   │   ├── register.html
+│   │   └── reset_password.html
+│   ├── base.html                # Main base template
+│   ├── index.html               # Dashboard
+│   ├── animals.html             # Animals list
+│   ├── animal_detail.html       # Animal details & history
+│   ├── session_detail.html      # Test session results
+│   ├── compare.html             # Test comparison view
+│   ├── upload.html              # PDF upload page
+│   ├── diagnosis.html           # AI diagnosis view
+│   └── login.html               # Login page
+├── static/
+│   └── css/
+│       └── auth.css             # Authentication styles
+├── translations/
+│   ├── en.json                  # English translations
+│   └── pt.json                  # Portuguese translations
+├── scripts/
+│   └── run_email_import.py      # Email import script
+├── data/                        # Database files (created at runtime)
+├── uploads/                     # Stored PDF files
+├── logs/                        # Application logs
+├── deploy/                      # Deployment configuration
+├── run_server.py                # Web server launcher
+└── requirements.txt             # Python dependencies
 ```
 
 ## Installation
@@ -71,18 +139,39 @@ vet_protein_app/
 ### Requirements
 
 - Python 3.8+
-- pdfplumber (for PDF parsing)
-- FastAPI + Uvicorn (for web interface)
-- Jinja2 (for templates)
+- SQLite (included with Python)
+
+### Dependencies
+
+```
+fastapi
+uvicorn
+jinja2
+pdfplumber
+python-multipart
+anthropic
+openai
+bleach
+bcrypt
+```
 
 ### Setup
 
 ```bash
-# Clone or extract the project
-cd vet_protein_app
+# Clone the repository
+git clone https://github.com/jomoormann/vetscan.git
+cd vetscan
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Create .env file with required settings
+cp .env.example .env
+# Edit .env with your configuration
 
 # Run the web server
 python run_server.py
@@ -90,239 +179,205 @@ python run_server.py
 
 Then open http://localhost:8000 in your browser.
 
-## Web Interface Features
+## Configuration
+
+Create a `.env` file in the project root:
+
+```env
+# Authentication
+AUTH_SECRET_KEY=your-32-byte-hex-secret-key
+
+# AI Services (at least one required for diagnosis)
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+
+# Email Sending (for password reset, notifications)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your-email@gmail.com
+SMTP_PASSWORD=your-app-password
+SMTP_FROM_EMAIL=your-email@gmail.com
+SMTP_FROM_NAME=VetScan
+
+# Email Import (optional - for automatic report fetching)
+EMAIL_IMAP_HOST=imap.gmail.com
+EMAIL_IMAP_PORT=993
+EMAIL_ADDRESS=your-email@gmail.com
+EMAIL_PASSWORD=your-app-password
+
+# Application
+LOG_LEVEL=INFO
+ALLOWED_HOSTS=localhost,127.0.0.1
+```
+
+## Web Interface
 
 ### Dashboard
 - Overview of total animals and tests
-- Quick access to recent tests
-- Direct links to upload and view animals
+- Recent test sessions
+- Quick access to upload and view animals
 
 ### Animals List
 - View all registered animals
-- See test count and last test date
+- Search and filter
+- Test count and last test date
 - Quick access to comparison view
 
 ### Animal Details
 - Complete animal information
 - Test history with all sessions
-- Add symptoms and observations
-- View UPC ratio trends (kidney markers)
+- Clinical notes management
+- Symptoms and observations
+- UPC ratio trends (kidney markers)
+- AI diagnosis generation
 
 ### Test Session View
 - Full proteinogram results with reference ranges
 - Biochemistry results (UPC ratio, IRIS staging)
 - Complete urinalysis (Urina Tipo II)
 - Automatic comparison with previous test
+- Visual trend indicators
+
+### AI Diagnosis
+- Generate comprehensive diagnosis reports
+- Considers all test results, symptoms, and history
+- Available in English or Portuguese
+- Powered by Claude AI with GPT-4o fallback
 
 ### PDF Upload
 - Drag-and-drop PDF upload
 - Automatic data extraction
-- Smart animal matching (groups tests by animal)
+- Smart animal matching
+- Security validation (magic bytes, content scanning)
 
-### Test Comparison
-- Side-by-side comparison of all tests
-- Visual chart showing trends over time
-- Automatic trend detection (improving/worsening/stable)
+### User Management (Admin)
+- View all users
+- Approve pending registrations
+- Enable/disable user accounts
+- Role management
 
-## Data Model
+## API Usage
 
-### Entities
-
-```
-Animal
-├── id, name, species, breed
-├── microchip, age, sex, weight
-├── medical_history, notes
-└── timestamps
-
-TestSession
-├── id, animal_id
-├── report_number (e.g., "66790/1521038")
-├── test_date, closing_date
-├── sample_type, lab_name
-└── pdf_path
-
-ProteinResult
-├── id, session_id
-├── marker_name (e.g., "Albumina", "Gama")
-├── value (%), value_absolute (g/dL)
-├── reference_min/max (both % and g/dL)
-└── flag (normal/high/low)
-
-Symptom
-├── id, animal_id
-├── description, severity, category
-├── observed_date, resolved_date
-└── notes
-
-Observation
-├── id, animal_id
-├── observation_type (weight, medication, etc.)
-├── details, value, unit
-└── observation_date
-```
-
-### Supported Protein Markers (DNAtech Proteinogram)
-
-| Marker | Portuguese Name | Unit | Description |
-|--------|----------------|------|-------------|
-| Total Proteins | Proteinas totais | g/dL | Total serum protein |
-| Albumin | Albumina | % + g/dL | Main plasma protein |
-| Alpha-1 | Alfa 1 | % + g/dL | Alpha-1 globulin fraction |
-| Alpha-2 | Alfa 2 | % + g/dL | Alpha-2 globulin fraction |
-| Beta | Beta | % + g/dL | Beta globulin fraction |
-| Gamma | Gama | % + g/dL | Immunoglobulin fraction |
-| A/G Ratio | Rel. Albumina/Globulina | ratio | Albumin to globulin ratio |
-
-## Installation
-
-### Requirements
-
-- Python 3.8+
-- pdfplumber (for PDF parsing)
-- SQLite (included with Python)
-
-### Setup
-
-```bash
-# Clone or copy the project
-cd vet_protein_app
-
-# Install dependencies
-pip install pdfplumber
-
-# Run the demo
-cd src
-python app.py
-```
-
-## Usage
-
-### Basic Usage
+### VetProteinService
 
 ```python
 from app import VetProteinService
 
-# Initialize the service
 with VetProteinService(db_path="vet_proteins.db") as service:
-    
     # Import a PDF report
     animal_id, session_id, parsed = service.import_pdf("report.pdf")
-    
-    # Add symptoms for context
+
+    # Add symptoms
     service.add_symptom(animal_id, "Lethargy", severity="mild")
-    
-    # Generate analysis report
-    report = service.generate_analysis_report(session_id)
-    
-    # View results
-    for result in report.results:
-        print(f"{result.marker_name}: {result.value}% - {result.flag}")
+
+    # Generate AI diagnosis
+    diagnosis = service.generate_ai_diagnosis(animal_id, language="en")
+
+    # Compare sessions
+    comparisons = service.compare_sessions(session_id, previous_session_id)
 ```
 
-### Comparing Results Over Time
+### Database Repositories
 
 ```python
-# Get all sessions for an animal
-sessions = service.db.get_sessions_for_animal(animal_id)
+from database import Database
 
-# Compare two sessions
-if len(sessions) >= 2:
-    comparisons = service.compare_sessions(
-        sessions[0].id,  # current
-        sessions[1].id   # previous
-    )
-    
-    for comp in comparisons:
-        if comp.clinical_significance != "none":
-            print(f"{comp.marker_name}: {comp.trend} ({comp.change_percent:.1f}%)")
+db = Database("vet_proteins.db")
+db.connect()
+db.initialize()
+
+# Animal operations
+animals = db.list_animals()
+animal = db.get_animal(1)
+
+# Session operations
+sessions = db.get_sessions_for_animal(animal_id)
+results = db.get_results_for_session(session_id)
+
+# User operations
+user = db.get_user_by_email("user@example.com")
+pending = db.get_pending_users()
 ```
 
-### Tracking Marker History
+## Logging
+
+The application uses structured logging with:
+- **File rotation**: Logs rotate at 10MB, keeping 7 backup files
+- **Sensitive data filtering**: API keys and passwords automatically redacted
+- **Log levels**: DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+Logs are stored in `logs/vetscan.log`.
 
 ```python
-# Get albumin history for an animal
-history = service.get_marker_trend(animal_id, "Albumina")
+from logging_config import get_logger
 
-for entry in history:
-    print(f"{entry['test_date']}: {entry['value']}% - {entry['flag']}")
+logger = get_logger("my_module")
+logger.info("Processing animal", animal_id=123)
+```
+
+## Security
+
+### Authentication
+- Passwords hashed with bcrypt (work factor 12)
+- Session tokens with HMAC-SHA256 signing
+- Automatic session expiry (7 days)
+- Rate limiting on login attempts
+
+### Input Validation
+- All user input sanitized
+- PDF files validated (magic bytes, size limits)
+- SQL injection prevention via parameterized queries
+- XSS prevention via output escaping
+
+### CSRF Protection
+- All state-changing forms require CSRF token
+- Tokens tied to user session
+- SameSite cookie attribute set
+
+## Email Import
+
+Automatically fetch lab reports from email:
+
+```bash
+# Run manually
+python scripts/run_email_import.py
+
+# Or set up as cron job / systemd timer
+# See deploy/vetscan-email-import.service
 ```
 
 ## PDF Format Support
 
-Currently supports **DNAtech** laboratory reports with:
+Currently supports **DNAtech** laboratory reports:
 - Portuguese language
 - Protein electrophoresis (PROTEINOGRAMA)
-- Format: "Folha de Trabalho Nº XXXXX/XXXXXXX"
+- Biochemistry (BIOQUIMICA)
+- Urinalysis (URINA TIPO II)
 
-### Sample PDF Structure
+## Development
 
-```
-Folha de Trabalho Nº 66790/1521038
-Data 07/12/2025
+### Running Tests
 
-Dados do Animal
-Animal      Júlia
-Espécie     Felideo
-Raça        Sphynx
-Idade       7 A (F)
-Amostra     Soro
-
-PROTEINOGRAMA
-Análise                   Resultado    Un.    Ref.         Histórico
-Proteinas totais          6,4          g/dL   5,7 - 7,9
-Albumina                  53,7 % 3,4   g/dL   36,8 - 50,6  2,10 - 4,00
-...
+```bash
+python test_all.py
 ```
 
-## Future Development
+### Adding New Routes
 
-### Phase 2: Web Interface
-- FastAPI backend with REST API
-- React/Vue frontend for easy interaction
-- Dashboard with visualizations
+1. Create route module in `src/api/routes/`
+2. Use dependency injection for database access
+3. Register router in `web_server.py`
 
-### Phase 3: AI Interpretation
-- Integration with Claude API for result interpretation
-- Veterinary research knowledge base
-- Contextual analysis considering symptoms and history
+### Adding New Repositories
 
-### Phase 4: Advanced Features
-- Multi-lab format support
-- Breed-specific reference ranges
-- PDF report generation
-- Export to common formats (CSV, Excel)
-
-## API Reference
-
-### VetProteinService
-
-| Method | Description |
-|--------|-------------|
-| `import_pdf(path)` | Import and parse a PDF report |
-| `get_animal_history(id)` | Get complete history for an animal |
-| `get_marker_trend(animal_id, marker)` | Get historical values for a marker |
-| `compare_sessions(current_id, previous_id)` | Compare two test sessions |
-| `generate_analysis_report(session_id)` | Generate complete analysis report |
-| `add_symptom(animal_id, description, ...)` | Record a symptom |
-| `add_observation(animal_id, type, ...)` | Record an observation |
-
-### Database
-
-| Method | Description |
-|--------|-------------|
-| `create_animal(animal)` | Insert new animal |
-| `get_animal(id)` | Get animal by ID |
-| `find_animal_by_name(name)` | Search animals by name |
-| `create_test_session(session)` | Insert new test session |
-| `get_sessions_for_animal(id)` | Get all tests for an animal |
-| `create_protein_result(result)` | Insert a protein result |
-| `get_results_for_session(id)` | Get results for a session |
+1. Create repository class in `src/database/repositories/`
+2. Add wrapper methods to `src/database/__init__.py`
+3. Register in `ServiceContainer`
 
 ## License
 
 Private/Internal Use
 
-## Contributing
+## Support
 
-This is an internal veterinary practice tool. For modifications or feature requests, contact the development team.
+For issues or feature requests, contact the development team or open an issue on GitHub.
