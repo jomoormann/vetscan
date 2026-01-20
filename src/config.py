@@ -216,7 +216,7 @@ class AISettings:
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
-    openai_model: str = "gpt-4o-mini"
+    openai_model: str = "gpt-5-mini"
 
     @classmethod
     def from_env(cls) -> 'AISettings':
@@ -225,7 +225,7 @@ class AISettings:
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
             anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
-            openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            openai_model=os.getenv("OPENAI_MODEL", "gpt-5-mini"),
         )
 
     @property

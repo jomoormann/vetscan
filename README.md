@@ -14,7 +14,7 @@ A comprehensive Python application for veterinary clinics to manage and analyze 
 
 ### AI-Powered Diagnosis
 - **Claude AI Integration**: Generate comprehensive diagnosis reports using Claude API
-- **GPT-4o Fallback**: Automatic fallback to OpenAI when Claude is unavailable
+- **GPT-5-mini Fallback**: Automatic fallback to OpenAI when Claude is unavailable
 - **Contextual Analysis**: AI considers symptoms, history, and all test results
 - **Multi-language**: Reports generated in Portuguese or English
 
@@ -242,7 +242,7 @@ ALLOWED_HOSTS=localhost,127.0.0.1
 - Generate comprehensive diagnosis reports
 - Considers all test results, symptoms, and history
 - Available in English or Portuguese
-- Powered by Claude AI with GPT-4o fallback
+- Powered by Claude AI with GPT-5-mini fallback
 
 ### PDF Upload
 - Drag-and-drop PDF upload

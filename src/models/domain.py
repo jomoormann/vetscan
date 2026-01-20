@@ -216,7 +216,7 @@ class DiagnosisReport:
     openai_differential_diagnosis: str = ""
     openai_recommendations: str = ""
     openai_references: str = ""
-    openai_model_used: str = "gpt-4o-mini"
+    openai_model_used: str = "gpt-5-mini"
 
     # Metadata
     created_at: Optional[datetime] = None
