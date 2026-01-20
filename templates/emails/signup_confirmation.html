@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if lang == 'pt' %}Registo Recebido{% else %}Registration Received{% endif %}</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f7faf8;">
+    <table role="presentation" style="width: 100%; border-collapse: collapse;">
+        <tr>
+            <td style="padding: 40px 20px;">
+                <table role="presentation" style="max-width: 500px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08);">
+                    <!-- Header -->
+                    <tr>
+                        <td style="padding: 40px 40px 20px; text-align: center; border-bottom: 1px solid #CCDCDB;">
+                            <div style="font-size: 48px; margin-bottom: 10px;">🔬</div>
+                            <h1 style="margin: 0; color: #135E4B; font-size: 24px; font-weight: 700;">VetScan</h1>
+                        </td>
+                    </tr>
+
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 40px;">
+                            <!-- Success icon -->
+                            <div style="text-align: center; margin-bottom: 24px;">
+                                <div style="display: inline-block; background: #d4ebe0; border-radius: 50%; padding: 16px;">
+                                    <span style="font-size: 32px;">✓</span>
+                                </div>
+                            </div>
+
+                            {% if lang == 'pt' %}
+                            <h2 style="margin: 0 0 20px; color: #1a2f2a; font-size: 20px; text-align: center;">Registo Recebido!</h2>
+                            <p style="margin: 0 0 16px; color: #2d4a44; line-height: 1.6;">
+                                Olá {{ display_name }},
+                            </p>
+                            <p style="margin: 0 0 24px; color: #5f7a74; line-height: 1.6;">
+                                Obrigado por se registar no VetScan! A sua conta foi criada com sucesso e está agora a aguardar aprovação.
+                            </p>
+                            {% else %}
+                            <h2 style="margin: 0 0 20px; color: #1a2f2a; font-size: 20px; text-align: center;">Registration Received!</h2>
+                            <p style="margin: 0 0 16px; color: #2d4a44; line-height: 1.6;">
+                                Hello {{ display_name }},
+                            </p>
+                            <p style="margin: 0 0 24px; color: #5f7a74; line-height: 1.6;">
+                                Thank you for registering with VetScan! Your account has been created successfully and is now awaiting approval.
+                            </p>
+                            {% endif %}
+
+                            <!-- Info box -->
+                            <div style="background: #fef3c7; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
+                                <h3 style="margin: 0 0 8px; color: #92400e; font-size: 14px; font-weight: 600;">
+                                    ⏳ {% if lang == 'pt' %}O que acontece a seguir?{% else %}What happens next?{% endif %}
+                                </h3>
+                                <p style="margin: 0; color: #92400e; font-size: 14px; line-height: 1.5;">
+                                    {% if lang == 'pt' %}
+                                    Um administrador irá rever o seu pedido de registo em breve. Receberá outro email assim que a sua conta for aprovada e estiver pronta a usar.
+                                    {% else %}
+                                    An administrator will review your registration request shortly. You'll receive another email once your account has been approved and is ready to use.
+                                    {% endif %}
+                                </p>
+                            </div>
+
+                            <!-- Account details -->
+                            <div style="background: #f7faf8; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
+                                <p style="margin: 0 0 8px; color: #5f7a74; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">
+                                    {% if lang == 'pt' %}Detalhes da Conta{% else %}Account Details{% endif %}
+                                </p>
+                                <table role="presentation" style="width: 100%;">
+                                    <tr>
+                                        <td style="padding: 4px 0; color: #5f7a74; font-size: 14px;">Email:</td>
+                                        <td style="padding: 4px 0; color: #1a2f2a; font-weight: 600; text-align: right;">{{ email }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 4px 0; color: #5f7a74; font-size: 14px;">{% if lang == 'pt' %}Estado{% else %}Status{% endif %}:</td>
+                                        <td style="padding: 4px 0; color: #92400e; font-weight: 600; text-align: right;">{% if lang == 'pt' %}Aguarda Aprovação{% else %}Pending Approval{% endif %}</td>
+                                    </tr>
+                                </table>
+                            </div>
+
+                            <p style="margin: 0; color: #5f7a74; font-size: 14px; line-height: 1.6; text-align: center;">
+                                {% if lang == 'pt' %}
+                                Se não criou esta conta, pode ignorar este email em segurança.
+                                {% else %}
+                                If you didn't create this account, you can safely ignore this email.
+                                {% endif %}
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding: 20px 40px 30px; border-top: 1px solid #CCDCDB; text-align: center;">
+                            <p style="margin: 0; color: #b8ccc9; font-size: 12px;">
+                                {% if lang == 'pt' %}
+                                Este é um email automático do sistema VetScan.
+                                {% else %}
+                                This is an automated email from the VetScan system.
+                                {% endif %}
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

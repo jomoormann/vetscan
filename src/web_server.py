@@ -579,6 +579,10 @@ async def register_submit(
             })
             return set_lang_cookie(response, lang)
 
+        # Send confirmation email to user
+        if email_service.is_configured():
+            email_service.send_signup_confirmation(email, display_name, lang)
+
         # Send notification to admins
         superusers = service.db.get_superusers()
         if superusers and email_service.is_configured():

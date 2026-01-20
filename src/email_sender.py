@@ -119,6 +119,35 @@ class EmailService:
         template = self.template_env.get_template(template_name)
         return template.render(**context)
 
+    def send_signup_confirmation(self, to_email: str,
+                                  display_name: Optional[str] = None,
+                                  lang: str = "en") -> bool:
+        """
+        Send a signup confirmation email to a new user.
+
+        Args:
+            to_email: Recipient email address
+            display_name: User's display name (optional)
+            lang: Language code for the email
+        """
+        context = {
+            "display_name": display_name or to_email,
+            "email": to_email,
+            "lang": lang
+        }
+
+        try:
+            html_content = self._render_template("signup_confirmation.html", **context)
+        except Exception as e:
+            print(f"Template render error: {e}")
+            html_content = self._fallback_signup_confirmation_html(to_email, display_name, lang)
+
+        subject = "VetScan - Registration received" if lang == "en" else "VetScan - Registo recebido"
+        text_content = f"Thank you for registering. Your account is pending approval."
+
+        msg = self._create_message(to_email, subject, html_content, text_content)
+        return self._send(msg, to_email)
+
     def send_password_reset(self, to_email: str, reset_url: str,
                             display_name: Optional[str] = None,
                             lang: str = "en") -> bool:
@@ -229,6 +258,36 @@ class EmailService:
     # -------------------------------------------------------------------------
     # Fallback HTML (if templates fail)
     # -------------------------------------------------------------------------
+
+    def _fallback_signup_confirmation_html(self, to_email: str,
+                                            display_name: Optional[str],
+                                            lang: str) -> str:
+        """Fallback HTML for signup confirmation email"""
+        if lang == "pt":
+            return f"""
+            <html>
+            <body style="font-family: sans-serif; padding: 20px;">
+                <h2>Registo Recebido!</h2>
+                <p>Olá {display_name or 'utilizador'},</p>
+                <p>Obrigado por se registar no VetScan! A sua conta foi criada e está a aguardar aprovação.</p>
+                <p><strong>Email:</strong> {to_email}</p>
+                <p><strong>Estado:</strong> Aguarda Aprovação</p>
+                <p>Um administrador irá rever o seu pedido em breve. Receberá um email quando a sua conta for aprovada.</p>
+            </body>
+            </html>
+            """
+        return f"""
+        <html>
+        <body style="font-family: sans-serif; padding: 20px;">
+            <h2>Registration Received!</h2>
+            <p>Hello {display_name or 'user'},</p>
+            <p>Thank you for registering with VetScan! Your account has been created and is pending approval.</p>
+            <p><strong>Email:</strong> {to_email}</p>
+            <p><strong>Status:</strong> Pending Approval</p>
+            <p>An administrator will review your request shortly. You'll receive an email when your account is approved.</p>
+        </body>
+        </html>
+        """
 
     def _fallback_password_reset_html(self, reset_url: str,
                                        display_name: Optional[str],
