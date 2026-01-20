@@ -116,6 +116,7 @@
 
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('csrf_token', '{{ csrf_token }}');
 
         try {
             const response = await fetch('/upload', {

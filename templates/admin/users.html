@@ -59,6 +59,7 @@
                     <td>{{ user.created_at|format_date }}</td>
                     <td style="text-align: right;">
                         <form method="POST" action="/admin/users/{{ user.id }}/approve" style="display: inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <button type="submit" class="btn btn-success" onclick="return confirm('{{ t(lang, 'admin.users.confirm_approve') }}')">
                                 ✓ {{ t(lang, 'admin.users.action.approve') }}
                             </button>
@@ -126,16 +127,19 @@
                         {% if user.id != current_user.id %}
                             {% if not user.is_approved and user.is_active %}
                             <form method="POST" action="/admin/users/{{ user.id }}/approve" style="display: inline;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-success" title="{{ t(lang, 'admin.users.action.approve') }}">✓</button>
                             </form>
                             {% endif %}
 
                             {% if user.is_active %}
                             <form method="POST" action="/admin/users/{{ user.id }}/disable" style="display: inline;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-secondary" onclick="return confirm('{{ t(lang, 'admin.users.confirm_disable') }}')" title="{{ t(lang, 'admin.users.action.disable') }}">🚫</button>
                             </form>
                             {% else %}
                             <form method="POST" action="/admin/users/{{ user.id }}/enable" style="display: inline;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-secondary" title="{{ t(lang, 'admin.users.action.enable') }}">↩️</button>
                             </form>
                             {% endif %}

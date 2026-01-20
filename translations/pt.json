@@ -334,7 +334,8 @@
             "forgot_password": "Esqueceu a palavra-passe?",
             "no_account": "Não tem conta?",
             "register_link": "Registar",
-            "error_disabled": "Esta conta foi desativada"
+            "error_disabled": "Esta conta foi desativada",
+            "error_rate_limit": "Demasiadas tentativas de login. Por favor tente novamente em {minutes} minuto(s)."
         },
         "register": {
             "title": "Criar Conta",

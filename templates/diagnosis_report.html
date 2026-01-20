@@ -60,7 +60,7 @@
 
     <div class="card">
         <div class="diagnosis-content markdown-content">
-            {{ report.executive_summary | safe }}
+            {{ report.executive_summary | sanitize_html }}
         </div>
     </div>
 </div>
@@ -82,7 +82,7 @@
             <h3 class="card-title">{{ t(lang, 'diagnosis.test_interpretation') }}</h3>
         </div>
         <div class="diagnosis-content markdown-content">
-            {{ report.test_interpretation | safe }}
+            {{ report.test_interpretation | sanitize_html }}
         </div>
     </div>
     {% endif %}
@@ -94,7 +94,7 @@
             <h3 class="card-title">{{ t(lang, 'diagnosis.differential_diagnoses') }}</h3>
         </div>
         <div class="diagnosis-content markdown-content">
-            {{ report.differential_diagnosis | safe }}
+            {{ report.differential_diagnosis | sanitize_html }}
         </div>
     </div>
     {% endif %}
@@ -106,7 +106,7 @@
             <h3 class="card-title">{{ t(lang, 'diagnosis.recommendations') }}</h3>
         </div>
         <div class="diagnosis-content markdown-content">
-            {{ report.recommendations | safe }}
+            {{ report.recommendations | sanitize_html }}
         </div>
     </div>
     {% endif %}
@@ -118,7 +118,7 @@
             <h3 class="card-title">{{ t(lang, 'diagnosis.references') }}</h3>
         </div>
         <div class="diagnosis-content markdown-content">
-            {{ report.references | safe }}
+            {{ report.references | sanitize_html }}
         </div>
     </div>
     {% endif %}
@@ -140,7 +140,7 @@
             <h3 class="card-title">{{ t(lang, 'diagnosis.test_interpretation') }}</h3>
         </div>
         <div class="diagnosis-content markdown-content">
-            {{ report.openai_test_interpretation | safe }}
+            {{ report.openai_test_interpretation | sanitize_html }}
         </div>
     </div>
     {% endif %}
@@ -152,7 +152,7 @@
             <h3 class="card-title">{{ t(lang, 'diagnosis.differential_diagnoses') }}</h3>
         </div>
         <div class="diagnosis-content markdown-content">
-            {{ report.openai_differential_diagnosis | safe }}
+            {{ report.openai_differential_diagnosis | sanitize_html }}
         </div>
     </div>
     {% endif %}
@@ -164,7 +164,7 @@
             <h3 class="card-title">{{ t(lang, 'diagnosis.recommendations') }}</h3>
         </div>
         <div class="diagnosis-content markdown-content">
-            {{ report.openai_recommendations | safe }}
+            {{ report.openai_recommendations | sanitize_html }}
         </div>
     </div>
     {% endif %}
@@ -176,7 +176,7 @@
             <h3 class="card-title">{{ t(lang, 'diagnosis.references') }}</h3>
         </div>
         <div class="diagnosis-content markdown-content">
-            {{ report.openai_references | safe }}
+            {{ report.openai_references | sanitize_html }}
         </div>
     </div>
     {% endif %}

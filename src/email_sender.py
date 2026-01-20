@@ -12,12 +12,20 @@ Email types:
 import os
 import ssl
 import smtplib
+import html
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List, Optional
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
+
+
+def escape_html(text: str) -> str:
+    """Escape HTML special characters in user input"""
+    if text is None:
+        return ""
+    return html.escape(str(text))
 
 
 # =============================================================================
@@ -263,14 +271,16 @@ class EmailService:
                                             display_name: Optional[str],
                                             lang: str) -> str:
         """Fallback HTML for signup confirmation email"""
+        safe_name = escape_html(display_name) if display_name else ('utilizador' if lang == 'pt' else 'user')
+        safe_email = escape_html(to_email)
         if lang == "pt":
             return f"""
             <html>
             <body style="font-family: sans-serif; padding: 20px;">
                 <h2>Registo Recebido!</h2>
-                <p>Olá {display_name or 'utilizador'},</p>
+                <p>Olá {safe_name},</p>
                 <p>Obrigado por se registar no VetScan! A sua conta foi criada e está a aguardar aprovação.</p>
-                <p><strong>Email:</strong> {to_email}</p>
+                <p><strong>Email:</strong> {safe_email}</p>
                 <p><strong>Estado:</strong> Aguarda Aprovação</p>
                 <p>Um administrador irá rever o seu pedido em breve. Receberá um email quando a sua conta for aprovada.</p>
             </body>
@@ -280,9 +290,9 @@ class EmailService:
         <html>
         <body style="font-family: sans-serif; padding: 20px;">
             <h2>Registration Received!</h2>
-            <p>Hello {display_name or 'user'},</p>
+            <p>Hello {safe_name},</p>
             <p>Thank you for registering with VetScan! Your account has been created and is pending approval.</p>
-            <p><strong>Email:</strong> {to_email}</p>
+            <p><strong>Email:</strong> {safe_email}</p>
             <p><strong>Status:</strong> Pending Approval</p>
             <p>An administrator will review your request shortly. You'll receive an email when your account is approved.</p>
         </body>
@@ -293,14 +303,16 @@ class EmailService:
                                        display_name: Optional[str],
                                        lang: str) -> str:
         """Fallback HTML for password reset email"""
+        safe_name = escape_html(display_name) if display_name else ('utilizador' if lang == 'pt' else 'user')
+        safe_url = escape_html(reset_url)
         if lang == "pt":
             return f"""
             <html>
             <body style="font-family: sans-serif; padding: 20px;">
                 <h2>Repor Palavra-passe</h2>
-                <p>Ola {display_name or 'utilizador'},</p>
+                <p>Ola {safe_name},</p>
                 <p>Recebemos um pedido para repor a sua palavra-passe VetScan.</p>
-                <p><a href="{reset_url}" style="background: #135E4B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Repor Palavra-passe</a></p>
+                <p><a href="{safe_url}" style="background: #135E4B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Repor Palavra-passe</a></p>
                 <p>Este link expira em 1 hora.</p>
                 <p>Se nao solicitou esta alteracao, ignore este email.</p>
             </body>
@@ -310,9 +322,9 @@ class EmailService:
         <html>
         <body style="font-family: sans-serif; padding: 20px;">
             <h2>Password Reset</h2>
-            <p>Hello {display_name or 'user'},</p>
+            <p>Hello {safe_name},</p>
             <p>We received a request to reset your VetScan password.</p>
-            <p><a href="{reset_url}" style="background: #135E4B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Reset Password</a></p>
+            <p><a href="{safe_url}" style="background: #135E4B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Reset Password</a></p>
             <p>This link expires in 1 hour.</p>
             <p>If you didn't request this, please ignore this email.</p>
         </body>
@@ -323,14 +335,16 @@ class EmailService:
                                          display_name: Optional[str],
                                          lang: str) -> str:
         """Fallback HTML for account approved email"""
+        safe_name = escape_html(display_name) if display_name else ('utilizador' if lang == 'pt' else 'user')
+        safe_url = escape_html(login_url)
         if lang == "pt":
             return f"""
             <html>
             <body style="font-family: sans-serif; padding: 20px;">
                 <h2>Conta Aprovada</h2>
-                <p>Ola {display_name or 'utilizador'},</p>
+                <p>Ola {safe_name},</p>
                 <p>A sua conta VetScan foi aprovada! Ja pode iniciar sessao.</p>
-                <p><a href="{login_url}" style="background: #135E4B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Iniciar Sessao</a></p>
+                <p><a href="{safe_url}" style="background: #135E4B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Iniciar Sessao</a></p>
             </body>
             </html>
             """
@@ -338,9 +352,9 @@ class EmailService:
         <html>
         <body style="font-family: sans-serif; padding: 20px;">
             <h2>Account Approved</h2>
-            <p>Hello {display_name or 'user'},</p>
+            <p>Hello {safe_name},</p>
             <p>Your VetScan account has been approved! You can now sign in.</p>
-            <p><a href="{login_url}" style="background: #135E4B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Sign In</a></p>
+            <p><a href="{safe_url}" style="background: #135E4B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Sign In</a></p>
         </body>
         </html>
         """
@@ -350,15 +364,18 @@ class EmailService:
                                          admin_url: str,
                                          lang: str) -> str:
         """Fallback HTML for new registration alert"""
+        safe_email = escape_html(new_user_email)
+        safe_name = escape_html(new_user_name) if new_user_name else ('Nao fornecido' if lang == 'pt' else 'Not provided')
+        safe_url = escape_html(admin_url)
         if lang == "pt":
             return f"""
             <html>
             <body style="font-family: sans-serif; padding: 20px;">
                 <h2>Novo Registo Pendente</h2>
                 <p>Um novo utilizador registou-se no VetScan:</p>
-                <p><strong>Email:</strong> {new_user_email}</p>
-                <p><strong>Nome:</strong> {new_user_name or 'Nao fornecido'}</p>
-                <p><a href="{admin_url}" style="background: #135E4B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Rever no Painel de Admin</a></p>
+                <p><strong>Email:</strong> {safe_email}</p>
+                <p><strong>Nome:</strong> {safe_name}</p>
+                <p><a href="{safe_url}" style="background: #135E4B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Rever no Painel de Admin</a></p>
             </body>
             </html>
             """
@@ -367,9 +384,9 @@ class EmailService:
         <body style="font-family: sans-serif; padding: 20px;">
             <h2>New Registration Pending</h2>
             <p>A new user has registered on VetScan:</p>
-            <p><strong>Email:</strong> {new_user_email}</p>
-            <p><strong>Name:</strong> {new_user_name or 'Not provided'}</p>
-            <p><a href="{admin_url}" style="background: #135E4B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Review in Admin Panel</a></p>
+            <p><strong>Email:</strong> {safe_email}</p>
+            <p><strong>Name:</strong> {safe_name}</p>
+            <p><a href="{safe_url}" style="background: #135E4B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Review in Admin Panel</a></p>
         </body>
         </html>
         """

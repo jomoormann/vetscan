@@ -334,7 +334,8 @@
             "forgot_password": "Forgot password?",
             "no_account": "Don't have an account?",
             "register_link": "Sign up",
-            "error_disabled": "This account has been disabled"
+            "error_disabled": "This account has been disabled",
+            "error_rate_limit": "Too many login attempts. Please try again in {minutes} minute(s)."
         },
         "register": {
             "title": "Create Account",

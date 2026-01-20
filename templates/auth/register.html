@@ -233,6 +233,7 @@
             {% endif %}
 
             <form method="POST" action="/register">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group">
                     <label for="email">{{ t(lang, 'auth.register.email') }}</label>
                     <input

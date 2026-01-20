@@ -10,6 +10,9 @@ python-multipart>=0.0.6
 # Authentication
 passlib[bcrypt]>=1.7.4
 
+# Security
+bleach>=6.0.0
+
 # AI-powered diagnosis feature
 anthropic>=0.40.0
 openai>=1.0.0

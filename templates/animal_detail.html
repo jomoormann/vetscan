@@ -339,6 +339,7 @@
         </div>
         <form id="clinicalNoteForm">
             <input type="hidden" id="clinicalNoteId" name="note_id" value="">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="grid-2">
                 <div class="form-group">
                     <label for="noteTitle">{{ t(lang, 'animal_detail.note_title') }}</label>
@@ -470,6 +471,7 @@
         try {
             const formData = new FormData();
             formData.append('report_type', reportType);
+            formData.append('csrf_token', '{{ csrf_token }}');
 
             const response = await fetch(`/animal/{{ animal.id }}/diagnosis`, {
                 method: 'POST',
