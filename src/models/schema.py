@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS animals (
     neutered INTEGER,
     medical_history TEXT,
     notes TEXT,
+    responsible_vet TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

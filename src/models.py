@@ -74,9 +74,10 @@ class Animal:
     neutered: Optional[bool] = None
     medical_history: Optional[str] = None
     notes: Optional[str] = None
+    responsible_vet: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
+
     @property
     def age_display(self) -> str:
         """Format age for display (e.g., '7 A' for 7 years)"""
@@ -481,6 +482,7 @@ CREATE TABLE IF NOT EXISTS animals (
     neutered INTEGER,
     medical_history TEXT,
     notes TEXT,
+    responsible_vet TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -777,13 +779,14 @@ class Database:
     def create_animal(self, animal: Animal) -> int:
         """Insert a new animal and return its ID"""
         cursor = self.conn.execute("""
-            INSERT INTO animals (name, species, breed, microchip, age_years, 
-                                age_months, sex, weight_kg, neutered, 
-                                medical_history, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO animals (name, species, breed, microchip, age_years,
+                                age_months, sex, weight_kg, neutered,
+                                medical_history, notes, responsible_vet)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (animal.name, animal.species, animal.breed, animal.microchip,
               animal.age_years, animal.age_months, animal.sex, animal.weight_kg,
-              animal.neutered, animal.medical_history, animal.notes))
+              animal.neutered, animal.medical_history, animal.notes,
+              animal.responsible_vet))
         self.conn.commit()
         return cursor.lastrowid
     

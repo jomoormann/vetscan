@@ -19,6 +19,7 @@
         <a href="/compare/{{ animal.id }}" class="btn btn-secondary">{{ t(lang, 'animal_detail.compare_tests') }}</a>
         {% endif %}
         <button onclick="openClinicalNoteModal()" class="btn btn-secondary">{{ t(lang, 'animal_detail.clinical_note') }}</button>
+        <button onclick="openEditAnimalModal()" class="btn btn-secondary">{{ t(lang, 'animal.edit') }}</button>
     </div>
 </div>
 
@@ -46,6 +47,10 @@
         <div>
             <div class="text-muted mb-1">{{ t(lang, 'animal_detail.microchip') }}</div>
             <strong>{{ animal.microchip or 'N/A' }}</strong>
+        </div>
+        <div>
+            <div class="text-muted mb-1">{{ t(lang, 'animal.responsible_vet') }}</div>
+            <strong>{{ animal.responsible_vet or '--' }}</strong>
         </div>
         <div>
             <div class="text-muted mb-1">{{ t(lang, 'animal_detail.total_tests') }}</div>
@@ -358,6 +363,72 @@
         </form>
     </div>
 </div>
+
+<!-- Edit Animal Modal -->
+<div id="editAnimalModal" class="modal">
+    <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-header">
+            <h3>{{ t(lang, 'animal.edit_title') }}</h3>
+            <button class="modal-close" onclick="closeModal('editAnimalModal')">&times;</button>
+        </div>
+        <form id="editAnimalForm">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="grid-2">
+                <div class="form-group">
+                    <label for="editName">{{ t(lang, 'common.name') }}</label>
+                    <input type="text" id="editName" name="name" value="{{ animal.name }}" required>
+                </div>
+                <div class="form-group">
+                    <label for="editSpecies">{{ t(lang, 'common.species') }}</label>
+                    <select id="editSpecies" name="species" required>
+                        <option value="Canídeo" {% if animal.species == 'Canídeo' or animal.species == 'Canideo' %}selected{% endif %}>Canídeo</option>
+                        <option value="Felídeo" {% if animal.species == 'Felídeo' or animal.species == 'Felideo' %}selected{% endif %}>Felídeo</option>
+                        <option value="Outro" {% if animal.species == 'Outro' %}selected{% endif %}>Outro</option>
+                    </select>
+                </div>
+            </div>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label for="editBreed">{{ t(lang, 'common.breed') }}</label>
+                    <input type="text" id="editBreed" name="breed" value="{{ animal.breed or '' }}">
+                </div>
+                <div class="form-group">
+                    <label for="editSex">{{ t(lang, 'common.sex') }}</label>
+                    <select id="editSex" name="sex">
+                        <option value="M" {% if animal.sex == 'M' %}selected{% endif %}>{{ t(lang, 'common.male') }}</option>
+                        <option value="F" {% if animal.sex == 'F' %}selected{% endif %}>{{ t(lang, 'common.female') }}</option>
+                        <option value="U" {% if animal.sex == 'U' %}selected{% endif %}>--</option>
+                    </select>
+                </div>
+            </div>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label for="editAgeYears">{{ t(lang, 'common.age') }} ({{ t(lang, 'common.age') }})</label>
+                    <input type="number" id="editAgeYears" name="age_years" value="{{ animal.age_years or '' }}" step="0.1" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="editAgeMonths">{{ t(lang, 'common.age') }} (M)</label>
+                    <input type="number" id="editAgeMonths" name="age_months" value="{{ animal.age_months or '' }}" min="0" max="11">
+                </div>
+            </div>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label for="editResponsibleVet">{{ t(lang, 'animal.responsible_vet') }}</label>
+                    <input type="text" id="editResponsibleVet" name="responsible_vet" value="{{ animal.responsible_vet or '' }}">
+                </div>
+                <div class="form-group">
+                    <label for="editMicrochip">{{ t(lang, 'animal_detail.microchip') }}</label>
+                    <input type="text" id="editMicrochip" name="microchip" value="{{ animal.microchip or '' }}">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="editWeightKg">{{ t(lang, 'animal_detail.obs_types.weight') }} (kg)</label>
+                <input type="number" id="editWeightKg" name="weight_kg" value="{{ animal.weight_kg or '' }}" step="0.1" min="0">
+            </div>
+            <button type="submit" class="btn btn-primary">{{ t(lang, 'common.save') }}</button>
+        </form>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -370,8 +441,37 @@
         editClinicalNote: "{{ t(lang, 'animal_detail.edit_clinical_note') }}",
         diagnosisError: "{{ t(lang, 'diagnosis.error') }}",
         diagnosisNoNotes: "{{ t(lang, 'diagnosis.no_notes_error') }}",
-        diagnosisApiKeyError: "{{ t(lang, 'diagnosis.api_key_error') }}"
+        diagnosisApiKeyError: "{{ t(lang, 'diagnosis.api_key_error') }}",
+        errorSaveAnimal: "{{ t(lang, 'errors.save_animal') }}"
     };
+
+    // Edit Animal Modal
+    function openEditAnimalModal() {
+        openModal('editAnimalModal');
+    }
+
+    // Edit Animal form submission
+    document.getElementById('editAnimalForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+
+        try {
+            const response = await fetch('/animal/{{ animal.id }}/update', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert(data.message || translations.errorCommunication);
+            }
+        } catch (error) {
+            alert(translations.errorCommunication);
+        }
+    });
 
     // Clinical Notes Collapsible Toggle
     function toggleClinicalNotes() {

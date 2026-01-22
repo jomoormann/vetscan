@@ -63,6 +63,11 @@
         "edit": "Editar",
         "delete": "Eliminar"
     },
+    "animal": {
+        "responsible_vet": "Veterinário",
+        "edit": "Editar",
+        "edit_title": "Editar Perfil do Animal"
+    },
     "animals": {
         "title": "Animais",
         "upload_pdf": "Upload PDF",
@@ -223,6 +228,7 @@
         "save_symptom": "Erro ao guardar sintoma",
         "save_observation": "Erro ao guardar observação",
         "save_clinical_note": "Erro ao guardar nota clínica",
+        "save_animal": "Erro ao guardar animal",
         "communication": "Erro de comunicação",
         "confirm_delete": "Tem a certeza que deseja eliminar?"
     },

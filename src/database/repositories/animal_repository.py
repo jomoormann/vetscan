@@ -34,11 +34,12 @@ class AnimalRepository:
         cursor = self.db.conn.execute("""
             INSERT INTO animals (name, species, breed, microchip, age_years,
                                 age_months, sex, weight_kg, neutered,
-                                medical_history, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                medical_history, notes, responsible_vet)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (animal.name, animal.species, animal.breed, animal.microchip,
               animal.age_years, animal.age_months, animal.sex, animal.weight_kg,
-              animal.neutered, animal.medical_history, animal.notes))
+              animal.neutered, animal.medical_history, animal.notes,
+              animal.responsible_vet))
         self.db.conn.commit()
         return cursor.lastrowid
 
@@ -135,7 +136,7 @@ class AnimalRepository:
         """
         allowed_fields = {'name', 'species', 'breed', 'microchip', 'age_years',
                          'age_months', 'sex', 'weight_kg', 'neutered',
-                         'medical_history', 'notes'}
+                         'medical_history', 'notes', 'responsible_vet'}
         update_fields = {k: v for k, v in kwargs.items() if k in allowed_fields}
         if not update_fields:
             return False

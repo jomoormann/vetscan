@@ -63,6 +63,11 @@
         "edit": "Edit",
         "delete": "Delete"
     },
+    "animal": {
+        "responsible_vet": "Vet",
+        "edit": "Edit",
+        "edit_title": "Edit Animal Profile"
+    },
     "animals": {
         "title": "Animals",
         "upload_pdf": "Upload PDF",
@@ -223,6 +228,7 @@
         "save_symptom": "Error saving symptom",
         "save_observation": "Error saving observation",
         "save_clinical_note": "Error saving clinical note",
+        "save_animal": "Error saving animal",
         "communication": "Communication error",
         "confirm_delete": "Are you sure you want to delete?"
     },

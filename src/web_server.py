@@ -1395,7 +1395,8 @@ async def view_animal(request: Request, animal_id: int):
             "diagnosis_reports": diagnosis_reports,
             "diagnosis_available": DIAGNOSIS_AVAILABLE,
             "current_user": current_user,
-            "csrf_token": signed_csrf
+            "csrf_token": signed_csrf,
+            "today": date.today().isoformat()
         })
         response.set_cookie(
             key=CSRF_COOKIE_NAME,
@@ -1413,6 +1414,68 @@ async def view_animal(request: Request, animal_id: int):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        service.close()
+
+
+@app.post("/animal/{animal_id}/update")
+async def update_animal(
+    request: Request,
+    animal_id: int,
+    name: str = Form(...),
+    species: str = Form(...),
+    breed: str = Form(None),
+    age_years: float = Form(None),
+    age_months: int = Form(None),
+    sex: str = Form("U"),
+    responsible_vet: str = Form(None),
+    microchip: str = Form(None),
+    weight_kg: float = Form(None),
+    csrf_token: str = Form(None)
+):
+    """Update animal profile information"""
+    # Validate CSRF token
+    if not validate_csrf(request, csrf_token):
+        return JSONResponse({"success": False, "message": "Invalid request"}, status_code=403)
+
+    service = get_service()
+    try:
+        # Verify animal exists
+        animal = service.db.get_animal(animal_id)
+        if not animal:
+            return JSONResponse({"success": False, "message": "Animal not found"}, status_code=404)
+
+        # Build update fields (only include non-None values)
+        update_fields = {
+            "name": name,
+            "species": species,
+            "sex": sex,
+        }
+        if breed is not None:
+            update_fields["breed"] = breed
+        if age_years is not None:
+            update_fields["age_years"] = age_years
+        if age_months is not None:
+            update_fields["age_months"] = age_months
+        if responsible_vet is not None:
+            update_fields["responsible_vet"] = responsible_vet if responsible_vet.strip() else None
+        if microchip is not None:
+            update_fields["microchip"] = microchip if microchip.strip() else None
+        if weight_kg is not None:
+            update_fields["weight_kg"] = weight_kg
+
+        # Use the repository update method
+        from database.repositories.animal_repository import AnimalRepository
+        animal_repo = AnimalRepository(service.db)
+        success = animal_repo.update(animal_id, **update_fields)
+
+        return JSONResponse({"success": success})
+    except Exception as e:
+        logger.exception(f"Error updating animal {animal_id}")
+        return JSONResponse({
+            "success": False,
+            "message": str(e)
+        }, status_code=500)
     finally:
         service.close()
 

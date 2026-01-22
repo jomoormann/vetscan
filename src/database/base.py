@@ -59,7 +59,18 @@ class Database:
             self.connect()
         self.conn.executescript(SCHEMA_SQL)
         self.conn.commit()
+        self._run_migrations()
         logger.info(f"Database initialized: {self.db_path}")
+
+    def _run_migrations(self):
+        """Run database migrations for schema changes."""
+        # Migration: Add responsible_vet column to animals table if it doesn't exist
+        cursor = self.conn.execute("PRAGMA table_info(animals)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "responsible_vet" not in columns:
+            self.conn.execute("ALTER TABLE animals ADD COLUMN responsible_vet TEXT")
+            self.conn.commit()
+            logger.info("Migration: Added responsible_vet column to animals table")
 
     def __enter__(self):
         """Context manager entry."""

@@ -42,6 +42,7 @@ class Animal:
     neutered: Optional[bool] = None
     medical_history: Optional[str] = None
     notes: Optional[str] = None
+    responsible_vet: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

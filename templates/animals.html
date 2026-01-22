@@ -17,6 +17,7 @@
                 <th>{{ t(lang, 'common.name') }}</th>
                 <th>{{ t(lang, 'common.species') }}</th>
                 <th class="mobile-hide">{{ t(lang, 'common.breed') }}</th>
+                <th class="mobile-hide">{{ t(lang, 'animal.responsible_vet') }}</th>
                 <th class="mobile-hide">{{ t(lang, 'common.age') }}</th>
                 <th class="mobile-hide">{{ t(lang, 'common.sex') }}</th>
                 <th>{{ t(lang, 'common.tests') }}</th>
@@ -30,6 +31,7 @@
                 <td><strong>{{ item.animal.name }}</strong></td>
                 <td>{{ item.animal.species }}</td>
                 <td class="mobile-hide">{{ item.animal.breed }}</td>
+                <td class="mobile-hide">{{ item.animal.responsible_vet or '--' }}</td>
                 <td class="mobile-hide">{{ item.animal.age_display }}</td>
                 <td class="mobile-hide">
                     {% if item.animal.sex == 'M' %}

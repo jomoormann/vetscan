@@ -51,6 +51,7 @@
                     <th>{{ t(lang, 'common.name') }}</th>
                     <th>{{ t(lang, 'common.species') }}</th>
                     <th class="mobile-hide">{{ t(lang, 'common.breed') }}</th>
+                    <th class="mobile-hide">{{ t(lang, 'animal.responsible_vet') }}</th>
                 </tr>
             </thead>
             <tbody>
@@ -59,6 +60,7 @@
                     <td><strong>{{ animal.name }}</strong></td>
                     <td>{{ animal.species }}</td>
                     <td class="mobile-hide">{{ animal.breed }}</td>
+                    <td class="mobile-hide">{{ animal.responsible_vet or '--' }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
