@@ -6,3 +6,10 @@ RewriteRule ^(.*)$ http://127.0.0.1:8000/$1 [P,L]
 # Proxy settings
 ProxyPreserveHost On
 ProxyPassReverse / http://127.0.0.1:8000/
+
+# Disable caching for dynamic content
+<IfModule mod_headers.c>
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires 0
+</IfModule>
