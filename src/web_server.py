@@ -15,6 +15,8 @@ import secrets
 import base64
 import hmac
 import hashlib
+import signal
+import atexit
 from datetime import date, datetime, timedelta
 from typing import Optional, List
 from pathlib import Path
@@ -45,6 +47,33 @@ from pdf_validator import PDFValidator, ValidationResult
 
 # Initialize logger for this module
 logger = get_logger("web_server")
+
+
+# =============================================================================
+# SIGNAL HANDLERS FOR DEBUGGING CRASHES
+# =============================================================================
+
+def _signal_handler(signum, frame):
+    """Log when process receives termination signals."""
+    sig_name = signal.Signals(signum).name
+    logger.warning(f"Received signal {sig_name} ({signum}) - process terminating")
+    sys.exit(0)
+
+
+def _exit_handler():
+    """Log when process exits."""
+    logger.info("Web server process exiting")
+
+
+# Register signal handlers to log termination
+for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+    try:
+        signal.signal(sig, _signal_handler)
+    except (ValueError, OSError):
+        pass  # Some signals can't be caught
+
+atexit.register(_exit_handler)
+
 
 # Import diagnosis service (optional - may not be installed)
 try:
@@ -533,14 +562,55 @@ def validate_csrf(request: Request, form_token: str) -> bool:
 # HELPER FUNCTIONS
 # =============================================================================
 
+# Global service instance - initialized once at startup, reused for all requests
+_global_service: Optional[VetProteinService] = None
+
+
+class ServiceProxy:
+    """
+    Proxy wrapper for VetProteinService that makes close() a no-op.
+    This allows code to call service.close() without actually closing
+    the shared global database connection.
+    """
+
+    def __init__(self, service: VetProteinService):
+        self._service = service
+
+    def __getattr__(self, name):
+        return getattr(self._service, name)
+
+    def close(self):
+        """No-op: don't close the global service."""
+        pass
+
+
+def _init_global_service():
+    """Initialize the global service instance (called once at startup)."""
+    global _global_service
+    if _global_service is None:
+        _global_service = VetProteinService(
+            db_path=str(DB_PATH),
+            uploads_dir=str(UPLOADS_DIR)
+        )
+        _global_service.initialize()
+        logger.info("Global database service initialized")
+
+
 def get_service() -> VetProteinService:
-    """Get a configured service instance"""
-    service = VetProteinService(
-        db_path=str(DB_PATH),
-        uploads_dir=str(UPLOADS_DIR)
-    )
-    service.initialize()
-    return service
+    """
+    Get a service instance that wraps the global database connection.
+    Returns a proxy that ignores close() calls to keep the connection alive.
+    """
+    global _global_service
+    if _global_service is None:
+        _init_global_service()
+    return ServiceProxy(_global_service)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on app startup."""
+    _init_global_service()
 
 
 def format_date(d) -> str:

@@ -83,6 +83,10 @@ Thumbs.db
 .cache/
 *.bak
 
+# Database backups (downloaded from production)
+backups/
+!backups/.gitkeep
+
 # Empty placeholder directories (keep the structure)
 !data/.gitkeep
 !uploads/.gitkeep
