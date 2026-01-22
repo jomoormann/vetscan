@@ -49,18 +49,18 @@
             <thead>
                 <tr>
                     <th>{{ t(lang, 'common.name') }}</th>
+                    <th class="mobile-hide">{{ t(lang, 'animal.responsible_vet') }}</th>
                     <th>{{ t(lang, 'common.species') }}</th>
                     <th class="mobile-hide">{{ t(lang, 'common.breed') }}</th>
-                    <th class="mobile-hide">{{ t(lang, 'animal.responsible_vet') }}</th>
                 </tr>
             </thead>
             <tbody>
                 {% for animal in animals[:5] %}
                 <tr onclick="window.location='/animal/{{ animal.id }}'" style="cursor: pointer;">
                     <td><strong>{{ animal.name }}</strong></td>
+                    <td class="mobile-hide">{{ animal.responsible_vet or '--' }}</td>
                     <td>{{ animal.species }}</td>
                     <td class="mobile-hide">{{ animal.breed }}</td>
-                    <td class="mobile-hide">{{ animal.responsible_vet or '--' }}</td>
                 </tr>
                 {% endfor %}
             </tbody>

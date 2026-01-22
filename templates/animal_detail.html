@@ -27,6 +27,10 @@
 <div class="card">
     <div class="grid-3">
         <div>
+            <div class="text-muted mb-1">{{ t(lang, 'animal.responsible_vet') }}</div>
+            <strong>{{ animal.responsible_vet or '--' }}</strong>
+        </div>
+        <div>
             <div class="text-muted mb-1">{{ t(lang, 'common.species') }}</div>
             <strong>{{ animal.species }}</strong>
         </div>
@@ -47,10 +51,6 @@
         <div>
             <div class="text-muted mb-1">{{ t(lang, 'animal_detail.microchip') }}</div>
             <strong>{{ animal.microchip or 'N/A' }}</strong>
-        </div>
-        <div>
-            <div class="text-muted mb-1">{{ t(lang, 'animal.responsible_vet') }}</div>
-            <strong>{{ animal.responsible_vet or '--' }}</strong>
         </div>
         <div>
             <div class="text-muted mb-1">{{ t(lang, 'animal_detail.total_tests') }}</div>
