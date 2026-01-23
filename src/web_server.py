@@ -15,8 +15,6 @@ import secrets
 import base64
 import hmac
 import hashlib
-import signal
-import atexit
 from datetime import date, datetime, timedelta
 from typing import Optional, List
 from pathlib import Path
@@ -49,30 +47,6 @@ from pdf_validator import PDFValidator, ValidationResult
 logger = get_logger("web_server")
 
 
-# =============================================================================
-# SIGNAL HANDLERS FOR DEBUGGING CRASHES
-# =============================================================================
-
-def _signal_handler(signum, frame):
-    """Log when process receives termination signals."""
-    sig_name = signal.Signals(signum).name
-    logger.warning(f"Received signal {sig_name} ({signum}) - process terminating")
-    sys.exit(0)
-
-
-def _exit_handler():
-    """Log when process exits."""
-    logger.info("Web server process exiting")
-
-
-# Register signal handlers to log termination
-for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-    try:
-        signal.signal(sig, _signal_handler)
-    except (ValueError, OSError):
-        pass  # Some signals can't be caught
-
-atexit.register(_exit_handler)
 
 
 # Import diagnosis service (optional - may not be installed)
