@@ -91,6 +91,5 @@ backups/
 !data/.gitkeep
 !uploads/.gitkeep
 
-# SSH key for deployment
+# SSH key for deployment (old shared hosting key)
 deploy/vetscan_ssh_key
-deploy/DEPLOYMENT_GUIDE.md
