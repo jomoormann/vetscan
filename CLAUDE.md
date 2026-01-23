@@ -1,104 +1,278 @@
 # Instructions for Claude Code
 
-## CRITICAL: DEPLOYMENT PROCEDURE
+## ARCHITECTURE OVERVIEW
 
-**ALWAYS USE THE DEPLOYMENT SCRIPT. NEVER DEPLOY MANUALLY.**
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         VetScan Architecture                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  LOCAL DEVELOPMENT                     PRODUCTION (VPS)                 │
+│  ─────────────────                     ────────────────                 │
+│                                                                         │
+│  ┌─────────────────┐                   ┌─────────────────────────────┐  │
+│  │ Your Machine    │    deploy.sh      │ VPS: 76.13.5.89             │  │
+│  │                 │ ────────────────► │ srv1278248.hstgr.cloud      │  │
+│  │ Code: /vet_...  │                   │                             │  │
+│  │ DB: data/*.db   │                   │ ┌─────────────────────────┐ │  │
+│  └─────────────────┘                   │ │ nginx (port 443/80)     │ │  │
+│         │                              │ │ SSL via Let's Encrypt   │ │  │
+│         │ git push                     │ └───────────┬─────────────┘ │  │
+│         ▼                              │             │ proxy         │  │
+│  ┌─────────────────┐                   │             ▼               │  │
+│  │ GitHub          │                   │ ┌─────────────────────────┐ │  │
+│  │ jomoormann/     │                   │ │ gunicorn (port 8000)    │ │  │
+│  │ vetscan         │                   │ │ + uvicorn workers       │ │  │
+│  └─────────────────┘                   │ │ systemd: vetscan.service│ │  │
+│                                        │ └───────────┬─────────────┘ │  │
+│                                        │             │               │  │
+│                                        │             ▼               │  │
+│                                        │ ┌─────────────────────────┐ │  │
+│                                        │ │ FastAPI Application     │ │  │
+│                                        │ │ /var/www/vetscan.net/app│ │  │
+│                                        │ └───────────┬─────────────┘ │  │
+│                                        │             │               │  │
+│                                        │             ▼               │  │
+│                                        │ ┌─────────────────────────┐ │  │
+│                                        │ │ SQLite Database         │ │  │
+│                                        │ │ data/vet_proteins.db    │ │  │
+│                                        │ └─────────────────────────┘ │  │
+│                                        └─────────────────────────────┘  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
+---
+
+## CURRENT PRODUCTION SERVER (USE THIS)
+
+| Property | Value |
+|----------|-------|
+| **Type** | Hostinger VPS |
+| **Hostname** | srv1278248.hstgr.cloud |
+| **IP Address** | 76.13.5.89 |
+| **SSH User** | root |
+| **SSH Port** | 22 (default) |
+| **SSH Command** | `ssh root@76.13.5.89` |
+| **Domain** | vetscan.net |
+| **App Path** | /var/www/vetscan.net/app/ |
+| **Database** | /var/www/vetscan.net/app/data/vet_proteins.db |
+| **Service** | vetscan.service (systemd) |
+| **Web Server** | nginx with SSL (Let's Encrypt) |
+| **App Server** | gunicorn with uvicorn workers |
+| **Workers** | 2 |
+| **Auto-restart** | Yes (systemd Restart=always) |
+
+---
+
+## OLD SHARED HOSTING (DO NOT USE)
+
+**This server is DEPRECATED. Do not deploy to it.**
+
+| Property | Value |
+|----------|-------|
+| **Type** | Hostinger Shared Hosting |
+| **IP Address** | 82.198.229.40 |
+| **SSH User** | u618294093 |
+| **SSH Port** | 65002 |
+| **SSH Key** | deploy/vetscan_ssh_key |
+| **App Path** | ~/domains/vetscan.net/app/ |
+| **Status** | DEPRECATED - DNS no longer points here |
+
+**Why we migrated:** Shared hosting had process management issues. Gunicorn workers were being killed by the hosting provider, causing repeated server crashes.
+
+---
+
+## GITHUB REPOSITORY
+
+| Property | Value |
+|----------|-------|
+| **URL** | https://github.com/jomoormann/vetscan |
+| **Branch** | main |
+| **Owner** | jomoormann |
+
+### What's in GitHub:
+- All application source code (`src/`, `templates/`, `static/`, `translations/`)
+- Deployment scripts (`deploy/deploy.sh`, `deploy/backup_db.sh`)
+- Documentation (`CLAUDE.md`, `deploy/DEPLOYMENT_GUIDE.md`)
+- Configuration files (`requirements.txt`, `gunicorn.conf.py`)
+
+### What's NOT in GitHub (gitignored):
+- `.env` (contains API keys and passwords)
+- `data/` (database files)
+- `backups/` (database backups)
+- `uploads/` (user uploaded files)
+- `logs/` (application logs)
+- `deploy/vetscan_ssh_key` (old SSH key)
+- `venv/` (Python virtual environment)
+
+---
+
+## CRITICAL RULES
+
+### 1. DEPLOYMENT
+
+**ALWAYS USE:**
 ```bash
 ./deploy/deploy.sh
 ```
 
-This script automatically:
-1. Downloads a local backup of the production database
-2. Creates a server-side backup
-3. Uploads code (excluding data/)
-4. Restarts the vetscan systemd service
-5. Verifies database integrity
-6. Verifies server is running
+**NEVER:**
+- Run rsync manually
+- SSH and restart services manually for deployment
+- Skip backup steps
+- Deploy to the old shared hosting (82.198.229.40)
 
-**DO NOT** run rsync, systemctl, or ssh commands for deployment manually. Use the script.
+### 2. DATABASE PROTECTION
 
----
+**Production database location:** `/var/www/vetscan.net/app/data/vet_proteins.db`
 
-## Server Information
+**NEVER:**
+- Copy local database to server
+- Run DROP TABLE, DELETE FROM, TRUNCATE on production
+- Delete the data/ directory on server
+- Run rsync without `--exclude 'data/'`
 
-**VPS Server:** srv1278248.hstgr.cloud (Hostinger VPS)
-- IP: 76.13.5.89
-- User: root
-- App Path: /var/www/vetscan.net/app/
-- Service: vetscan.service (systemd - auto-restarts on failure)
+**ALWAYS:**
+- Create backups before any deployment (deploy.sh does this automatically)
+- Use ALTER TABLE ADD COLUMN for schema changes
+- Use UPDATE with WHERE clause for modifications
 
----
+### 3. SIGNAL HANDLERS
 
-## CRITICAL: DATABASE PROTECTION
+**NEVER add signal handlers to web_server.py or any ASGI application.**
 
-**THE PRODUCTION DATABASE MUST NEVER BE DELETED, OVERWRITTEN, OR MODIFIED DESTRUCTIVELY.**
-
-### Database Locations:
-- **Production:** `/var/www/vetscan.net/app/data/vet_proteins.db` (on VPS)
-- **Local:** `data/vet_proteins.db` (for development only - NEVER upload to server)
-
-### FORBIDDEN Actions:
-- **NEVER** run rsync without `--exclude 'data/'`
-- **NEVER** delete the `data/` directory on the server
-- **NEVER** copy a local database to the server
-- **NEVER** run DROP TABLE, DELETE FROM, or TRUNCATE commands on production
-
-### MANDATORY Backup Rules (enforced by deploy.sh):
-1. Download local backup BEFORE deployment → `backups/vet_proteins_*.db`
-2. Create server-side backup BEFORE deployment
-3. Verify database has data AFTER deployment
-
-### Safe Database Operations:
-- ALTER TABLE ADD COLUMN - Safe (adds new fields)
-- INSERT - Safe (adds new records)
-- UPDATE with WHERE clause - Safe if careful
-- Schema migrations that preserve data - Safe
-
-### FORBIDDEN Database Operations (without explicit user approval):
-- DROP TABLE
-- DELETE FROM (without WHERE)
-- TRUNCATE
-- Replacing the database file
-- Any operation that could lose production data
+Gunicorn uses SIGTERM/SIGHUP to manage workers. Custom signal handlers interfere with this and cause crashes. This was the root cause of server crashes on 2026-01-22/23.
 
 ---
 
-## CRITICAL: DO NOT ADD SIGNAL HANDLERS
+## SERVER MANAGEMENT QUICK REFERENCE
 
-**NEVER add signal handlers (SIGTERM, SIGINT, SIGHUP) to web_server.py or any ASGI application running under gunicorn.**
-
-Gunicorn uses these signals to manage worker processes. Custom handlers interfere with gunicorn's process management and cause worker crashes.
-
-This was the root cause of the server crashes on 2026-01-22/23. The fix was to remove all signal handlers.
-
----
-
-## Deployment
-
-See `deploy/DEPLOYMENT_GUIDE.md` for full deployment instructions.
-
-Quick server management:
 ```bash
-# Status
+# SSH into VPS
+ssh root@76.13.5.89
+
+# Check service status
 ssh root@76.13.5.89 'systemctl status vetscan'
 
-# Logs
+# View live logs
 ssh root@76.13.5.89 'journalctl -u vetscan -f'
 
-# Restart
+# View error logs
+ssh root@76.13.5.89 'tail -50 /var/www/vetscan.net/app/logs/error.log'
+
+# Restart service
 ssh root@76.13.5.89 'systemctl restart vetscan'
+
+# Check database
+ssh root@76.13.5.89 'cd /var/www/vetscan.net/app && source venv/bin/activate && python3 -c "import sqlite3; conn=sqlite3.connect(\"data/vet_proteins.db\"); print(\"Animals:\", conn.execute(\"SELECT COUNT(*) FROM animals\").fetchone()[0])"'
 ```
 
 ---
 
-## Project Structure
+## DEPLOYMENT FLOW
 
-- `src/` - Python application code
-- `templates/` - Jinja2 HTML templates
-- `static/` - CSS, JS, images
-- `translations/` - i18n JSON files (en.json, pt.json)
-- `data/` - Local database (DO NOT DEPLOY)
-- `backups/` - Downloaded production database backups
-- `deploy/` - Deployment scripts
-- `public_html/` - (Legacy - shared hosting only)
+```
+1. Developer runs: ./deploy/deploy.sh
+                        │
+                        ▼
+2. backup_db.sh downloads production DB to backups/
+                        │
+                        ▼
+3. Server-side backup created on VPS
+                        │
+                        ▼
+4. rsync uploads code (excludes data/, .env, logs/)
+                        │
+                        ▼
+5. systemctl restart vetscan
+                        │
+                        ▼
+6. Verify database has data (fail if empty)
+                        │
+                        ▼
+7. Verify HTTP 200 from https://vetscan.net/login
+```
+
+---
+
+## PROJECT STRUCTURE
+
+```
+vet_protein_app/
+├── src/                    # Python application code
+│   ├── web_server.py       # FastAPI application entry point
+│   ├── app.py              # Application factory
+│   ├── models.py           # Data models
+│   ├── database/           # Database layer
+│   ├── api/                # API routes
+│   └── middleware/         # Request middleware
+├── templates/              # Jinja2 HTML templates
+├── static/                 # CSS, JS, images
+├── translations/           # i18n JSON files (en.json, pt.json)
+├── data/                   # Local database (NEVER DEPLOY)
+├── backups/                # Downloaded production DB backups
+├── deploy/                 # Deployment scripts
+│   ├── deploy.sh           # Main deployment script
+│   ├── backup_db.sh        # Database backup script
+│   ├── DEPLOYMENT_GUIDE.md # Deployment documentation
+│   └── vetscan_ssh_key     # OLD shared hosting key (deprecated)
+├── CLAUDE.md               # THIS FILE - instructions for Claude
+├── requirements.txt        # Python dependencies
+└── gunicorn.conf.py        # Gunicorn configuration
+```
+
+---
+
+## TECHNOLOGY STACK
+
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | Jinja2 templates, vanilla JS |
+| **Backend** | FastAPI (Python) |
+| **Database** | SQLite |
+| **ASGI Server** | uvicorn (via gunicorn workers) |
+| **Process Manager** | gunicorn |
+| **Service Manager** | systemd |
+| **Web Server/Proxy** | nginx |
+| **SSL** | Let's Encrypt (certbot) |
+| **Hosting** | Hostinger VPS |
+| **Version Control** | GitHub |
+
+---
+
+## INCIDENT HISTORY
+
+### 2026-01-22/23: Server Crash Loop
+
+**Symptom:** Server repeatedly crashed after deployment, returning empty responses.
+
+**Root Cause:** Custom signal handlers in `web_server.py` intercepted SIGTERM/SIGHUP signals that gunicorn uses to manage workers. When gunicorn sent SIGTERM to recycle a worker, the custom handler called `sys.exit(0)`, causing gunicorn to think the worker was unresponsive and kill it with SIGKILL.
+
+**Fix:** Removed all custom signal handlers from `src/web_server.py`.
+
+**Prevention:** Never add signal handlers to ASGI applications running under gunicorn.
+
+### 2026-01-23: Migration to VPS
+
+**Reason:** Shared hosting (82.198.229.40) had unreliable process management. Migrated to dedicated VPS (76.13.5.89) with systemd for automatic restarts.
+
+---
+
+## COMMON MISTAKES TO AVOID
+
+1. **Deploying to wrong server** - Always use `./deploy/deploy.sh` which targets the VPS
+2. **Using old SSH credentials** - VPS uses `root@76.13.5.89`, not the old shared hosting
+3. **Overwriting production database** - Never copy local DB to server
+4. **Adding signal handlers** - Gunicorn manages signals, don't interfere
+5. **Manual deployment** - Always use the deployment script for backups
+6. **Skipping backups** - The deploy script enforces backups for a reason
+
+---
+
+## CONTACTS & RESOURCES
+
+- **GitHub:** https://github.com/jomoormann/vetscan
+- **Production Site:** https://vetscan.net
+- **VPS Provider:** Hostinger
+- **Deployment Guide:** `deploy/DEPLOYMENT_GUIDE.md`
