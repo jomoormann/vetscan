@@ -323,9 +323,12 @@ class VetProteinService:
             match_decision=match_decision,
         )
 
-    def get_unassigned_reports(self, status: str = "pending") -> List[UnassignedReport]:
+    def get_unassigned_reports(self, status: str = "pending",
+                               search: Optional[str] = None,
+                               page: Optional[int] = None,
+                               page_size: Optional[int] = None):
         """List queued reports awaiting manual assignment."""
-        return self.db.list_unassigned_reports(status)
+        return self.db.list_unassigned_reports(status, search, page, page_size)
 
     def assign_unassigned_report_to_animal(self, report_id: int,
                                            animal_id: int) -> ImportOutcome:

@@ -31,7 +31,7 @@ from models.domain import (
     Animal, TestSession, ProteinResult, Symptom, Observation,
     ClinicalNote, DiagnosisReport, BiochemistryResult, UrinalysisResult,
     AnimalIdentifier, AnimalMatchDecision, SessionMeasurement,
-    PathologyFinding, SessionAsset, UnassignedReport,
+    PathologyFinding, SessionAsset, UnassignedReport, AnimalVetAssignment,
     User, PasswordResetToken
 )
 
@@ -100,6 +100,46 @@ class Database(BaseDatabase):
         """List all animals."""
         return self._animal_repo.list_all()
 
+    def update_animal(self, animal_id: int,
+                      changed_by_user_id: Optional[int] = None,
+                      assignment_reason: Optional[str] = None,
+                      **kwargs) -> bool:
+        """Update animal fields and record responsible-vet changes."""
+        return self._animal_repo.update(
+            animal_id,
+            changed_by_user_id=changed_by_user_id,
+            assignment_reason=assignment_reason,
+            **kwargs,
+        )
+
+    def list_animals_paginated(self, search: Optional[str] = None,
+                               responsible_vet: Optional[str] = None,
+                               species: Optional[str] = None,
+                               sort: str = "updated_desc",
+                               page: int = 1,
+                               page_size: int = 25):
+        """List animals with overview metrics and pagination."""
+        return self._animal_repo.list_animals_paginated(
+            search=search,
+            responsible_vet=responsible_vet,
+            species=species,
+            sort=sort,
+            page=page,
+            page_size=page_size,
+        )
+
+    def search_animals(self, search: str, limit: int = 8) -> List[Dict]:
+        """Search animals for global search and typeahead."""
+        return self._animal_repo.search_animals(search, limit)
+
+    def list_responsible_vets(self) -> List[str]:
+        """List distinct responsible vets for filtering."""
+        return self._animal_repo.list_responsible_vets()
+
+    def get_vet_assignment_history(self, animal_id: int) -> List[AnimalVetAssignment]:
+        """Get responsible-vet assignment history for an animal."""
+        return self._animal_repo.get_vet_assignment_history(animal_id)
+
     # =========================================================================
     # SESSION OPERATIONS
     # =========================================================================
@@ -108,9 +148,35 @@ class Database(BaseDatabase):
         """Insert a new test session and return its ID."""
         return self._session_repo.create_session(session)
 
+    def get_session(self, session_id: int) -> Optional[TestSession]:
+        """Get a test session by ID."""
+        return self._session_repo.get_session(session_id)
+
     def get_sessions_for_animal(self, animal_id: int) -> List[TestSession]:
         """Get all test sessions for an animal, ordered by date."""
         return self._session_repo.get_sessions_for_animal(animal_id)
+
+    def list_reports_paginated(self, search: Optional[str] = None,
+                               source_system: Optional[str] = None,
+                               report_type: Optional[str] = None,
+                               responsible_vet: Optional[str] = None,
+                               animal_id: Optional[int] = None,
+                               page: int = 1,
+                               page_size: int = 25):
+        """List imported reports with pagination and joined animal metadata."""
+        return self._session_repo.list_reports_paginated(
+            search=search,
+            source_system=source_system,
+            report_type=report_type,
+            responsible_vet=responsible_vet,
+            animal_id=animal_id,
+            page=page,
+            page_size=page_size,
+        )
+
+    def search_reports(self, search: str, limit: int = 8) -> List[Dict]:
+        """Search imported reports for global search."""
+        return self._session_repo.search_reports(search, limit)
 
     def session_exists(self, report_number: str) -> bool:
         """Check if a session with given report number already exists."""
@@ -195,9 +261,12 @@ class Database(BaseDatabase):
         """Get a queued report."""
         return self._session_repo.get_unassigned_report(report_id)
 
-    def list_unassigned_reports(self, status: str = "pending") -> List[UnassignedReport]:
+    def list_unassigned_reports(self, status: str = "pending",
+                                search: Optional[str] = None,
+                                page: Optional[int] = None,
+                                page_size: Optional[int] = None):
         """List queued reports."""
-        return self._session_repo.list_unassigned_reports(status)
+        return self._session_repo.list_unassigned_reports(status, search, page, page_size)
 
     def mark_unassigned_report_assigned(self, report_id: int, animal_id: int,
                                         session_id: int) -> bool:
@@ -249,9 +318,12 @@ class Database(BaseDatabase):
         return self._animal_repo.get_clinical_notes(animal_id)
 
     def update_clinical_note(self, note_id: int, title: Optional[str],
-                            content: str, note_date: Optional[date] = None) -> bool:
+                            content: str, note_date: Optional[date] = None,
+                            updated_by_user_id: Optional[int] = None) -> bool:
         """Update a clinical note."""
-        return self._animal_repo.update_clinical_note(note_id, title, content, note_date)
+        return self._animal_repo.update_clinical_note(
+            note_id, title, content, note_date, updated_by_user_id
+        )
 
     def delete_clinical_note(self, note_id: int) -> bool:
         """Delete a clinical note."""

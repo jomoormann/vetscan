@@ -5,7 +5,7 @@ Handles database operations for TestSession, ProteinResult,
 BiochemistryResult, and UrinalysisResult entities.
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from models.domain import (
     TestSession, ProteinResult, BiochemistryResult, UrinalysisResult,
@@ -75,6 +75,122 @@ class SessionRepository:
             ORDER BY test_date DESC
         """, (animal_id,))
         return [TestSession(**dict(row)) for row in cursor.fetchall()]
+
+    def list_reports_paginated(self, search: Optional[str] = None,
+                               source_system: Optional[str] = None,
+                               report_type: Optional[str] = None,
+                               responsible_vet: Optional[str] = None,
+                               animal_id: Optional[int] = None,
+                               page: int = 1,
+                               page_size: int = 25) -> Tuple[List[Dict], int]:
+        """List imported reports with joined animal metadata."""
+        filters = []
+        params: List[object] = []
+
+        if search:
+            wildcard = f"%{search.strip()}%"
+            filters.append("""
+                (
+                    ts.report_number LIKE ?
+                    OR ts.external_report_id LIKE ?
+                    OR ts.report_source LIKE ?
+                    OR ts.clinic_name LIKE ?
+                    OR a.name LIKE ?
+                    OR a.owner_name LIKE ?
+                    OR a.microchip LIKE ?
+                )
+            """)
+            params.extend([wildcard] * 7)
+
+        if source_system:
+            filters.append("ts.source_system = ?")
+            params.append(source_system)
+
+        if report_type:
+            filters.append("ts.report_type = ?")
+            params.append(report_type)
+
+        if responsible_vet:
+            filters.append("a.responsible_vet = ?")
+            params.append(responsible_vet)
+
+        if animal_id is not None:
+            filters.append("ts.animal_id = ?")
+            params.append(animal_id)
+
+        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+        count_row = self.db.conn.execute(f"""
+            SELECT COUNT(*) AS total
+            FROM test_sessions ts
+            JOIN animals a ON a.id = ts.animal_id
+            {where_clause}
+        """, tuple(params)).fetchone()
+        total = count_row["total"] if count_row else 0
+
+        offset = max(page - 1, 0) * page_size
+        rows = self.db.conn.execute(f"""
+            SELECT
+                ts.*,
+                a.name AS animal_name,
+                a.species AS animal_species,
+                a.owner_name AS owner_name,
+                a.responsible_vet AS responsible_vet,
+                (
+                    SELECT COUNT(*)
+                    FROM protein_results pr
+                    WHERE pr.session_id = ts.id
+                ) AS protein_result_count,
+                (
+                    SELECT COUNT(*)
+                    FROM session_measurements sm
+                    WHERE sm.session_id = ts.id
+                ) AS measurement_count,
+                (
+                    SELECT COUNT(*)
+                    FROM pathology_findings pf
+                    WHERE pf.session_id = ts.id
+                ) AS pathology_finding_count,
+                (
+                    SELECT COUNT(*)
+                    FROM session_assets sa
+                    WHERE sa.session_id = ts.id
+                ) AS asset_count
+            FROM test_sessions ts
+            JOIN animals a ON a.id = ts.animal_id
+            {where_clause}
+            ORDER BY COALESCE(ts.test_date, DATE(ts.created_at)) DESC, ts.id DESC
+            LIMIT ? OFFSET ?
+        """, tuple(params + [page_size, offset])).fetchall()
+        return [dict(row) for row in rows], total
+
+    def search_reports(self, search: str, limit: int = 8) -> List[Dict]:
+        """Search reports for the global search dropdown."""
+        if not search or not search.strip():
+            return []
+
+        wildcard = f"%{search.strip()}%"
+        rows = self.db.conn.execute("""
+            SELECT
+                ts.id,
+                ts.report_number,
+                ts.external_report_id,
+                ts.report_type,
+                ts.source_system,
+                ts.test_date,
+                a.id AS animal_id,
+                a.name AS animal_name,
+                a.owner_name AS owner_name
+            FROM test_sessions ts
+            JOIN animals a ON a.id = ts.animal_id
+            WHERE ts.report_number LIKE ?
+               OR ts.external_report_id LIKE ?
+               OR ts.report_source LIKE ?
+               OR a.name LIKE ?
+               OR a.owner_name LIKE ?
+            ORDER BY COALESCE(ts.test_date, DATE(ts.created_at)) DESC, ts.id DESC
+            LIMIT ?
+        """, (wildcard, wildcard, wildcard, wildcard, wildcard, limit)).fetchall()
+        return [dict(row) for row in rows]
 
     def session_exists(self, report_number: str) -> bool:
         """Check if a session with given report number already exists."""
@@ -382,14 +498,52 @@ class SessionRepository:
             return UnassignedReport(**dict(row))
         return None
 
-    def list_unassigned_reports(self, status: str = "pending") -> List[UnassignedReport]:
-        """List queued reports by status."""
-        cursor = self.db.conn.execute("""
+    def list_unassigned_reports(self, status: str = "pending",
+                                search: Optional[str] = None,
+                                page: Optional[int] = None,
+                                page_size: Optional[int] = None):
+        """List queued reports by status, optionally filtered and paginated."""
+        filters = ["status = ?"]
+        params: List[object] = [status]
+
+        if search:
+            wildcard = f"%{search.strip()}%"
+            filters.append("""
+                (
+                    filename LIKE ?
+                    OR report_number LIKE ?
+                    OR external_report_id LIKE ?
+                    OR animal_name LIKE ?
+                    OR owner_name LIKE ?
+                    OR clinic_name LIKE ?
+                )
+            """)
+            params.extend([wildcard] * 6)
+
+        where_clause = " AND ".join(filters)
+        if page is None or page_size is None:
+            cursor = self.db.conn.execute(f"""
+                SELECT * FROM unassigned_reports
+                WHERE {where_clause}
+                ORDER BY created_at DESC
+            """, tuple(params))
+            return [UnassignedReport(**dict(row)) for row in cursor.fetchall()]
+
+        count_row = self.db.conn.execute(f"""
+            SELECT COUNT(*) AS total
+            FROM unassigned_reports
+            WHERE {where_clause}
+        """, tuple(params)).fetchone()
+        total = count_row["total"] if count_row else 0
+
+        offset = max(page - 1, 0) * page_size
+        cursor = self.db.conn.execute(f"""
             SELECT * FROM unassigned_reports
-            WHERE status = ?
+            WHERE {where_clause}
             ORDER BY created_at DESC
-        """, (status,))
-        return [UnassignedReport(**dict(row)) for row in cursor.fetchall()]
+            LIMIT ? OFFSET ?
+        """, tuple(params + [page_size, offset]))
+        return [UnassignedReport(**dict(row)) for row in cursor.fetchall()], total
 
     def mark_unassigned_report_assigned(self, report_id: int, animal_id: int,
                                         session_id: int) -> bool:

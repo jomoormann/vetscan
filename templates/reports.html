@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}Reports - {{ t(lang, 'app.title') }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Report registry</div>
+        <h1>Reports</h1>
+        <p class="page-subtitle">Search imported reports across the whole practice and jump straight into the right animal or report detail.</p>
+    </div>
+    <div class="inline-actions">
+        <a href="/upload" class="btn btn-primary">Upload report</a>
+        <a href="/unassigned-reports" class="btn btn-secondary">Unassigned ({{ pending_count }})</a>
+    </div>
+</div>
+
+<section class="card">
+    <form method="get" action="/reports" class="filters">
+        <div class="filters-inline">
+            <div class="field">
+                <label for="report-search">Search</label>
+                <input id="report-search" type="search" name="q" value="{{ filters.q }}" placeholder="Report number, animal, owner, source, or clinic">
+            </div>
+            <div class="field">
+                <label for="report-source">Source system</label>
+                <select id="report-source" name="source_system">
+                    <option value="">All sources</option>
+                    {% for source in source_systems %}
+                    <option value="{{ source }}" {% if filters.source_system == source %}selected{% endif %}>{{ source }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="field">
+                <label for="report-type">Report type</label>
+                <select id="report-type" name="report_type">
+                    <option value="">All types</option>
+                    {% for type in report_types %}
+                    <option value="{{ type }}" {% if filters.report_type == type %}selected{% endif %}>{{ type|replace('_', ' ')|title }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="field">
+                <label for="report-vet">Responsible vet</label>
+                <select id="report-vet" name="responsible_vet">
+                    <option value="">All vets</option>
+                    {% for vet in responsible_vets %}
+                    <option value="{{ vet }}" {% if filters.responsible_vet == vet %}selected{% endif %}>{{ vet }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="field">
+                <label for="report-page-size">Rows</label>
+                <select id="report-page-size" name="page_size">
+                    {% for size in [10, 25, 50, 100] %}
+                    <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="filters-actions">
+            <button type="submit" class="btn btn-primary">Apply filters</button>
+            <a href="/reports" class="btn btn-secondary">Reset</a>
+        </div>
+    </form>
+</section>
+
+<section class="card">
+    <div class="card-header">
+        <div>
+            <div class="card-kicker">Overview</div>
+            <h2 class="card-title">Imported reports</h2>
+        </div>
+        <div class="pagination-meta">
+            {% if pagination.total_items %}
+            Showing {{ pagination.range_start }}-{{ pagination.range_end }} of {{ total_reports }}
+            {% else %}
+            No reports found
+            {% endif %}
+        </div>
+    </div>
+
+    {% if reports %}
+    <div class="table-shell">
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Report</th>
+                        <th>Animal</th>
+                        <th>Responsible vet</th>
+                        <th>Source</th>
+                        <th>Summary</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for report in reports %}
+                    <tr>
+                        <td>{{ report.test_date|format_date if report.test_date else '--' }}</td>
+                        <td>
+                            <div class="table-title">{{ report.report_number or report.external_report_id or ('Report ' ~ report.id) }}</div>
+                            <div class="table-meta">{{ report.display_type }}</div>
+                        </td>
+                        <td>
+                            <div class="table-title"><a href="/animal/{{ report.animal_id }}">{{ report.animal_name }}</a></div>
+                            <div class="table-meta">{{ report.owner_name or '--' }}</div>
+                        </td>
+                        <td>{{ report.responsible_vet or '--' }}</td>
+                        <td>
+                            <div>{{ report.source_system or '--' }}</div>
+                            <div class="table-meta">{{ report.clinic_name or report.lab_name or '--' }}</div>
+                        </td>
+                        <td>{{ report.summary }}</td>
+                        <td><span class="badge badge-normal">Imported</span></td>
+                        <td><a href="/session/{{ report.id }}" class="btn btn-secondary">Open</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="pagination">
+        <div class="pagination-meta">
+            {% if pending_count %}
+            {{ pending_count }} report{% if pending_count != 1 %}s{% endif %} still need manual assignment.
+            {% else %}
+            All pending reports are cleared.
+            {% endif %}
+        </div>
+        <div class="pagination-links">
+            {% if pagination.has_prev %}
+            <a href="{{ pagination.prev_url }}" class="pagination-link">Previous</a>
+            {% endif %}
+            {% for page in pagination.pages %}
+            <a href="{{ page.url }}" class="pagination-link {% if page.current %}is-current{% endif %}">{{ page.number }}</a>
+            {% endfor %}
+            {% if pagination.has_next %}
+            <a href="{{ pagination.next_url }}" class="pagination-link">Next</a>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>No reports matched the current filters.</p>
+        <div class="inline-actions" style="justify-content: center; margin-top: 1rem;">
+            <a href="/upload" class="btn btn-primary">Upload report</a>
+            <a href="/reports" class="btn btn-secondary">Clear filters</a>
+        </div>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}New animal - {{ t(lang, 'app.title') }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Manual patient entry</div>
+        <h1>New animal</h1>
+        <p class="page-subtitle">Create a patient record before reports arrive, or when a report cannot create the record automatically.</p>
+    </div>
+    <div class="inline-actions">
+        <a href="/animals" class="btn btn-secondary">Back to animals</a>
+    </div>
+</div>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<section class="card">
+    <form method="post" action="/animals/new" class="filters">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <div class="grid-2">
+            <div class="field">
+                <label for="animal-name">Animal name</label>
+                <input id="animal-name" name="name" required value="{{ form_values.name or '' }}">
+            </div>
+            <div class="field">
+                <label for="animal-owner">Pet owner</label>
+                <input id="animal-owner" name="owner_name" value="{{ form_values.owner_name or '' }}">
+            </div>
+            <div class="field">
+                <label for="animal-species">Species</label>
+                <select id="animal-species" name="species" required>
+                    {% set current_species = form_values.species or 'Canídeo' %}
+                    <option value="Canídeo" {% if current_species == 'Canídeo' %}selected{% endif %}>Canídeo</option>
+                    <option value="Felídeo" {% if current_species == 'Felídeo' %}selected{% endif %}>Felídeo</option>
+                    <option value="Equídeo" {% if current_species == 'Equídeo' %}selected{% endif %}>Equídeo</option>
+                    <option value="Exotic" {% if current_species == 'Exotic' %}selected{% endif %}>Exotic</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="animal-breed">Breed</label>
+                <input id="animal-breed" name="breed" value="{{ form_values.breed or '' }}">
+            </div>
+            <div class="field">
+                <label for="animal-vet">Responsible vet</label>
+                <input id="animal-vet" name="responsible_vet" value="{{ form_values.responsible_vet or '' }}" placeholder="Current case owner">
+            </div>
+            <div class="field">
+                <label for="animal-microchip">Microchip</label>
+                <input id="animal-microchip" name="microchip" value="{{ form_values.microchip or '' }}">
+            </div>
+            <div class="field">
+                <label for="animal-age-years">Age (years)</label>
+                <input id="animal-age-years" name="age_years" type="number" step="0.1" min="0" value="{{ form_values.age_years or '' }}">
+            </div>
+            <div class="field">
+                <label for="animal-age-months">Age (months)</label>
+                <input id="animal-age-months" name="age_months" type="number" min="0" max="11" value="{{ form_values.age_months or '' }}">
+            </div>
+            <div class="field">
+                <label for="animal-sex">Sex</label>
+                {% set current_sex = form_values.sex or 'U' %}
+                <select id="animal-sex" name="sex">
+                    <option value="U" {% if current_sex == 'U' %}selected{% endif %}>Unknown</option>
+                    <option value="M" {% if current_sex == 'M' %}selected{% endif %}>Male</option>
+                    <option value="F" {% if current_sex == 'F' %}selected{% endif %}>Female</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="animal-weight">Weight (kg)</label>
+                <input id="animal-weight" name="weight_kg" type="number" step="0.1" min="0" value="{{ form_values.weight_kg or '' }}">
+            </div>
+        </div>
+
+        <div class="field">
+            <label for="animal-history">Medical history</label>
+            <textarea id="animal-history" name="medical_history">{{ form_values.medical_history or '' }}</textarea>
+        </div>
+
+        <div class="field">
+            <label for="animal-notes">General notes</label>
+            <textarea id="animal-notes" name="notes">{{ form_values.notes or '' }}</textarea>
+        </div>
+
+        <div class="filters-actions">
+            <button type="submit" class="btn btn-primary">Create animal</button>
+            <a href="/animals" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

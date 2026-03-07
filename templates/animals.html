@@ -1,68 +1,160 @@
 {% extends "base.html" %}
 
-{% block title %}{{ t(lang, 'animals.title') }} - {{ t(lang, 'app.title') }}{% endblock %}
+{% block title %}Animals - {{ t(lang, 'app.title') }}{% endblock %}
 
 {% block content %}
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-    <h1>{{ t(lang, 'animals.title') }}</h1>
-    <a href="/upload" class="btn btn-primary">{{ t(lang, 'animals.upload_pdf') }}</a>
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Patient registry</div>
+        <h1>Animals</h1>
+        <p class="page-subtitle">Search, filter, and open the animals that matter without loading the full record list at once.</p>
+    </div>
+    <div class="inline-actions">
+        <a href="/animals/new" class="btn btn-primary">New animal</a>
+        <a href="/upload" class="btn btn-secondary">Upload report</a>
+    </div>
 </div>
 
-<div class="card">
+<section class="card">
+    <form method="get" action="/animals" class="filters">
+        <div class="filters-inline">
+            <div class="field">
+                <label for="animal-search">Search</label>
+                <input id="animal-search" type="search" name="q" value="{{ filters.q }}" placeholder="Animal, owner, microchip, breed, or vet">
+            </div>
+            <div class="field">
+                <label for="animal-vet">Responsible vet</label>
+                <select id="animal-vet" name="responsible_vet">
+                    <option value="">All vets</option>
+                    {% for vet in responsible_vets %}
+                    <option value="{{ vet }}" {% if filters.responsible_vet == vet %}selected{% endif %}>{{ vet }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="field">
+                <label for="animal-species">Species</label>
+                <select id="animal-species" name="species">
+                    <option value="">All species</option>
+                    {% for option in species_options %}
+                    <option value="{{ option }}" {% if filters.species == option %}selected{% endif %}>{{ option }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="field">
+                <label for="animal-sort">Sort</label>
+                <select id="animal-sort" name="sort">
+                    <option value="updated_desc" {% if filters.sort == 'updated_desc' %}selected{% endif %}>Recent activity</option>
+                    <option value="reports_desc" {% if filters.sort == 'reports_desc' %}selected{% endif %}>Most reports</option>
+                    <option value="name_asc" {% if filters.sort == 'name_asc' %}selected{% endif %}>Name A-Z</option>
+                    <option value="name_desc" {% if filters.sort == 'name_desc' %}selected{% endif %}>Name Z-A</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="animal-page-size">Rows</label>
+                <select id="animal-page-size" name="page_size">
+                    {% for size in [10, 25, 50, 100] %}
+                    <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="filters-actions">
+            <button type="submit" class="btn btn-primary">Apply filters</button>
+            <a href="/animals" class="btn btn-secondary">Reset</a>
+        </div>
+    </form>
+</section>
+
+<section class="card">
+    <div class="card-header">
+        <div>
+            <div class="card-kicker">Overview</div>
+            <h2 class="card-title">Animal list</h2>
+        </div>
+        <div class="pagination-meta">
+            {% if pagination.total_items %}
+            Showing {{ pagination.range_start }}-{{ pagination.range_end }} of {{ pagination.total_items }}
+            {% else %}
+            No animals found
+            {% endif %}
+        </div>
+    </div>
+
     {% if animals %}
-    <div class="table-responsive">
-    <table>
-        <thead>
-            <tr>
-                <th>{{ t(lang, 'common.name') }}</th>
-                <th class="mobile-hide">{{ t(lang, 'animal.responsible_vet') }}</th>
-                <th>{{ t(lang, 'common.species') }}</th>
-                <th class="mobile-hide">{{ t(lang, 'common.breed') }}</th>
-                <th class="mobile-hide">{{ t(lang, 'common.age') }}</th>
-                <th class="mobile-hide">{{ t(lang, 'common.sex') }}</th>
-                <th>{{ t(lang, 'common.tests') }}</th>
-                <th class="mobile-hide">{{ t(lang, 'common.last_test') }}</th>
-                <th>{{ t(lang, 'common.actions') }}</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for item in animals %}
-            <tr>
-                <td><strong>{{ item.animal.name }}</strong></td>
-                <td class="mobile-hide">{{ item.animal.responsible_vet or '--' }}</td>
-                <td>{{ item.animal.species }}</td>
-                <td class="mobile-hide">{{ item.animal.breed }}</td>
-                <td class="mobile-hide">{{ item.animal.age_display }}</td>
-                <td class="mobile-hide">
-                    {% if item.animal.sex == 'M' %}
-                    {{ t(lang, 'common.male') }}
-                    {% elif item.animal.sex == 'F' %}
-                    {{ t(lang, 'common.female') }}
-                    {% else %}
-                    --
-                    {% endif %}
-                </td>
-                <td>
-                    <span class="badge badge-info">{{ item.test_count }}</span>
-                </td>
-                <td class="mobile-hide">{{ item.last_test|format_date }}</td>
-                <td>
-                    <a href="/animal/{{ item.animal.id }}" class="btn btn-secondary">
-                        {{ t(lang, 'common.view_details') }}
-                    </a>
-                </td>
-            </tr>
+    <div class="table-shell">
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Animal</th>
+                        <th>Pet owner</th>
+                        <th>Responsible vet</th>
+                        <th>Last report</th>
+                        <th>Reports</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in animals %}
+                    <tr>
+                        <td>
+                            <div class="table-title">{{ item.animal.name }}</div>
+                            <div class="table-meta">
+                                {{ item.animal.species }}{% if item.animal.breed %} · {{ item.animal.breed }}{% endif %}
+                                {% if item.animal.microchip %} · {{ item.animal.microchip }}{% endif %}
+                            </div>
+                        </td>
+                        <td>{{ item.animal.owner_name or '--' }}</td>
+                        <td>{{ item.animal.responsible_vet or '--' }}</td>
+                        <td>
+                            {% if item.last_test %}
+                            {{ item.last_test|format_date }}
+                            {% else %}
+                            <span class="text-muted">No reports yet</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge badge-info">{{ item.test_count }}</span>
+                            {% if item.last_note_at %}
+                            <div class="table-meta">Last note {{ item.last_note_at|format_date }}</div>
+                            {% endif %}
+                        </td>
+                        <td><a href="/animal/{{ item.animal.id }}" class="btn btn-secondary">Open</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="pagination">
+        <div class="pagination-meta">
+            {% if filters.q or filters.responsible_vet or filters.species %}
+            Filters are active.
+            {% else %}
+            Practice-wide view.
+            {% endif %}
+        </div>
+        <div class="pagination-links">
+            {% if pagination.has_prev %}
+            <a href="{{ pagination.prev_url }}" class="pagination-link">Previous</a>
+            {% endif %}
+            {% for page in pagination.pages %}
+            <a href="{{ page.url }}" class="pagination-link {% if page.current %}is-current{% endif %}">{{ page.number }}</a>
             {% endfor %}
-        </tbody>
-    </table>
+            {% if pagination.has_next %}
+            <a href="{{ pagination.next_url }}" class="pagination-link">Next</a>
+            {% endif %}
+        </div>
     </div>
     {% else %}
-    <div class="text-center" style="padding: 3rem;">
-        <p style="font-size: 3rem; margin-bottom: 1rem;">🐕</p>
-        <h3>{{ t(lang, 'animals.no_animals_title') }}</h3>
-        <p class="text-muted mb-2">{{ t(lang, 'animals.no_animals_description') }}</p>
-        <a href="/upload" class="btn btn-primary">{{ t(lang, 'animals.upload_pdf') }}</a>
+    <div class="empty-state">
+        <p>No animals matched the current filters.</p>
+        <div class="inline-actions" style="justify-content: center; margin-top: 1rem;">
+            <a href="/animals/new" class="btn btn-primary">Create animal</a>
+            <a href="/animals" class="btn btn-secondary">Clear filters</a>
+        </div>
     </div>
     {% endif %}
-</div>
+</section>
 {% endblock %}

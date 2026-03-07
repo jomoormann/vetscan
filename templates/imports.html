@@ -1,94 +1,108 @@
 {% extends "base.html" %}
 
-{% block title %}{{ t(lang, 'imports.title') }} - {{ t(lang, 'app.title') }}{% endblock %}
+{% block title %}Imports - {{ t(lang, 'app.title') }}{% endblock %}
 
 {% block content %}
-<div class="card">
-    <div class="card-header">
-        <h1 class="card-title">{{ t(lang, 'imports.title') }}</h1>
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Email audit</div>
+        <h1>Imports</h1>
+        <p class="page-subtitle">Audit what arrived through the mailbox, what imported successfully, and what still needs review.</p>
     </div>
-
-    <p class="text-muted mb-2">
-        {{ t(lang, 'imports.description') }} <strong>{{ email_address }}</strong>
-    </p>
-
-    <!-- Stats -->
-    <div class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-value">{{ stats.total }}</div>
-            <div class="stat-label">{{ t(lang, 'imports.total_imports') }}</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value" style="color: var(--success);">{{ stats.successful }}</div>
-            <div class="stat-label">{{ t(lang, 'imports.successful') }}</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value" style="color: var(--danger);">{{ stats.failed }}</div>
-            <div class="stat-label">{{ t(lang, 'imports.failed') }}</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value" style="color: var(--warning);">{{ stats.skipped }}</div>
-            <div class="stat-label">{{ t(lang, 'imports.skipped') }}</div>
-        </div>
+    <div class="inline-actions">
+        <a href="/unassigned-reports" class="btn btn-secondary">Review queue</a>
+        <a href="/reports" class="btn btn-secondary">Reports</a>
     </div>
 </div>
 
-<div class="card">
+<section class="card">
+    <div class="card-header">
+        <div>
+            <div class="card-kicker">Mailbox</div>
+            <h2 class="card-title">{{ email_address }}</h2>
+        </div>
+    </div>
+    <div class="stats-grid">
+        <div class="kpi-card">
+            <div class="kpi-value">{{ stats.total }}</div>
+            <div class="kpi-label">Recent import attempts</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value" style="color: var(--success);">{{ stats.successful }}</div>
+            <div class="kpi-label">Successful</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value" style="color: var(--danger);">{{ stats.failed }}</div>
+            <div class="kpi-label">Failed</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value" style="color: var(--warning);">{{ stats.skipped }}</div>
+            <div class="kpi-label">Skipped or duplicate</div>
+        </div>
+    </div>
+</section>
+
+<section class="card">
+    <div class="card-header">
+        <div>
+            <div class="card-kicker">Audit trail</div>
+            <h2 class="card-title">Recent email imports</h2>
+        </div>
+    </div>
     {% if imports %}
-    <div class="table-responsive">
-    <table>
-        <thead>
-            <tr>
-                <th>{{ t(lang, 'imports.table.time') }}</th>
-                <th class="mobile-hide">{{ t(lang, 'imports.table.email_from') }}</th>
-                <th>{{ t(lang, 'imports.table.status') }}</th>
-                <th>{{ t(lang, 'imports.table.animal') }}</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for imp in imports %}
-            <tr>
-                <td>
-                    <span title="{{ imp.import_timestamp }}">{{ imp.time_ago }}</span>
-                </td>
-                <td class="mobile-hide">
-                    <div style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ imp.email_from }}">
-                        {{ imp.email_from | truncate(30) if imp.email_from else '--' }}
-                    </div>
-                </td>
-                <td>
-                    {% if imp.validation_result == 'queued_manual_assignment' %}
-                        <span class="badge badge-info">Queued</span>
-                    {% elif imp.import_success %}
-                        <span class="badge badge-normal">{{ t(lang, 'imports.status.success') }}</span>
-                    {% elif imp.validation_result == 'duplicate' %}
-                        <span class="badge badge-info">{{ t(lang, 'imports.status.duplicate') }}</span>
-                    {% elif imp.validation_result == 'rate_limited' %}
-                        <span class="badge badge-low">{{ t(lang, 'imports.status.rate_limited') }}</span>
-                    {% else %}
-                        <span class="badge badge-high" title="{{ imp.error_message }}">{{ t(lang, 'imports.status.failed') }}</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if imp.animal_id and imp.animal_name %}
-                        <a href="/animal/{{ imp.animal_id }}">{{ imp.animal_name }}</a>
-                    {% elif imp.validation_result == 'queued_manual_assignment' %}
-                        <a href="/unassigned-reports">Needs assignment</a>
-                    {% else %}
-                        <span class="text-muted">--</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-shell">
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>When</th>
+                        <th>Email</th>
+                        <th>Attachment</th>
+                        <th>Status</th>
+                        <th>Animal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for imp in imports %}
+                    <tr>
+                        <td>{{ imp.time_ago }}</td>
+                        <td>{{ imp.email_from or '--' }}</td>
+                        <td>
+                            <div class="table-title">{{ imp.attachment_name or '--' }}</div>
+                            {% if imp.report_number %}
+                            <div class="table-meta">{{ imp.report_number }}</div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if imp.validation_result == 'queued_manual_assignment' %}
+                            <span class="badge badge-low">Queued</span>
+                            {% elif imp.import_success %}
+                            <span class="badge badge-normal">Imported</span>
+                            {% elif imp.validation_result == 'duplicate' %}
+                            <span class="badge badge-info">Duplicate</span>
+                            {% elif imp.validation_result == 'rate_limited' %}
+                            <span class="badge badge-info">Rate limited</span>
+                            {% else %}
+                            <span class="badge badge-high" title="{{ imp.error_message }}">Failed</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if imp.animal_id and imp.animal_name %}
+                            <a href="/animal/{{ imp.animal_id }}">{{ imp.animal_name }}</a>
+                            {% elif imp.validation_result == 'queued_manual_assignment' %}
+                            <a href="/unassigned-reports">Needs assignment</a>
+                            {% else %}
+                            <span class="text-muted">--</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
     {% else %}
-    <div class="text-center" style="padding: 3rem;">
-        <div style="font-size: 3rem; margin-bottom: 1rem;">📧</div>
-        <h3>{{ t(lang, 'imports.no_imports') }}</h3>
-        <p class="text-muted">{{ t(lang, 'imports.no_imports_hint') }}</p>
-    </div>
+    <div class="empty-state">No import history is available yet.</div>
     {% endif %}
-</div>
+</section>
 {% endblock %}

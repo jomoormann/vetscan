@@ -16,9 +16,9 @@ import base64
 import hmac
 import hashlib
 from datetime import date, datetime, timedelta
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 from pathlib import Path
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlencode
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Form, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -593,7 +593,17 @@ def format_date(d) -> str:
     if d is None:
         return "N/A"
     if isinstance(d, str):
-        return d
+        candidate = d.strip()
+        for parser in (
+            lambda value: datetime.fromisoformat(value.replace('Z', '+00:00')).date(),
+            lambda value: datetime.strptime(value, "%Y-%m-%d").date(),
+            lambda value: datetime.strptime(value, "%Y-%m-%d %H:%M:%S").date(),
+        ):
+            try:
+                return parser(candidate).strftime("%d/%m/%Y")
+            except Exception:
+                continue
+        return candidate
     try:
         return d.strftime("%d/%m/%Y")
     except:
@@ -620,6 +630,93 @@ def build_upload_url(file_path: Optional[str]) -> Optional[str]:
         if "/uploads/" in normalized:
             return f"/uploads/{normalized.split('/uploads/', 1)[1]}"
         return None
+
+
+def parse_positive_int(raw_value: Optional[str], default: int, minimum: int = 1,
+                       maximum: Optional[int] = None) -> int:
+    """Parse query-string integers safely."""
+    try:
+        value = int(raw_value or default)
+    except (TypeError, ValueError):
+        value = default
+    value = max(minimum, value)
+    if maximum is not None:
+        value = min(maximum, value)
+    return value
+
+
+def build_page_url(request: Request, **updates) -> str:
+    """Return the current path with updated query parameters."""
+    query = dict(request.query_params)
+    for key, value in updates.items():
+        if value in (None, "", []):
+            query.pop(key, None)
+        else:
+            query[key] = str(value)
+    encoded = urlencode(query)
+    return f"{request.url.path}?{encoded}" if encoded else request.url.path
+
+
+def build_pagination(request: Request, total_items: int, page: int, page_size: int,
+                     param_name: str = "page") -> Dict[str, Any]:
+    """Pagination metadata including ready-to-use URLs for templates."""
+    total_pages = max((total_items + page_size - 1) // page_size, 1)
+    page = max(1, min(page, total_pages))
+    window_start = max(1, page - 2)
+    window_end = min(total_pages, page + 2)
+    pages = []
+    for page_number in range(window_start, window_end + 1):
+        pages.append({
+            "number": page_number,
+            "current": page_number == page,
+            "url": build_page_url(request, **{param_name: page_number}),
+        })
+    return {
+        "page": page,
+        "page_size": page_size,
+        "total_items": total_items,
+        "total_pages": total_pages,
+        "has_prev": page > 1,
+        "has_next": page < total_pages,
+        "prev_url": build_page_url(request, **{param_name: page - 1}) if page > 1 else None,
+        "next_url": build_page_url(request, **{param_name: page + 1}) if page < total_pages else None,
+        "pages": pages,
+        "range_start": 0 if total_items == 0 else ((page - 1) * page_size) + 1,
+        "range_end": min(total_items, page * page_size),
+    }
+
+
+def humanize_report_type(report_type: Optional[str], panel_name: Optional[str] = None) -> str:
+    """Display-friendly label for report families."""
+    normalized = (report_type or "").strip().lower()
+    panel = (panel_name or "").strip()
+    if normalized == "dnatech_proteinogram":
+        return "Proteinogram"
+    if normalized == "cytology":
+        return "Cytology"
+    if normalized == "immunocytochemistry":
+        return "Immunocytochemistry"
+    if panel:
+        return panel.replace("_", " ").title()
+    if normalized:
+        return normalized.replace("_", " ").title()
+    return "Imported report"
+
+
+def summarize_report_overview(row: Dict[str, Any]) -> str:
+    """Compact summary used in tables and cards."""
+    if row.get("protein_result_count"):
+        return f"{row['protein_result_count']} protein markers"
+    if row.get("measurement_count"):
+        return f"{row['measurement_count']} measurements"
+    if row.get("pathology_finding_count"):
+        detail = f"{row['pathology_finding_count']} findings"
+        if row.get("asset_count"):
+            detail += f" | {row['asset_count']} images"
+        return detail
+    if (row.get("report_type") or "").lower() in {"biochemistry", "urinalysis"}:
+        return "Renal and urine markers"
+    return "Imported report"
 
 
 def describe_report_item(item: dict) -> str:
@@ -1354,73 +1451,83 @@ async def admin_enable_user(request: Request, user_id: int, csrf_token: str = Fo
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    """Home page - dashboard with overview"""
+    """Practice-wide inbox and overview."""
     lang = get_lang(request)
     current_user = getattr(request.state, 'user', None)
     service = get_service()
     try:
-        animals = service.db.list_animals()
+        db = service.db
+        stats_row = db.conn.execute("""
+            SELECT
+                (SELECT COUNT(*) FROM animals) AS total_animals,
+                (SELECT COUNT(*) FROM test_sessions) AS total_reports,
+                (SELECT COUNT(*) FROM unassigned_reports WHERE status = 'pending') AS pending_reports,
+                (
+                    SELECT COUNT(*)
+                    FROM email_import_log
+                    WHERE import_success = 0
+                      AND COALESCE(validation_result, '') NOT IN (
+                          'duplicate', 'rate_limited', 'queued_manual_assignment'
+                      )
+                ) AS failed_imports
+        """).fetchone()
 
-        # Calculate current week boundaries (Monday to Sunday)
-        today = date.today()
-        monday = today - timedelta(days=today.weekday())  # Monday of current week
-        sunday = monday + timedelta(days=6)  # Sunday of current week
+        recent_reports, _ = db.list_reports_paginated(page=1, page_size=8)
+        recent_animals, _ = db.list_animals_paginated(page=1, page_size=8)
+        pending_rows, _ = db.list_unassigned_reports(status="pending", page=1, page_size=6)
+        pending_reports = []
+        for report in pending_rows:
+            pending_reports.append({
+                "report": report,
+                "summary": json.loads(report.parsed_summary_json or "{}"),
+            })
+        recent_failures = [
+            dict(row) for row in db.conn.execute("""
+                SELECT import_timestamp, email_from, attachment_name, error_message
+                FROM email_import_log
+                WHERE import_success = 0
+                  AND COALESCE(validation_result, '') NOT IN (
+                      'duplicate', 'rate_limited', 'queued_manual_assignment'
+                  )
+                ORDER BY import_timestamp DESC
+                LIMIT 5
+            """).fetchall()
+        ]
+        recent_handovers = [
+            dict(row) for row in db.conn.execute("""
+                SELECT
+                    ava.*,
+                    a.name AS animal_name,
+                    COALESCE(u.display_name, u.email) AS changed_by_name
+                FROM animal_vet_assignments ava
+                JOIN animals a ON a.id = ava.animal_id
+                LEFT JOIN users u ON u.id = ava.changed_by_user_id
+                WHERE ava.change_reason IS NOT NULL
+                   OR EXISTS (
+                        SELECT 1
+                        FROM animal_vet_assignments other
+                        WHERE other.animal_id = ava.animal_id
+                          AND other.id != ava.id
+                   )
+                ORDER BY ava.created_at DESC
+                LIMIT 6
+            """).fetchall()
+        ]
 
-        # Helper to parse datetime (for created_at / import date)
-        def parse_created_at(d):
-            if d is None:
-                return None
-            if isinstance(d, datetime):
-                return d.date()
-            if isinstance(d, date):
-                return d
-            if isinstance(d, str):
-                try:
-                    # Try ISO format with time
-                    return datetime.fromisoformat(d.replace('Z', '+00:00')).date()
-                except:
-                    try:
-                        return datetime.strptime(d, "%Y-%m-%d").date()
-                    except:
-                        return None
-            return None
-
-        # Get sessions imported/received in current week (by created_at, not test_date)
-        weekly_sessions = []
-        for animal in animals:
-            sessions = service.db.get_sessions_for_animal(animal.id)
-            for session in sessions:
-                # Use created_at (import date) instead of test_date
-                import_date = parse_created_at(session.created_at)
-                if import_date and monday <= import_date <= sunday:
-                    weekly_sessions.append({
-                        'animal': animal,
-                        'session': session
-                    })
-
-        # Sort by import date, most recent first
-        def get_sort_date(item):
-            d = parse_created_at(item['session'].created_at)
-            return d if d else date.min
-
-        weekly_sessions.sort(key=get_sort_date, reverse=True)
-
-        # Calculate total tests
-        total_tests = 0
-        for animal in animals:
-            sessions = service.db.get_sessions_for_animal(animal.id)
-            total_tests += len(sessions)
+        for row in recent_reports:
+            row["display_type"] = humanize_report_type(row.get("report_type"), row.get("panel_name"))
+            row["summary"] = summarize_report_overview(row)
 
         response = templates.TemplateResponse("index.html", {
             "request": request,
             "lang": lang,
-            "animals": animals,
-            "weekly_sessions": weekly_sessions,
-            "week_start": monday,
-            "week_end": sunday,
-            "total_animals": len(animals),
-            "total_tests": total_tests,
-            "current_user": current_user
+            "current_user": current_user,
+            "stats": dict(stats_row) if stats_row else {},
+            "recent_reports": recent_reports,
+            "recent_animals": recent_animals,
+            "pending_reports": pending_reports,
+            "recent_failures": recent_failures,
+            "recent_handovers": recent_handovers,
         })
         return set_lang_cookie(response, lang)
     except Exception as e:
@@ -1434,26 +1541,51 @@ async def home(request: Request):
 
 @app.get("/animals", response_class=HTMLResponse)
 async def list_animals(request: Request):
-    """List all animals"""
+    """Animals index with search, filters, and pagination."""
     lang = get_lang(request)
     current_user = getattr(request.state, 'user', None)
     service = get_service()
     try:
-        animals = service.db.list_animals()
-        animals_with_counts = []
-        for animal in animals:
-            sessions = service.db.get_sessions_for_animal(animal.id)
-            animals_with_counts.append({
-                'animal': animal,
-                'test_count': len(sessions),
-                'last_test': sessions[0].test_date if sessions else None
-            })
+        page = parse_positive_int(request.query_params.get("page"), default=1)
+        page_size = parse_positive_int(request.query_params.get("page_size"), default=25, maximum=100)
+        search = (request.query_params.get("q") or "").strip() or None
+        responsible_vet = (request.query_params.get("responsible_vet") or "").strip() or None
+        species = (request.query_params.get("species") or "").strip() or None
+        sort = (request.query_params.get("sort") or "updated_desc").strip()
+
+        animals, total = service.db.list_animals_paginated(
+            search=search,
+            responsible_vet=responsible_vet,
+            species=species,
+            sort=sort,
+            page=page,
+            page_size=page_size,
+        )
+        pagination = build_pagination(request, total, page, page_size)
+        species_options = [
+            row["species"] for row in service.db.conn.execute("""
+                SELECT DISTINCT species
+                FROM animals
+                WHERE species IS NOT NULL AND TRIM(species) != ''
+                ORDER BY species
+            """).fetchall()
+        ]
 
         response = templates.TemplateResponse("animals.html", {
             "request": request,
             "lang": lang,
-            "animals": animals_with_counts,
-            "current_user": current_user
+            "animals": animals,
+            "pagination": pagination,
+            "filters": {
+                "q": search or "",
+                "responsible_vet": responsible_vet or "",
+                "species": species or "",
+                "sort": sort,
+                "page_size": page_size,
+            },
+            "responsible_vets": service.db.list_responsible_vets(),
+            "species_options": species_options,
+            "current_user": current_user,
         })
         return set_lang_cookie(response, lang)
     except Exception as e:
@@ -1465,44 +1597,241 @@ async def list_animals(request: Request):
         service.close()
 
 
-@app.get("/animal/{animal_id}", response_class=HTMLResponse)
-async def view_animal(request: Request, animal_id: int):
-    """View animal details and test history"""
+@app.get("/animals/new", response_class=HTMLResponse)
+async def new_animal_page(request: Request):
+    """Manual animal creation form."""
+    lang = get_lang(request)
+    current_user = getattr(request.state, 'user', None)
+    csrf_raw = request.cookies.get(CSRF_COOKIE_NAME) or generate_csrf_token()
+    signed_csrf = create_csrf_signed_token(csrf_raw)
+
+    response = templates.TemplateResponse("animal_form.html", {
+        "request": request,
+        "lang": lang,
+        "current_user": current_user,
+        "csrf_token": signed_csrf,
+        "form_values": {},
+        "error": None,
+    })
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=csrf_raw,
+        max_age=3600,
+        httponly=True,
+        samesite="strict",
+        secure=request.url.scheme == "https"
+    )
+    return set_lang_cookie(response, lang)
+
+
+@app.post("/animals/new", response_class=HTMLResponse)
+async def create_animal_page(
+    request: Request,
+    name: str = Form(...),
+    species: str = Form(...),
+    owner_name: str = Form(None),
+    breed: str = Form(None),
+    age_years: float = Form(None),
+    age_months: int = Form(None),
+    sex: str = Form("U"),
+    responsible_vet: str = Form(None),
+    microchip: str = Form(None),
+    weight_kg: float = Form(None),
+    medical_history: str = Form(None),
+    notes: str = Form(None),
+    csrf_token: str = Form(None)
+):
+    """Create a new animal manually from the UI."""
+    lang = get_lang(request)
+    current_user = getattr(request.state, 'user', None)
+    if not validate_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="Invalid request")
+
+    service = get_service()
+    try:
+        animal_id = service.db.create_animal(Animal(
+            name=name.strip(),
+            species=species.strip(),
+            owner_name=owner_name.strip() if owner_name else None,
+            breed=breed.strip() if breed else "",
+            age_years=age_years,
+            age_months=age_months,
+            sex=sex,
+            responsible_vet=responsible_vet.strip() if responsible_vet else None,
+            microchip=microchip.strip() if microchip else None,
+            weight_kg=weight_kg,
+            medical_history=medical_history.strip() if medical_history else None,
+            notes=notes.strip() if notes else None,
+        ))
+        return RedirectResponse(url=f"/animal/{animal_id}", status_code=302)
+    except Exception as e:
+        csrf_raw = request.cookies.get(CSRF_COOKIE_NAME) or generate_csrf_token()
+        signed_csrf = create_csrf_signed_token(csrf_raw)
+        response = templates.TemplateResponse("animal_form.html", {
+            "request": request,
+            "lang": lang,
+            "current_user": current_user,
+            "csrf_token": signed_csrf,
+            "error": str(e),
+            "form_values": {
+                "name": name,
+                "species": species,
+                "owner_name": owner_name,
+                "breed": breed,
+                "age_years": age_years,
+                "age_months": age_months,
+                "sex": sex,
+                "responsible_vet": responsible_vet,
+                "microchip": microchip,
+                "weight_kg": weight_kg,
+                "medical_history": medical_history,
+                "notes": notes,
+            },
+        }, status_code=400)
+        response.set_cookie(
+            key=CSRF_COOKIE_NAME,
+            value=csrf_raw,
+            max_age=3600,
+            httponly=True,
+            samesite="strict",
+            secure=request.url.scheme == "https"
+        )
+        return set_lang_cookie(response, lang)
+    finally:
+        service.close()
+
+
+@app.get("/reports", response_class=HTMLResponse)
+async def list_reports(request: Request):
+    """Reports index with filters, search, and pagination."""
     lang = get_lang(request)
     current_user = getattr(request.state, 'user', None)
     service = get_service()
     try:
-        animal = service.db.get_animal(animal_id)
+        page = parse_positive_int(request.query_params.get("page"), default=1)
+        page_size = parse_positive_int(request.query_params.get("page_size"), default=25, maximum=100)
+        search = (request.query_params.get("q") or "").strip() or None
+        source_system = (request.query_params.get("source_system") or "").strip() or None
+        report_type = (request.query_params.get("report_type") or "").strip() or None
+        responsible_vet = (request.query_params.get("responsible_vet") or "").strip() or None
+
+        rows, total = service.db.list_reports_paginated(
+            search=search,
+            source_system=source_system,
+            report_type=report_type,
+            responsible_vet=responsible_vet,
+            page=page,
+            page_size=page_size,
+        )
+        for row in rows:
+            row["display_type"] = humanize_report_type(row.get("report_type"), row.get("panel_name"))
+            row["summary"] = summarize_report_overview(row)
+
+        pagination = build_pagination(request, total, page, page_size)
+        report_types = [
+            row["report_type"] for row in service.db.conn.execute("""
+                SELECT DISTINCT report_type
+                FROM test_sessions
+                WHERE report_type IS NOT NULL AND TRIM(report_type) != ''
+                ORDER BY report_type
+            """).fetchall()
+        ]
+        source_systems = [
+            row["source_system"] for row in service.db.conn.execute("""
+                SELECT DISTINCT source_system
+                FROM test_sessions
+                WHERE source_system IS NOT NULL AND TRIM(source_system) != ''
+                ORDER BY source_system
+            """).fetchall()
+        ]
+        pending_count_row = service.db.conn.execute(
+            "SELECT COUNT(*) AS total FROM unassigned_reports WHERE status = 'pending'"
+        ).fetchone()
+
+        response = templates.TemplateResponse("reports.html", {
+            "request": request,
+            "lang": lang,
+            "current_user": current_user,
+            "reports": rows,
+            "pagination": pagination,
+            "filters": {
+                "q": search or "",
+                "source_system": source_system or "",
+                "report_type": report_type or "",
+                "responsible_vet": responsible_vet or "",
+                "page_size": page_size,
+            },
+            "source_systems": source_systems,
+            "report_types": report_types,
+            "responsible_vets": service.db.list_responsible_vets(),
+            "pending_count": pending_count_row["total"] if pending_count_row else 0,
+            "total_reports": total,
+        })
+        return set_lang_cookie(response, lang)
+    except Exception as e:
+        logger.exception("Error in list_reports")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        service.close()
+
+
+@app.get("/animal/{animal_id}", response_class=HTMLResponse)
+async def view_animal(request: Request, animal_id: int):
+    """Animal workspace with tabs for overview, reports, notes, diagnostics, and profile."""
+    lang = get_lang(request)
+    current_user = getattr(request.state, 'user', None)
+    service = get_service()
+    try:
+        db = service.db
+        animal = db.get_animal(animal_id)
         if not animal:
             raise HTTPException(status_code=404, detail="Animal not found")
 
-        sessions = service.db.get_sessions_for_animal(animal_id)
-        symptoms = service.db.get_symptoms_for_animal(animal_id)
-        observations = service.db.get_observations_for_animal(animal_id)
-        clinical_notes = service.db.get_clinical_notes_for_animal(animal_id)
-        diagnosis_reports = service.db.get_diagnosis_reports_for_animal(animal_id)
+        active_tab = (request.query_params.get("tab") or "overview").strip().lower()
+        if active_tab not in {"overview", "reports", "notes", "diagnostics", "profile"}:
+            active_tab = "overview"
 
-        # Get results for each session
-        sessions_with_results = []
-        for session in sessions:
-            results = service.db.get_results_for_session(session.id)
-            measurements = service.db.get_measurements_for_session(session.id)
-            biochem = service.db.get_biochemistry_for_session(session.id)
-            urinalysis = service.db.get_urinalysis_for_session(session.id)
-            pathology_findings = service.db.get_pathology_findings_for_session(session.id)
-            session_assets = service.db.get_assets_for_session(session.id)
-            abnormal_count = sum(1 for r in results if r.flag != 'normal')
-            if not abnormal_count:
-                abnormal_count = sum(1 for m in measurements if m.flag != 'normal')
-            sessions_with_results.append({
-                'session': session,
-                'results': results,
-                'measurements': measurements,
-                'biochemistry': biochem,
-                'urinalysis': urinalysis,
-                'pathology_findings': pathology_findings,
-                'session_assets': session_assets,
-                'abnormal_count': abnormal_count
+        report_page = parse_positive_int(request.query_params.get("report_page"), default=1)
+        report_page_size = 10
+        report_type_filter = (request.query_params.get("report_type") or "").strip() or None
+
+        report_rows, report_total = db.list_reports_paginated(
+            animal_id=animal_id,
+            report_type=report_type_filter,
+            page=report_page,
+            page_size=report_page_size,
+        )
+        for row in report_rows:
+            row["display_type"] = humanize_report_type(row.get("report_type"), row.get("panel_name"))
+            row["summary"] = summarize_report_overview(row)
+
+        overview_reports, _ = db.list_reports_paginated(
+            animal_id=animal_id,
+            page=1,
+            page_size=5,
+        )
+        for row in overview_reports:
+            row["display_type"] = humanize_report_type(row.get("report_type"), row.get("panel_name"))
+            row["summary"] = summarize_report_overview(row)
+
+        clinical_notes = db.get_clinical_notes_for_animal(animal_id)
+        diagnosis_reports = db.get_diagnosis_reports_for_animal(animal_id)
+        vet_history = db.get_vet_assignment_history(animal_id)
+        symptoms = db.get_symptoms_for_animal(animal_id, active_only=True)
+        observations = db.get_observations_for_animal(animal_id)
+        report_type_options = []
+        for row in db.conn.execute("""
+            SELECT DISTINCT report_type, panel_name
+            FROM test_sessions
+            WHERE animal_id = ?
+            ORDER BY report_type
+        """, (animal_id,)).fetchall():
+            value = row["report_type"]
+            if not value:
+                continue
+            report_type_options.append({
+                "value": value,
+                "label": humanize_report_type(row["report_type"], row["panel_name"]),
             })
 
         # Generate CSRF token
@@ -1513,12 +1842,21 @@ async def view_animal(request: Request, animal_id: int):
             "request": request,
             "lang": lang,
             "animal": animal,
-            "sessions": sessions_with_results,
-            "session_groups": build_session_groups(sessions_with_results),
+            "active_tab": active_tab,
+            "overview_reports": overview_reports,
+            "reports": report_rows,
+            "report_pagination": build_pagination(
+                request, report_total, report_page, report_page_size, param_name="report_page"
+            ),
+            "report_total": report_total,
+            "report_type_filter": report_type_filter or "",
+            "report_type_options": report_type_options,
             "symptoms": symptoms,
             "observations": observations,
             "clinical_notes": clinical_notes,
             "diagnosis_reports": diagnosis_reports,
+            "latest_diagnosis": diagnosis_reports[0] if diagnosis_reports else None,
+            "vet_history": vet_history,
             "diagnosis_available": DIAGNOSIS_AVAILABLE,
             "current_user": current_user,
             "csrf_token": signed_csrf,
@@ -1550,6 +1888,7 @@ async def update_animal(
     animal_id: int,
     name: str = Form(...),
     species: str = Form(...),
+    owner_name: str = Form(None),
     breed: str = Form(None),
     age_years: float = Form(None),
     age_months: int = Form(None),
@@ -1557,9 +1896,13 @@ async def update_animal(
     responsible_vet: str = Form(None),
     microchip: str = Form(None),
     weight_kg: float = Form(None),
+    medical_history: str = Form(None),
+    notes: str = Form(None),
+    assignment_reason: str = Form(None),
     csrf_token: str = Form(None)
 ):
     """Update animal profile information"""
+    current_user = getattr(request.state, 'user', None)
     # Validate CSRF token
     if not validate_csrf(request, csrf_token):
         return JSONResponse({"success": False, "message": "Invalid request"}, status_code=403)
@@ -1577,6 +1920,8 @@ async def update_animal(
             "species": species,
             "sex": sex,
         }
+        if owner_name is not None:
+            update_fields["owner_name"] = owner_name if owner_name.strip() else None
         if breed is not None:
             update_fields["breed"] = breed
         if age_years is not None:
@@ -1589,13 +1934,28 @@ async def update_animal(
             update_fields["microchip"] = microchip if microchip.strip() else None
         if weight_kg is not None:
             update_fields["weight_kg"] = weight_kg
+        if medical_history is not None:
+            update_fields["medical_history"] = medical_history if medical_history.strip() else None
+        if notes is not None:
+            update_fields["notes"] = notes if notes.strip() else None
 
-        # Use the repository update method
-        from database.repositories.animal_repository import AnimalRepository
-        animal_repo = AnimalRepository(service.db)
-        success = animal_repo.update(animal_id, **update_fields)
+        success = service.db.update_animal(
+            animal_id,
+            changed_by_user_id=current_user.id if current_user else None,
+            assignment_reason=assignment_reason.strip() if assignment_reason else None,
+            **update_fields,
+        )
 
-        return JSONResponse({"success": success})
+        updated_animal = service.db.get_animal(animal_id)
+        return JSONResponse({
+            "success": success,
+            "animal": {
+                "id": updated_animal.id if updated_animal else animal_id,
+                "name": updated_animal.name if updated_animal else name,
+                "owner_name": updated_animal.owner_name if updated_animal else owner_name,
+                "responsible_vet": updated_animal.responsible_vet if updated_animal else responsible_vet,
+            }
+        })
     except Exception as e:
         logger.exception(f"Error updating animal {animal_id}")
         return JSONResponse({
@@ -1613,14 +1973,9 @@ async def view_session(request: Request, session_id: int):
     current_user = getattr(request.state, 'user', None)
     service = get_service()
     try:
-        # Get session
-        cursor = service.db.conn.execute(
-            "SELECT * FROM test_sessions WHERE id = ?", (session_id,))
-        row = cursor.fetchone()
-        if not row:
+        session = service.db.get_session(session_id)
+        if not session:
             raise HTTPException(status_code=404, detail="Session not found")
-
-        session = TestSession(**dict(row))
         animal = service.db.get_animal(session.animal_id)
 
         # Get all results
@@ -1659,7 +2014,9 @@ async def view_session(request: Request, session_id: int):
             "session_assets": session_assets,
             "previous_session": previous_session,
             "comparison": comparison,
-            "current_user": current_user
+            "current_user": current_user,
+            "pdf_url": build_upload_url(session.pdf_path),
+            "report_type_label": humanize_report_type(session.report_type, session.panel_name),
         })
         return set_lang_cookie(response, lang)
     except HTTPException:
@@ -1784,13 +2141,19 @@ async def view_imports(request: Request):
 
 @app.get("/unassigned-reports", response_class=HTMLResponse)
 async def view_unassigned_reports(request: Request, error: Optional[str] = None):
-    """View reports that need manual assignment."""
+    """Review queue for reports that need manual assignment."""
     lang = get_lang(request)
     current_user = getattr(request.state, 'user', None)
     service = get_service()
     try:
-        pending_reports = service.get_unassigned_reports()
-        animals = service.db.list_animals()
+        page = parse_positive_int(request.query_params.get("page"), default=1)
+        page_size = parse_positive_int(request.query_params.get("page_size"), default=12, maximum=50)
+        search = (request.query_params.get("q") or "").strip() or None
+        pending_reports, total = service.get_unassigned_reports(
+            search=search,
+            page=page,
+            page_size=page_size,
+        )
 
         report_items = []
         for report in pending_reports:
@@ -1811,7 +2174,11 @@ async def view_unassigned_reports(request: Request, error: Optional[str] = None)
             "lang": lang,
             "current_user": current_user,
             "pending_reports": report_items,
-            "animals": animals,
+            "pagination": build_pagination(request, total, page, page_size),
+            "filters": {
+                "q": search or "",
+                "page_size": page_size,
+            },
             "error": error,
             "csrf_token": signed_csrf,
         })
@@ -2075,6 +2442,7 @@ async def add_clinical_note(
     csrf_token: str = Form(None)
 ):
     """Add a clinical note for an animal"""
+    current_user = getattr(request.state, 'user', None)
     # Validate CSRF token
     if not validate_csrf(request, csrf_token):
         return JSONResponse({"success": False, "message": "Invalid request"}, status_code=403)
@@ -2095,7 +2463,9 @@ async def add_clinical_note(
             animal_id=animal_id,
             title=title,
             content=content,
-            note_date=parsed_date
+            note_date=parsed_date,
+            author_user_id=current_user.id if current_user else None,
+            updated_by_user_id=current_user.id if current_user else None,
         )
         note_id = service.db.create_clinical_note(note)
         return JSONResponse({
@@ -2123,6 +2493,7 @@ async def update_clinical_note(
     csrf_token: str = Form(None)
 ):
     """Update a clinical note"""
+    current_user = getattr(request.state, 'user', None)
     # Validate CSRF token
     if not validate_csrf(request, csrf_token):
         return JSONResponse({"success": False, "message": "Invalid request"}, status_code=403)
@@ -2137,7 +2508,13 @@ async def update_clinical_note(
             except ValueError:
                 pass
 
-        success = service.db.update_clinical_note(note_id, title, content, parsed_date)
+        success = service.db.update_clinical_note(
+            note_id,
+            title,
+            content,
+            parsed_date,
+            updated_by_user_id=current_user.id if current_user else None,
+        )
         return JSONResponse({
             "success": success
         })
@@ -2469,10 +2846,23 @@ async def set_language(request: Request, lang: str):
 # =============================================================================
 
 @app.get("/api/animals")
-async def api_list_animals():
-    """API: List all animals"""
+async def api_list_animals(q: Optional[str] = None, limit: int = 50):
+    """API: List animals or search by query."""
     service = get_service()
     try:
+        if q:
+            rows = service.db.search_animals(q, limit=min(max(limit, 1), 20))
+            return [{
+                "id": row["id"],
+                "name": row["name"],
+                "species": row["species"],
+                "breed": row["breed"],
+                "owner_name": row.get("owner_name"),
+                "responsible_vet": row.get("responsible_vet"),
+                "latest_report_at": row.get("latest_report_at"),
+                "test_count": row.get("test_count", 0),
+            } for row in rows]
+
         animals = service.db.list_animals()
         return [{
             "id": a.id,
@@ -2482,6 +2872,72 @@ async def api_list_animals():
             "age": a.age_display,
             "sex": a.sex
         } for a in animals]
+    finally:
+        service.close()
+
+
+@app.get("/api/animal-lookup")
+async def api_animal_lookup(q: str, limit: int = 8):
+    """API: Lightweight animal search for assignment workflows."""
+    service = get_service()
+    try:
+        rows = service.db.search_animals(q, limit=min(max(limit, 1), 12))
+        return [{
+            "id": row["id"],
+            "name": row["name"],
+            "species": row["species"],
+            "owner_name": row.get("owner_name"),
+            "responsible_vet": row.get("responsible_vet"),
+            "microchip": row.get("microchip"),
+            "test_count": row.get("test_count", 0),
+            "latest_report_at": row.get("latest_report_at"),
+        } for row in rows]
+    finally:
+        service.close()
+
+
+@app.get("/api/search")
+async def api_global_search(q: str):
+    """API: Header search across animals, imported reports, and pending reports."""
+    search = (q or "").strip()
+    if len(search) < 2:
+        return {"animals": [], "reports": [], "pending_reports": []}
+
+    service = get_service()
+    try:
+        animals = service.db.search_animals(search, limit=6)
+        reports = service.db.search_reports(search, limit=6)
+        pending_reports, _ = service.db.list_unassigned_reports(
+            status="pending",
+            search=search,
+            page=1,
+            page_size=6,
+        )
+        return {
+            "animals": [{
+                "id": row["id"],
+                "name": row["name"],
+                "species": row["species"],
+                "owner_name": row.get("owner_name"),
+                "responsible_vet": row.get("responsible_vet"),
+                "href": f"/animal/{row['id']}",
+            } for row in animals],
+            "reports": [{
+                "id": row["id"],
+                "report_number": row.get("report_number") or row.get("external_report_id") or f"Report {row['id']}",
+                "animal_name": row.get("animal_name"),
+                "report_type": humanize_report_type(row.get("report_type")),
+                "test_date": row.get("test_date"),
+                "href": f"/session/{row['id']}",
+            } for row in reports],
+            "pending_reports": [{
+                "id": report.id,
+                "report_number": report.report_number or report.external_report_id or report.filename,
+                "animal_name": report.animal_name,
+                "report_type": report.report_type,
+                "href": "/unassigned-reports",
+            } for report in pending_reports],
+        }
     finally:
         service.close()
 

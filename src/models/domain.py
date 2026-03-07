@@ -193,6 +193,10 @@ class ClinicalNote:
     note_date: Optional[date] = None
     title: Optional[str] = None  # e.g., "Consulta", "Anamnese", "Exame Fisico"
     content: str = ""
+    author_user_id: Optional[int] = None
+    author_name: Optional[str] = None
+    updated_by_user_id: Optional[int] = None
+    updated_by_name: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -404,6 +408,20 @@ class SessionAsset:
     page_number: Optional[int] = None
     sort_order: int = 0
     metadata_json: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+@dataclass
+class AnimalVetAssignment:
+    """History of responsible-vet ownership for an animal."""
+    id: Optional[int] = None
+    animal_id: int = 0
+    vet_name: str = ""
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    change_reason: Optional[str] = None
+    changed_by_user_id: Optional[int] = None
+    changed_by_name: Optional[str] = None
     created_at: Optional[datetime] = None
 
 

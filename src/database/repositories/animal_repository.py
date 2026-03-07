@@ -6,14 +6,16 @@ Handles all database operations for Animal entities.
 
 import re
 import unicodedata
+from datetime import date
 from difflib import SequenceMatcher
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from models.domain import (
     Animal,
     Symptom,
     Observation,
     ClinicalNote,
+    AnimalVetAssignment,
     AnimalIdentifier,
     AnimalMatchCandidate,
     AnimalMatchDecision,
@@ -51,8 +53,11 @@ class AnimalRepository:
               animal.age_years, animal.owner_name, animal.age_months, animal.sex,
               animal.weight_kg, animal.neutered, animal.medical_history,
               animal.notes, animal.responsible_vet))
+        animal_id = cursor.lastrowid
+        if animal.responsible_vet:
+            self._record_vet_assignment(animal_id, animal.responsible_vet)
         self.db.conn.commit()
-        return cursor.lastrowid
+        return animal_id
 
     def get(self, animal_id: int) -> Optional[Animal]:
         """
@@ -112,6 +117,49 @@ class AnimalRepository:
             or left_norm in right_norm
             or right_norm in left_norm
         )
+
+    def _record_vet_assignment(self, animal_id: int, vet_name: Optional[str],
+                               changed_by_user_id: Optional[int] = None,
+                               change_reason: Optional[str] = None,
+                               start_date: Optional[date] = None):
+        normalized_vet = (vet_name or "").strip()
+        if not normalized_vet:
+            self._close_open_vet_assignment(animal_id, changed_by_user_id)
+            return
+
+        current = self.db.conn.execute("""
+            SELECT id, vet_name
+            FROM animal_vet_assignments
+            WHERE animal_id = ? AND end_date IS NULL
+            ORDER BY start_date DESC, id DESC
+            LIMIT 1
+        """, (animal_id,)).fetchone()
+
+        if current and (current["vet_name"] or "").strip() == normalized_vet:
+            return
+
+        self._close_open_vet_assignment(animal_id, changed_by_user_id, start_date)
+        self.db.conn.execute("""
+            INSERT INTO animal_vet_assignments (
+                animal_id, vet_name, start_date, change_reason, changed_by_user_id
+            ) VALUES (?, ?, ?, ?, ?)
+        """, (
+            animal_id,
+            normalized_vet,
+            start_date or date.today(),
+            change_reason,
+            changed_by_user_id,
+        ))
+
+    def _close_open_vet_assignment(self, animal_id: int,
+                                   changed_by_user_id: Optional[int] = None,
+                                   end_date: Optional[date] = None):
+        self.db.conn.execute("""
+            UPDATE animal_vet_assignments
+            SET end_date = COALESCE(?, CURRENT_DATE),
+                changed_by_user_id = COALESCE(changed_by_user_id, ?)
+            WHERE animal_id = ? AND end_date IS NULL
+        """, (end_date, changed_by_user_id, animal_id))
 
     def _update_from_report(self, animal_id: int, animal: Animal):
         existing = self.get(animal_id)
@@ -404,6 +452,131 @@ class AnimalRepository:
             return self.attach_report_to_animal(decision.animal_id, animal, identifiers)
         return self.create_from_report(animal, identifiers)
 
+    def list_animals_paginated(self, search: Optional[str] = None,
+                               responsible_vet: Optional[str] = None,
+                               species: Optional[str] = None,
+                               sort: str = "updated_desc",
+                               page: int = 1,
+                               page_size: int = 25) -> Tuple[List[Dict], int]:
+        """List animals with overview metrics for the index page."""
+        filters = []
+        params: List[object] = []
+
+        if search:
+            wildcard = f"%{search.strip()}%"
+            filters.append("""
+                (
+                    a.name LIKE ?
+                    OR a.owner_name LIKE ?
+                    OR a.microchip LIKE ?
+                    OR a.responsible_vet LIKE ?
+                    OR a.breed LIKE ?
+                )
+            """)
+            params.extend([wildcard] * 5)
+
+        if responsible_vet:
+            filters.append("a.responsible_vet = ?")
+            params.append(responsible_vet)
+
+        if species:
+            filters.append("a.species = ?")
+            params.append(species)
+
+        where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+
+        count_row = self.db.conn.execute(
+            f"SELECT COUNT(*) AS total FROM animals a {where_clause}",
+            tuple(params),
+        ).fetchone()
+        total = count_row["total"] if count_row else 0
+
+        order_clause = {
+            "name_asc": "a.name COLLATE NOCASE ASC",
+            "name_desc": "a.name COLLATE NOCASE DESC",
+            "reports_desc": "test_count DESC, latest_report_at DESC, a.name COLLATE NOCASE ASC",
+            "updated_desc": "COALESCE(latest_report_at, latest_note_at, a.updated_at, a.created_at) DESC, a.name COLLATE NOCASE ASC",
+        }.get(sort, "COALESCE(latest_report_at, latest_note_at, a.updated_at, a.created_at) DESC, a.name COLLATE NOCASE ASC")
+
+        offset = max(page - 1, 0) * page_size
+        rows = self.db.conn.execute(f"""
+            SELECT
+                a.*,
+                COUNT(DISTINCT ts.id) AS test_count,
+                MAX(COALESCE(ts.test_date, DATE(ts.created_at))) AS latest_report_at,
+                MAX(COALESCE(cn.note_date, DATE(cn.created_at))) AS latest_note_at
+            FROM animals a
+            LEFT JOIN test_sessions ts ON ts.animal_id = a.id
+            LEFT JOIN clinical_notes cn ON cn.animal_id = a.id
+            {where_clause}
+            GROUP BY a.id
+            ORDER BY {order_clause}
+            LIMIT ? OFFSET ?
+        """, tuple(params + [page_size, offset])).fetchall()
+
+        items = []
+        for row in rows:
+            data = dict(row)
+            animal = Animal(**{key: data.get(key) for key in Animal.__dataclass_fields__.keys() if key in data})
+            items.append({
+                "animal": animal,
+                "test_count": data.get("test_count", 0),
+                "last_test": data.get("latest_report_at"),
+                "last_note_at": data.get("latest_note_at"),
+            })
+        return items, total
+
+    def search_animals(self, search: str, limit: int = 8) -> List[Dict]:
+        """Search animals for global search and typeahead."""
+        if not search or not search.strip():
+            return []
+
+        wildcard = f"%{search.strip()}%"
+        rows = self.db.conn.execute("""
+            SELECT
+                a.*,
+                COUNT(DISTINCT ts.id) AS test_count,
+                MAX(COALESCE(ts.test_date, DATE(ts.created_at))) AS latest_report_at
+            FROM animals a
+            LEFT JOIN test_sessions ts ON ts.animal_id = a.id
+            WHERE a.name LIKE ?
+               OR a.owner_name LIKE ?
+               OR a.microchip LIKE ?
+               OR a.responsible_vet LIKE ?
+               OR a.breed LIKE ?
+            GROUP BY a.id
+            ORDER BY
+                CASE WHEN a.name LIKE ? THEN 0 ELSE 1 END,
+                latest_report_at DESC,
+                a.name COLLATE NOCASE ASC
+            LIMIT ?
+        """, (wildcard, wildcard, wildcard, wildcard, wildcard, wildcard, limit)).fetchall()
+
+        return [dict(row) for row in rows]
+
+    def list_responsible_vets(self) -> List[str]:
+        """Distinct responsible vets used for filters."""
+        rows = self.db.conn.execute("""
+            SELECT DISTINCT responsible_vet
+            FROM animals
+            WHERE responsible_vet IS NOT NULL AND TRIM(responsible_vet) != ''
+            ORDER BY responsible_vet COLLATE NOCASE ASC
+        """).fetchall()
+        return [row["responsible_vet"] for row in rows]
+
+    def get_vet_assignment_history(self, animal_id: int) -> List[AnimalVetAssignment]:
+        """Return responsible-vet ownership history for an animal."""
+        rows = self.db.conn.execute("""
+            SELECT
+                ava.*,
+                COALESCE(changer.display_name, changer.email) AS changed_by_name
+            FROM animal_vet_assignments ava
+            LEFT JOIN users changer ON changer.id = ava.changed_by_user_id
+            WHERE ava.animal_id = ?
+            ORDER BY COALESCE(ava.start_date, DATE(ava.created_at)) DESC, ava.id DESC
+        """, (animal_id,)).fetchall()
+        return [AnimalVetAssignment(**dict(row)) for row in rows]
+
     def list_all(self) -> List[Animal]:
         """
         List all animals ordered by name.
@@ -414,7 +587,10 @@ class AnimalRepository:
         cursor = self.db.conn.execute("SELECT * FROM animals ORDER BY name")
         return [Animal(**dict(row)) for row in cursor.fetchall()]
 
-    def update(self, animal_id: int, **kwargs) -> bool:
+    def update(self, animal_id: int,
+               changed_by_user_id: Optional[int] = None,
+               assignment_reason: Optional[str] = None,
+               **kwargs) -> bool:
         """
         Update animal fields.
 
@@ -425,6 +601,10 @@ class AnimalRepository:
         Returns:
             True if update was successful
         """
+        existing = self.get(animal_id)
+        if not existing:
+            return False
+
         allowed_fields = {'name', 'species', 'breed', 'microchip', 'owner_name', 'age_years',
                          'age_months', 'sex', 'weight_kg', 'neutered',
                          'medical_history', 'notes', 'responsible_vet'}
@@ -438,6 +618,18 @@ class AnimalRepository:
         cursor = self.db.conn.execute(
             f"UPDATE animals SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             values)
+
+        if "responsible_vet" in update_fields:
+            previous_vet = (existing.responsible_vet or "").strip()
+            next_vet = (update_fields.get("responsible_vet") or "").strip()
+            if previous_vet != next_vet:
+                self._record_vet_assignment(
+                    animal_id,
+                    next_vet,
+                    changed_by_user_id=changed_by_user_id,
+                    change_reason=assignment_reason,
+                )
+
         self.db.conn.commit()
         return cursor.rowcount > 0
 
@@ -526,16 +718,34 @@ class AnimalRepository:
     def create_clinical_note(self, note: ClinicalNote) -> int:
         """Create a clinical note."""
         cursor = self.db.conn.execute("""
-            INSERT INTO clinical_notes (animal_id, note_date, title, content)
-            VALUES (?, ?, ?, ?)
-        """, (note.animal_id, note.note_date, note.title, note.content))
+            INSERT INTO clinical_notes (
+                animal_id, note_date, title, content,
+                author_user_id, updated_by_user_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            note.animal_id,
+            note.note_date,
+            note.title,
+            note.content,
+            note.author_user_id,
+            note.updated_by_user_id or note.author_user_id,
+        ))
         self.db.conn.commit()
         return cursor.lastrowid
 
     def get_clinical_note(self, note_id: int) -> Optional[ClinicalNote]:
         """Get a clinical note by ID."""
-        cursor = self.db.conn.execute(
-            "SELECT * FROM clinical_notes WHERE id = ?", (note_id,))
+        cursor = self.db.conn.execute("""
+            SELECT
+                cn.*,
+                COALESCE(author.display_name, author.email) AS author_name,
+                COALESCE(editor.display_name, editor.email) AS updated_by_name
+            FROM clinical_notes cn
+            LEFT JOIN users author ON author.id = cn.author_user_id
+            LEFT JOIN users editor ON editor.id = cn.updated_by_user_id
+            WHERE cn.id = ?
+        """, (note_id,))
         row = cursor.fetchone()
         if row:
             return ClinicalNote(**dict(row))
@@ -544,19 +754,31 @@ class AnimalRepository:
     def get_clinical_notes(self, animal_id: int) -> List[ClinicalNote]:
         """Get all clinical notes for an animal."""
         cursor = self.db.conn.execute("""
-            SELECT * FROM clinical_notes WHERE animal_id = ?
-            ORDER BY note_date DESC, created_at DESC
+            SELECT
+                cn.*,
+                COALESCE(author.display_name, author.email) AS author_name,
+                COALESCE(editor.display_name, editor.email) AS updated_by_name
+            FROM clinical_notes cn
+            LEFT JOIN users author ON author.id = cn.author_user_id
+            LEFT JOIN users editor ON editor.id = cn.updated_by_user_id
+            WHERE cn.animal_id = ?
+            ORDER BY cn.note_date DESC, cn.created_at DESC
         """, (animal_id,))
         return [ClinicalNote(**dict(row)) for row in cursor.fetchall()]
 
     def update_clinical_note(self, note_id: int, title: Optional[str],
-                            content: str, note_date=None) -> bool:
+                            content: str, note_date=None,
+                            updated_by_user_id: Optional[int] = None) -> bool:
         """Update a clinical note."""
         cursor = self.db.conn.execute("""
             UPDATE clinical_notes
-            SET title = ?, content = ?, note_date = ?, updated_at = CURRENT_TIMESTAMP
+            SET title = ?,
+                content = ?,
+                note_date = ?,
+                updated_by_user_id = COALESCE(?, updated_by_user_id),
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
-        """, (title, content, note_date, note_id))
+        """, (title, content, note_date, updated_by_user_id, note_id))
         self.db.conn.commit()
         return cursor.rowcount > 0
 

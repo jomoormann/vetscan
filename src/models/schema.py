@@ -102,9 +102,13 @@ CREATE TABLE IF NOT EXISTS clinical_notes (
     note_date DATE,
     title TEXT,
     content TEXT NOT NULL,
+    author_user_id INTEGER,
+    updated_by_user_id INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (animal_id) REFERENCES animals(id) ON DELETE CASCADE
+    FOREIGN KEY (animal_id) REFERENCES animals(id) ON DELETE CASCADE,
+    FOREIGN KEY (author_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (updated_by_user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
 -- Research references table (for AI interpretation)
@@ -129,6 +133,22 @@ CREATE INDEX IF NOT EXISTS idx_protein_results_marker ON protein_results(marker_
 CREATE INDEX IF NOT EXISTS idx_symptoms_animal_id ON symptoms(animal_id);
 CREATE INDEX IF NOT EXISTS idx_observations_animal_id ON observations(animal_id);
 CREATE INDEX IF NOT EXISTS idx_clinical_notes_animal_id ON clinical_notes(animal_id);
+
+-- Responsible vet ownership / handover history
+CREATE TABLE IF NOT EXISTS animal_vet_assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    animal_id INTEGER NOT NULL,
+    vet_name TEXT NOT NULL,
+    start_date DATE DEFAULT CURRENT_DATE,
+    end_date DATE,
+    change_reason TEXT,
+    changed_by_user_id INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (animal_id) REFERENCES animals(id) ON DELETE CASCADE,
+    FOREIGN KEY (changed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_animal_vet_assignments_animal ON animal_vet_assignments(animal_id, start_date DESC);
+CREATE INDEX IF NOT EXISTS idx_animal_vet_assignments_current ON animal_vet_assignments(animal_id, end_date);
 
 -- Biochemistry results table (UPC ratio, kidney markers)
 CREATE TABLE IF NOT EXISTS biochemistry_results (

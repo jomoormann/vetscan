@@ -1,71 +1,97 @@
 {% extends "base.html" %}
 
-{% block title %}{{ t(lang, 'upload.title') }} - {{ t(lang, 'app.title') }}{% endblock %}
+{% block title %}Upload - {{ t(lang, 'app.title') }}{% endblock %}
 
 {% block content %}
-<h1 style="margin-bottom: 2rem;">{{ t(lang, 'upload.title') }}</h1>
-
-<div class="card">
-    <div class="card-header">
-        <h2 class="card-title">{{ t(lang, 'upload.load_report') }}</h2>
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Manual intake</div>
+        <h1>Upload report</h1>
+        <p class="page-subtitle">Import a PDF manually. If the match is uncertain, the report will be routed to the review queue instead of being assigned incorrectly.</p>
     </div>
-
-    <div id="uploadArea" class="upload-area">
-        <div class="upload-icon">📁</div>
-        <h3>{{ t(lang, 'upload.drag_file') }}</h3>
-        <p class="text-muted">{{ t(lang, 'upload.or_click') }}</p>
-        <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+    <div class="inline-actions">
+        <a href="/reports" class="btn btn-secondary">Reports</a>
+        <a href="/unassigned-reports" class="btn btn-secondary">Review queue</a>
     </div>
+</div>
 
-    <div id="uploadProgress" style="display: none; margin-top: 1rem;">
-        <div style="display: flex; align-items: center; gap: 1rem;">
-            <div class="spinner" style="width: 24px; height: 24px; border: 3px solid var(--gray-200); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite;"></div>
-            <span>{{ t(lang, 'upload.processing') }}</span>
+<div class="grid-2">
+    <section class="card">
+        <div class="card-header">
+            <div>
+                <div class="card-kicker">Drop zone</div>
+                <h2 class="card-title">Select a PDF</h2>
+            </div>
         </div>
-    </div>
 
-    <div id="uploadResult" style="display: none; margin-top: 1rem;"></div>
+        <div id="uploadArea" style="padding: 2.4rem 1.5rem; border: 2px dashed var(--line-strong); border-radius: 22px; background: var(--surface-muted); text-align: center; cursor: pointer;">
+            <div style="font-size: 2.2rem; margin-bottom: 0.7rem;">PDF</div>
+            <h3 style="margin-bottom: 0.35rem;">Drag the file here or click to choose it</h3>
+            <p class="text-muted">Supported: DNAtech, analyzer, cytology, and immunocytochemistry reports.</p>
+            <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+        </div>
+
+        <div id="uploadProgress" style="display: none; margin-top: 1rem;">
+            <div class="list-item">
+                <div>
+                    <div class="table-title">Import in progress</div>
+                    <div class="table-meta">Validating the PDF, extracting data, and checking for a reliable animal match.</div>
+                </div>
+                <span class="badge badge-info">Working</span>
+            </div>
+        </div>
+
+        <div id="uploadResult" style="display: none; margin-top: 1rem;"></div>
+    </section>
+
+    <section class="card">
+        <div class="card-header">
+            <div>
+                <div class="card-kicker">How the importer behaves</div>
+                <h2 class="card-title">What to expect</h2>
+            </div>
+        </div>
+        <div class="list-stack">
+            <div class="list-item">
+                <div>
+                    <div class="table-title">Automatic match when safe</div>
+                    <div class="table-meta">The importer attaches the report to an existing animal only when the match is confident.</div>
+                </div>
+                <span class="badge badge-normal">Automatic</span>
+            </div>
+            <div class="list-item">
+                <div>
+                    <div class="table-title">Manual review when uncertain</div>
+                    <div class="table-meta">Ambiguous reports go to the unassigned queue with candidate matches and source details.</div>
+                </div>
+                <span class="badge badge-low">Manual review</span>
+            </div>
+            <div class="list-item">
+                <div>
+                    <div class="table-title">Source traceability</div>
+                    <div class="table-meta">Each imported report keeps its source reference and, for cytology, extracted diagnostic images.</div>
+                </div>
+                <span class="badge badge-info">Stored</span>
+            </div>
+        </div>
+    </section>
 </div>
-
-<div class="card">
-    <div class="card-header">
-        <h2 class="card-title">{{ t(lang, 'upload.info') }}</h2>
-    </div>
-    <ul style="margin-left: 1.5rem;">
-        <li>{{ t(lang, 'upload.info_dnatech_only') }}</li>
-        <li>{{ t(lang, 'upload.info_auto_extract') }}</li>
-        <li>{{ t(lang, 'upload.info_existing_animal') }}</li>
-        <li>{{ t(lang, 'upload.info_supported_tests') }}
-            <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
-                <li>{{ t(lang, 'upload.test_proteinogram') }}</li>
-                <li>{{ t(lang, 'upload.test_biochemistry') }}</li>
-                <li>{{ t(lang, 'upload.test_urinalysis') }}</li>
-            </ul>
-        </li>
-    </ul>
-</div>
-
-<style>
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-</style>
 {% endblock %}
 
 {% block scripts %}
 <script>
     const translations = {
-        success: "{{ t(lang, 'upload.success') }}",
-        queued: "Queued for manual assignment",
-        animalLabel: "{{ t(lang, 'upload.animal_label') }}",
-        reportLabel: "{{ t(lang, 'upload.report_label') }}",
-        dateLabel: "{{ t(lang, 'upload.date_label') }}",
-        viewResults: "{{ t(lang, 'upload.view_results') }}",
-        viewAnimal: "{{ t(lang, 'upload.view_animal') }}",
-        reviewQueue: "Review Queue",
-        newUpload: "{{ t(lang, 'upload.new_upload') }}",
-        onlyPdf: "{{ t(lang, 'upload.only_pdf') }}",
-        communicationError: "{{ t(lang, 'upload.communication_error') }}"
+        queued: 'Queued for manual assignment',
+        success: 'Report imported',
+        animalLabel: 'Animal',
+        reportLabel: 'Report',
+        dateLabel: 'Date',
+        reviewQueue: 'Open review queue',
+        openReport: 'Open report',
+        openAnimal: 'Open animal',
+        newUpload: 'Upload another',
+        communicationError: 'Could not complete the upload.',
+        onlyPdf: 'Only PDF files are supported.'
     };
 
     const uploadArea = document.getElementById('uploadArea');
@@ -73,36 +99,25 @@
     const uploadProgress = document.getElementById('uploadProgress');
     const uploadResult = document.getElementById('uploadResult');
 
-    // Click to upload
-    uploadArea.addEventListener('click', () => {
-        fileInput.click();
+    uploadArea.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', event => {
+        if (event.target.files.length > 0) uploadFile(event.target.files[0]);
     });
 
-    // File selected
-    fileInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
-            uploadFile(e.target.files[0]);
-        }
-    });
-
-    // Drag and drop
-    uploadArea.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        uploadArea.classList.add('dragover');
+    uploadArea.addEventListener('dragover', event => {
+        event.preventDefault();
+        uploadArea.style.borderColor = 'var(--brand)';
     });
 
     uploadArea.addEventListener('dragleave', () => {
-        uploadArea.classList.remove('dragover');
+        uploadArea.style.borderColor = 'var(--line-strong)';
     });
 
-    uploadArea.addEventListener('drop', (e) => {
-        e.preventDefault();
-        uploadArea.classList.remove('dragover');
-
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            uploadFile(files[0]);
-        }
+    uploadArea.addEventListener('drop', event => {
+        event.preventDefault();
+        uploadArea.style.borderColor = 'var(--line-strong)';
+        const files = event.dataTransfer.files;
+        if (files.length > 0) uploadFile(files[0]);
     });
 
     async function uploadFile(file) {
@@ -111,7 +126,6 @@
             return;
         }
 
-        // Show progress
         uploadArea.style.display = 'none';
         uploadProgress.style.display = 'block';
         uploadResult.style.display = 'none';
@@ -121,57 +135,54 @@
         formData.append('csrf_token', '{{ csrf_token }}');
 
         try {
-            const response = await fetch('/upload', {
-                method: 'POST',
-                body: formData
-            });
-
+            const response = await fetch('/upload', { method: 'POST', body: formData });
             const data = await response.json();
-
             uploadProgress.style.display = 'none';
 
-            if (data.success) {
-                if (data.queued) {
-                    showResult(true, `
-                        <h3>${translations.queued}</h3>
-                        <p style="margin: 1rem 0;">
-                            <strong>${translations.animalLabel}:</strong> ${data.animal_name}<br>
-                            <strong>${translations.reportLabel}:</strong> ${data.report_number}<br>
-                            <strong>${translations.dateLabel}:</strong> ${data.test_date}
-                        </p>
-                        <div class="action-buttons" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-                            <a href="/unassigned-reports" class="btn btn-primary">${translations.reviewQueue}</a>
-                            <button onclick="resetUpload()" class="btn btn-secondary">${translations.newUpload}</button>
-                        </div>
-                    `);
-                } else {
-                    showResult(true, `
-                        <h3>✓ ${translations.success}</h3>
-                        <p style="margin: 1rem 0;">
-                            <strong>${translations.animalLabel}:</strong> ${data.animal_name}<br>
-                            <strong>${translations.reportLabel}:</strong> ${data.report_number}<br>
-                            <strong>${translations.dateLabel}:</strong> ${data.test_date}
-                        </p>
-                        <div class="action-buttons" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-                            <a href="/session/${data.session_id}" class="btn btn-primary">${translations.viewResults}</a>
-                            <a href="/animal/${data.animal_id}" class="btn btn-secondary">${translations.viewAnimal}</a>
-                            <button onclick="resetUpload()" class="btn btn-secondary">${translations.newUpload}</button>
-                        </div>
-                    `);
-                }
-            } else {
-                showResult(false, data.message || translations.communicationError);
+            if (data.success && data.queued) {
+                showResult(true, `
+                    <h3 style="margin-bottom: 0.75rem;">${translations.queued}</h3>
+                    <p class="text-muted" style="margin-bottom: 1rem;">
+                        <strong>${translations.animalLabel}:</strong> ${data.animal_name}<br>
+                        <strong>${translations.reportLabel}:</strong> ${data.report_number}<br>
+                        <strong>${translations.dateLabel}:</strong> ${data.test_date}
+                    </p>
+                    <div class="inline-actions">
+                        <a href="/unassigned-reports" class="btn btn-primary">${translations.reviewQueue}</a>
+                        <button type="button" class="btn btn-secondary" onclick="resetUpload()">${translations.newUpload}</button>
+                    </div>
+                `);
+                return;
             }
+
+            if (data.success) {
+                showResult(true, `
+                    <h3 style="margin-bottom: 0.75rem;">${translations.success}</h3>
+                    <p class="text-muted" style="margin-bottom: 1rem;">
+                        <strong>${translations.animalLabel}:</strong> ${data.animal_name}<br>
+                        <strong>${translations.reportLabel}:</strong> ${data.report_number}<br>
+                        <strong>${translations.dateLabel}:</strong> ${data.test_date}
+                    </p>
+                    <div class="inline-actions">
+                        <a href="/session/${data.session_id}" class="btn btn-primary">${translations.openReport}</a>
+                        <a href="/animal/${data.animal_id}" class="btn btn-secondary">${translations.openAnimal}</a>
+                        <button type="button" class="btn btn-secondary" onclick="resetUpload()">${translations.newUpload}</button>
+                    </div>
+                `);
+                return;
+            }
+
+            showResult(false, data.message || translations.communicationError);
         } catch (error) {
             uploadProgress.style.display = 'none';
             showResult(false, translations.communicationError);
         }
     }
 
-    function showResult(success, content) {
+    function showResult(success, html) {
         uploadResult.style.display = 'block';
         uploadResult.className = success ? 'alert alert-success' : 'alert alert-error';
-        uploadResult.innerHTML = content;
+        uploadResult.innerHTML = html;
     }
 
     function resetUpload() {

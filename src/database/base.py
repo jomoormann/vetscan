@@ -101,6 +101,45 @@ class Database:
         ensure_column("test_sessions", "panel_name", "TEXT")
         ensure_column("test_sessions", "raw_metadata_json", "TEXT")
 
+        ensure_column("clinical_notes", "author_user_id", "INTEGER")
+        ensure_column("clinical_notes", "updated_by_user_id", "INTEGER")
+
+        self._backfill_vet_assignment_history()
+
+    def _backfill_vet_assignment_history(self):
+        """Seed current responsible vets into the assignment history table."""
+        table_exists = self.conn.execute("""
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'animal_vet_assignments'
+        """).fetchone()
+        if not table_exists:
+            return
+
+        cursor = self.conn.execute("""
+            SELECT a.id, a.responsible_vet
+            FROM animals a
+            WHERE a.responsible_vet IS NOT NULL
+              AND TRIM(a.responsible_vet) != ''
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM animal_vet_assignments ava
+                    WHERE ava.animal_id = a.id
+                      AND ava.end_date IS NULL
+              )
+        """)
+        rows = cursor.fetchall()
+        if not rows:
+            return
+
+        self.conn.executemany("""
+            INSERT INTO animal_vet_assignments (
+                animal_id, vet_name, start_date
+            ) VALUES (?, ?, CURRENT_DATE)
+        """, [(row["id"], row["responsible_vet"]) for row in rows])
+        self.conn.commit()
+        logger.info(f"Migration: Seeded {len(rows)} current vet assignments")
+
     def __enter__(self):
         """Context manager entry."""
         self.connect()

@@ -1,476 +1,327 @@
 {% extends "base.html" %}
 
-{% block title %}{{ t(lang, 'session_detail.report') }} {{ session.report_number }} - {{ t(lang, 'app.title') }}{% endblock %}
+{% block title %}{{ session.report_number or ('Report ' ~ session.id) }} - {{ t(lang, 'app.title') }}{% endblock %}
 
 {% block content %}
-<div style="margin-bottom: 2rem;">
-    <a href="/animal/{{ animal.id }}" class="text-muted" style="text-decoration: none;">← {{ t(lang, 'common.back_to') }} {{ animal.name }}</a>
-    <h1 style="margin-top: 0.5rem;">{{ t(lang, 'session_detail.report') }} {{ session.report_number }}</h1>
-</div>
-
-<!-- Session Info -->
-<div class="card">
-    <div class="grid-3">
-        <div>
-            <div class="text-muted mb-1">{{ t(lang, 'session_detail.animal') }}</div>
-            <strong>
-                <a href="/animal/{{ animal.id }}">{{ animal.name }}</a>
-            </strong>
-            <br><small class="text-muted">{{ animal.species }} - {{ animal.breed }}</small>
-        </div>
-        <div>
-            <div class="text-muted mb-1">{{ t(lang, 'session_detail.test_date') }}</div>
-            <strong>{{ session.test_date|format_date }}</strong>
-        </div>
-        <div>
-            <div class="text-muted mb-1">{{ t(lang, 'session_detail.sample') }}</div>
-            <strong>{{ session.sample_type or 'N/A' }}</strong>
-        </div>
-        <div>
-            <div class="text-muted mb-1">{{ t(lang, 'session_detail.laboratory') }}</div>
-            <strong>{{ session.lab_name or 'DNAtech' }}</strong>
-        </div>
-        <div>
-            <div class="text-muted mb-1">{{ t(lang, 'session_detail.report_number') }}</div>
-            <strong>{{ session.report_number or 'N/A' }}</strong>
-        </div>
-        <div>
-            <div class="text-muted mb-1">{{ t(lang, 'session_detail.closing_date') }}</div>
-            <strong>{{ session.closing_date|format_date }}</strong>
-        </div>
-        <div>
-            <div class="text-muted mb-1">Report Type</div>
-            <strong>{{ session.report_type or '--' }}</strong>
-        </div>
-        <div>
-            <div class="text-muted mb-1">Source System</div>
-            <strong>{{ session.source_system or '--' }}</strong>
-        </div>
-        <div>
-            <div class="text-muted mb-1">Source Reference</div>
-            <strong style="word-break: break-all;">{{ session.report_source or '--' }}</strong>
-        </div>
+<div class="page-header">
+    <div>
+        <a href="/animal/{{ animal.id }}" class="text-muted">← Back to {{ animal.name }}</a>
+        <div class="eyebrow" style="margin-top: 0.5rem;">Report detail</div>
+        <h1>{{ session.report_number or session.external_report_id or ('Report ' ~ session.id) }}</h1>
+        <p class="page-subtitle">
+            {{ report_type_label }}
+            {% if session.test_date %} · {{ session.test_date|format_date }}{% endif %}
+            {% if session.source_system %} · {{ session.source_system }}{% endif %}
+        </p>
+    </div>
+    <div class="inline-actions">
+        <a href="/animal/{{ animal.id }}" class="btn btn-secondary">Open animal</a>
+        {% if pdf_url %}
+        <a href="{{ pdf_url }}" class="btn btn-primary" target="_blank" rel="noopener">Open PDF</a>
+        {% endif %}
     </div>
 </div>
 
-{% if measurements %}
-<div class="card">
-    <div class="card-header">
-        <h2 class="card-title">{{ session.panel_name or 'Structured Measurements' }}</h2>
-    </div>
-
-    <div class="table-responsive">
-    <table>
-        <thead>
-            <tr>
-                <th>Code</th>
-                <th>Value</th>
-                <th class="mobile-hide">Reference</th>
-                <th>Status</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for measurement in measurements %}
-            <tr>
-                <td><strong>{{ measurement.measurement_code }}</strong></td>
-                <td>
-                    {% if measurement.value_text %}
-                        {{ measurement.value_text }}{% if measurement.unit %} {{ measurement.unit }}{% endif %}
-                    {% elif measurement.value_numeric is not none %}
-                        {{ measurement.value_numeric }}{% if measurement.unit %} {{ measurement.unit }}{% endif %}
-                    {% else %}
-                        --
-                    {% endif %}
-                </td>
-                <td class="mobile-hide">
-                    {% if measurement.reference_text %}
-                        {{ measurement.reference_text }}
-                    {% elif measurement.reference_min is not none and measurement.reference_max is not none %}
-                        {{ measurement.reference_min }} - {{ measurement.reference_max }}
-                    {% else %}
-                        --
-                    {% endif %}
-                </td>
-                <td>
-                    {% if measurement.flag == 'high' %}
-                    <span class="badge badge-high">↑ {{ t(lang, 'common.high') }}</span>
-                    {% elif measurement.flag == 'low' %}
-                    <span class="badge badge-low">↓ {{ t(lang, 'common.low') }}</span>
-                    {% else %}
-                    <span class="badge badge-normal">✓ {{ t(lang, 'common.normal') }}</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    </div>
-</div>
-{% endif %}
-
-{% if pathology_findings %}
-<div class="card">
-    <div class="card-header">
-        <h2 class="card-title">Pathology Findings</h2>
-    </div>
-
-    {% for finding in pathology_findings %}
-    <div style="padding: 1rem 0; border-bottom: {% if not loop.last %}1px solid var(--gray-200){% else %}none{% endif %};">
-        <div style="display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
-            <strong>
-                {% if finding.specimen_label %}{{ finding.specimen_label }}{% endif %}
-                {% if finding.title %} {{ finding.title }}{% endif %}
-            </strong>
-            <span class="text-muted">{{ finding.section_type }}</span>
-        </div>
-        {% if finding.clinical_history %}
-        <p style="margin-top: 0.75rem;"><strong>Clinical history:</strong> {{ finding.clinical_history }}</p>
-        {% endif %}
-        {% if finding.sample_method %}
-        <p style="margin-top: 0.75rem;"><strong>Sample:</strong> {{ finding.sample_method }}</p>
-        {% endif %}
-        {% if finding.diagnosis %}
-        <p style="margin-top: 0.75rem;"><strong>Diagnosis:</strong> {{ finding.diagnosis }}</p>
-        {% endif %}
-        {% if finding.microscopic_description %}
-        <p style="margin-top: 0.75rem;"><strong>Microscopic description:</strong> {{ finding.microscopic_description }}</p>
-        {% endif %}
-        {% if finding.comment %}
-        <p style="margin-top: 0.75rem;"><strong>Comment:</strong> {{ finding.comment }}</p>
-        {% endif %}
-    </div>
-    {% endfor %}
-</div>
-{% endif %}
-
-{% if session_assets %}
-<div class="card">
-    <div class="card-header">
-        <h2 class="card-title">Extracted Images</h2>
-    </div>
-    <div class="grid-2">
-        {% for asset in session_assets %}
-        <div>
-            <div class="text-muted mb-1">{{ asset.label or asset.asset_type }}{% if asset.page_number %} · page {{ asset.page_number }}{% endif %}</div>
-            <img src="/uploads/{{ asset.file_path.split('/uploads/', 1)[1] if '/uploads/' in asset.file_path else asset.file_path }}" alt="{{ asset.label or asset.asset_type }}" style="width: 100%; border-radius: 0.5rem; border: 1px solid var(--gray-200);" />
-        </div>
-        {% endfor %}
-    </div>
-</div>
-{% endif %}
-
-{% if biochemistry %}
-<!-- Biochemistry Results (UPC) -->
-<div class="card">
-    <div class="card-header">
-        <h2 class="card-title">{{ t(lang, 'session_detail.biochemistry') }}</h2>
-    </div>
-
-    <div class="grid-3">
-        <div style="text-align: center; padding: 1rem;">
-            <div class="text-muted mb-1">{{ t(lang, 'session_detail.upc_ratio') }}</div>
-            <div style="font-size: 2rem; font-weight: bold;
-                color: {% if biochemistry.upc_status == 'proteinurico' %}var(--danger){% elif biochemistry.upc_status == 'suspeito' %}var(--warning){% else %}var(--success){% endif %}">
-                {{ biochemistry.upc_ratio }}
+<div class="detail-layout">
+    <section>
+        {% if measurements %}
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-kicker">Structured data</div>
+                    <h2 class="card-title">{{ session.panel_name or 'Measurements' }}</h2>
+                </div>
             </div>
-            <span class="badge {% if biochemistry.upc_status == 'proteinurico' %}badge-high{% elif biochemistry.upc_status == 'suspeito' %}badge-low{% else %}badge-normal{% endif %}">
-                {% if biochemistry.upc_status == 'proteinurico' %}
-                    {{ t(lang, 'session_detail.proteinuric') }} ({{ t(lang, 'session_detail.proteinuric_threshold') }})
-                {% elif biochemistry.upc_status == 'suspeito' %}
-                    {{ t(lang, 'session_detail.suspect') }} ({{ t(lang, 'session_detail.suspect_range') }})
-                {% else %}
-                    {{ t(lang, 'session_detail.non_proteinuric') }} ({{ t(lang, 'session_detail.non_proteinuric_threshold') }})
-                {% endif %}
-            </span>
-        </div>
-        <div style="text-align: center; padding: 1rem;">
-            <div class="text-muted mb-1">{{ t(lang, 'session_detail.total_protein_urine') }}</div>
-            <div style="font-size: 1.5rem; font-weight: bold;">
-                {{ biochemistry.urine_total_protein }} <small>mg/dL</small>
+            <div class="table-shell">
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Code</th>
+                                <th>Value</th>
+                                <th>Reference</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for measurement in measurements %}
+                            <tr>
+                                <td>
+                                    <div class="table-title">{{ measurement.measurement_code }}</div>
+                                    {% if measurement.measurement_name and measurement.measurement_name != measurement.measurement_code %}
+                                    <div class="table-meta">{{ measurement.measurement_name }}</div>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if measurement.value_text %}
+                                        {{ measurement.value_text }}{% if measurement.unit %} {{ measurement.unit }}{% endif %}
+                                    {% elif measurement.value_numeric is not none %}
+                                        {{ measurement.value_numeric }}{% if measurement.unit %} {{ measurement.unit }}{% endif %}
+                                    {% else %}
+                                        --
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if measurement.reference_text %}
+                                    {{ measurement.reference_text }}
+                                    {% elif measurement.reference_min is not none and measurement.reference_max is not none %}
+                                    {{ measurement.reference_min }} - {{ measurement.reference_max }}
+                                    {% else %}
+                                    --
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if measurement.flag == 'high' %}
+                                    <span class="badge badge-high">High</span>
+                                    {% elif measurement.flag == 'low' %}
+                                    <span class="badge badge-low">Low</span>
+                                    {% else %}
+                                    <span class="badge badge-normal">Normal</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
-        </div>
-        <div style="text-align: center; padding: 1rem;">
-            <div class="text-muted mb-1">{{ t(lang, 'session_detail.creatinine_urine') }}</div>
-            <div style="font-size: 1.5rem; font-weight: bold;">
-                {{ biochemistry.urine_creatinine }} <small>mg/dL</small>
+        </section>
+        {% endif %}
+
+        {% if results %}
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-kicker">Proteinogram</div>
+                    <h2 class="card-title">Protein fractions</h2>
+                </div>
             </div>
-        </div>
-    </div>
+            <div class="table-shell">
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Marker</th>
+                                <th>%</th>
+                                <th>g/dL</th>
+                                <th>Reference</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for result in results %}
+                            <tr>
+                                <td>{{ result.marker_name }}</td>
+                                <td>{{ "%.1f"|format(result.value) if result.value is not none else '--' }}</td>
+                                <td>{{ "%.2f"|format(result.value_absolute) if result.value_absolute is not none else '--' }}</td>
+                                <td>
+                                    {% if result.reference_min is not none and result.reference_max is not none %}
+                                    {{ "%.1f"|format(result.reference_min) }} - {{ "%.1f"|format(result.reference_max) }}
+                                    {% else %}
+                                    --
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if result.flag == 'high' %}
+                                    <span class="badge badge-high">High</span>
+                                    {% elif result.flag == 'low' %}
+                                    <span class="badge badge-low">Low</span>
+                                    {% else %}
+                                    <span class="badge badge-normal">Normal</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+        {% endif %}
 
-    <div style="background: var(--gray-50); padding: 1rem; border-radius: 0.375rem; margin-top: 1rem;">
-        <strong>{{ t(lang, 'session_detail.iris_staging') }}</strong>
-        <ul style="margin: 0.5rem 0 0 1.5rem;">
-            <li>{{ t(lang, 'session_detail.iris_non_proteinuric') }}</li>
-            <li>{{ t(lang, 'session_detail.iris_suspect') }}</li>
-            <li>{{ t(lang, 'session_detail.iris_proteinuric') }}</li>
-        </ul>
-    </div>
+        {% if pathology_findings %}
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-kicker">Narrative report</div>
+                    <h2 class="card-title">Pathology findings</h2>
+                </div>
+            </div>
+            <div class="list-stack">
+                {% for finding in pathology_findings %}
+                <div class="card" style="margin-bottom: 0;">
+                    <div class="card-header">
+                        <div>
+                            <div class="table-title">
+                                {% if finding.specimen_label %}{{ finding.specimen_label }} · {% endif %}
+                                {{ finding.title or finding.section_type|replace('_', ' ')|title }}
+                            </div>
+                            <div class="table-meta">{{ finding.section_type|replace('_', ' ')|title }}</div>
+                        </div>
+                    </div>
+                    {% if finding.clinical_history %}
+                    <p style="margin-bottom: 0.85rem;"><strong>Clinical history:</strong> {{ finding.clinical_history }}</p>
+                    {% endif %}
+                    {% if finding.sample_method %}
+                    <p style="margin-bottom: 0.85rem;"><strong>Sample:</strong> {{ finding.sample_method }}</p>
+                    {% endif %}
+                    {% if finding.diagnosis %}
+                    <p style="margin-bottom: 0.85rem;"><strong>Diagnosis:</strong> {{ finding.diagnosis }}</p>
+                    {% endif %}
+                    {% if finding.microscopic_description %}
+                    <p style="margin-bottom: 0.85rem;"><strong>Microscopic description:</strong> {{ finding.microscopic_description }}</p>
+                    {% endif %}
+                    {% if finding.comment %}
+                    <p><strong>Comment:</strong> {{ finding.comment }}</p>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if session_assets %}
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-kicker">Extracted media</div>
+                    <h2 class="card-title">Images</h2>
+                </div>
+            </div>
+            <div class="grid-2">
+                {% for asset in session_assets %}
+                <div class="card" style="margin-bottom: 0; padding: 0.85rem;">
+                    <div class="table-meta" style="margin-bottom: 0.65rem;">
+                        {{ asset.label or asset.asset_type }}{% if asset.page_number %} · page {{ asset.page_number }}{% endif %}
+                    </div>
+                    <img src="/uploads/{{ asset.file_path.split('/uploads/', 1)[1] if '/uploads/' in asset.file_path else asset.file_path }}" alt="{{ asset.label or asset.asset_type }}" style="width: 100%; border-radius: 14px; border: 1px solid var(--line);">
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if biochemistry %}
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-kicker">Renal markers</div>
+                    <h2 class="card-title">Biochemistry</h2>
+                </div>
+            </div>
+            <div class="summary-grid">
+                <div class="summary-block">
+                    <div class="summary-block-label">UPC ratio</div>
+                    <div class="summary-block-value">{{ biochemistry.upc_ratio or '--' }}</div>
+                </div>
+                <div class="summary-block">
+                    <div class="summary-block-label">Status</div>
+                    <div class="summary-block-value">{{ biochemistry.upc_status or '--' }}</div>
+                </div>
+                <div class="summary-block">
+                    <div class="summary-block-label">Urine total protein</div>
+                    <div class="summary-block-value">{{ biochemistry.urine_total_protein or '--' }}</div>
+                </div>
+                <div class="summary-block">
+                    <div class="summary-block-label">Urine creatinine</div>
+                    <div class="summary-block-value">{{ biochemistry.urine_creatinine or '--' }}</div>
+                </div>
+            </div>
+        </section>
+        {% endif %}
+
+        {% if urinalysis %}
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-kicker">Urinalysis</div>
+                    <h2 class="card-title">Urine markers</h2>
+                </div>
+            </div>
+            <div class="summary-grid">
+                <div class="summary-block">
+                    <div class="summary-block-label">Color</div>
+                    <div class="summary-block-value">{{ urinalysis.color or '--' }}</div>
+                </div>
+                <div class="summary-block">
+                    <div class="summary-block-label">Appearance</div>
+                    <div class="summary-block-value">{{ urinalysis.appearance or '--' }}</div>
+                </div>
+                <div class="summary-block">
+                    <div class="summary-block-label">Specific gravity</div>
+                    <div class="summary-block-value">{{ urinalysis.specific_gravity or '--' }}</div>
+                </div>
+                <div class="summary-block">
+                    <div class="summary-block-label">pH</div>
+                    <div class="summary-block-value">{{ urinalysis.ph or '--' }}</div>
+                </div>
+            </div>
+        </section>
+        {% endif %}
+    </section>
+
+    <aside class="detail-sidebar">
+        <section class="card">
+            <div class="card-kicker">Linked patient</div>
+            <h2 class="card-title" style="margin-bottom: 0.85rem;"><a href="/animal/{{ animal.id }}">{{ animal.name }}</a></h2>
+            <div class="summary-grid">
+                <div class="summary-block">
+                    <div class="summary-block-label">Species</div>
+                    <div class="summary-block-value">{{ animal.species or '--' }}</div>
+                </div>
+                <div class="summary-block">
+                    <div class="summary-block-label">Breed</div>
+                    <div class="summary-block-value">{{ animal.breed or '--' }}</div>
+                </div>
+                <div class="summary-block">
+                    <div class="summary-block-label">Pet owner</div>
+                    <div class="summary-block-value">{{ animal.owner_name or '--' }}</div>
+                </div>
+                <div class="summary-block">
+                    <div class="summary-block-label">Responsible vet</div>
+                    <div class="summary-block-value">{{ animal.responsible_vet or '--' }}</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card-kicker">Report metadata</div>
+            <h2 class="card-title" style="margin-bottom: 0.85rem;">Reference</h2>
+            <div class="summary-grid">
+                <div class="summary-block">
+                    <div class="summary-block-label">Report type</div>
+                    <div class="summary-block-value">{{ report_type_label }}</div>
+                </div>
+                <div class="summary-block">
+                    <div class="summary-block-label">Sample</div>
+                    <div class="summary-block-value">{{ session.sample_type or '--' }}</div>
+                </div>
+                <div class="summary-block">
+                    <div class="summary-block-label">Lab</div>
+                    <div class="summary-block-value">{{ session.lab_name or '--' }}</div>
+                </div>
+                <div class="summary-block">
+                    <div class="summary-block-label">Clinic</div>
+                    <div class="summary-block-value">{{ session.clinic_name or '--' }}</div>
+                </div>
+            </div>
+            <div style="margin-top: 1rem;">
+                <div class="summary-block-label">Source reference</div>
+                <div class="table-meta" style="word-break: break-word;">{{ session.report_source or '--' }}</div>
+            </div>
+        </section>
+
+        {% if previous_session %}
+        <section class="card">
+            <div class="card-kicker">Context</div>
+            <h2 class="card-title" style="margin-bottom: 0.85rem;">Previous report</h2>
+            <div class="table-title">{{ previous_session.report_number or previous_session.external_report_id or ('Report ' ~ previous_session.id) }}</div>
+            <div class="table-meta">{{ previous_session.test_date|format_date if previous_session.test_date else '--' }}</div>
+            <div class="inline-actions" style="margin-top: 1rem;">
+                <a href="/session/{{ previous_session.id }}" class="btn btn-secondary">Open previous</a>
+            </div>
+        </section>
+        {% endif %}
+    </aside>
 </div>
-{% endif %}
-
-{% if results %}
-<!-- Protein Results -->
-<div class="card">
-    <div class="card-header">
-        <h2 class="card-title">{{ t(lang, 'session_detail.proteinogram') }}</h2>
-    </div>
-
-    <div class="table-responsive">
-    <table>
-        <thead>
-            <tr>
-                <th>{{ t(lang, 'session_detail.marker') }}</th>
-                <th>{{ t(lang, 'session_detail.value_percent') }}</th>
-                <th class="mobile-hide">{{ t(lang, 'session_detail.value_gdl') }}</th>
-                <th class="mobile-hide">{{ t(lang, 'session_detail.reference_percent') }}</th>
-                <th class="mobile-hide">{{ t(lang, 'session_detail.reference_gdl') }}</th>
-                <th>{{ t(lang, 'session_detail.status') }}</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for result in results %}
-            <tr>
-                <td><strong>{{ result.marker_name }}</strong></td>
-                <td>
-                    {% if result.value is not none %}
-                        {{ "%.1f"|format(result.value) }}{% if result.unit == '%' %}%{% endif %}
-                    {% else %}
-                        --
-                    {% endif %}
-                </td>
-                <td class="mobile-hide">
-                    {% if result.value_absolute is not none %}
-                        {{ "%.2f"|format(result.value_absolute) }}
-                    {% else %}
-                        --
-                    {% endif %}
-                </td>
-                <td class="mobile-hide text-muted">
-                    {% if result.reference_min is not none and result.reference_max is not none %}
-                        {{ "%.1f"|format(result.reference_min) }} - {{ "%.1f"|format(result.reference_max) }}
-                    {% else %}
-                        --
-                    {% endif %}
-                </td>
-                <td class="mobile-hide text-muted">
-                    {% if result.reference_min_absolute is not none and result.reference_max_absolute is not none %}
-                        {{ "%.2f"|format(result.reference_min_absolute) }} - {{ "%.2f"|format(result.reference_max_absolute) }}
-                    {% else %}
-                        --
-                    {% endif %}
-                </td>
-                <td>
-                    {% if result.flag == 'high' %}
-                        <span class="badge badge-high">↑ {{ t(lang, 'common.high') }}</span>
-                    {% elif result.flag == 'low' %}
-                        <span class="badge badge-low">↓ {{ t(lang, 'common.low') }}</span>
-                    {% else %}
-                        <span class="badge badge-normal">✓ {{ t(lang, 'common.normal') }}</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    </div>
-</div>
-{% endif %}
-
-{% if urinalysis %}
-<!-- Urinalysis Results -->
-<div class="card">
-    <div class="card-header">
-        <h2 class="card-title">{{ t(lang, 'session_detail.urinalysis') }}</h2>
-    </div>
-
-    <div class="grid-2">
-        <!-- General Characteristics -->
-        <div>
-            <h4 style="margin-bottom: 1rem;">{{ t(lang, 'session_detail.general_characteristics') }}</h4>
-            <table>
-                <tr>
-                    <td class="text-muted">{{ t(lang, 'session_detail.color') }}</td>
-                    <td><strong>{{ urinalysis.color or '--' }}</strong></td>
-                </tr>
-                <tr>
-                    <td class="text-muted">{{ t(lang, 'session_detail.appearance') }}</td>
-                    <td><strong>{{ urinalysis.appearance or '--' }}</strong></td>
-                </tr>
-            </table>
-        </div>
-
-        <!-- Biochemistry -->
-        <div>
-            <h4 style="margin-bottom: 1rem;">{{ t(lang, 'session_detail.urinary_biochemistry') }}</h4>
-            <table>
-                <tr>
-                    <td class="text-muted">{{ t(lang, 'session_detail.glucose') }}</td>
-                    <td>{{ urinalysis.glucose or '--' }}</td>
-                </tr>
-                <tr>
-                    <td class="text-muted">{{ t(lang, 'session_detail.bilirubin') }}</td>
-                    <td>{{ urinalysis.bilirubin or '--' }}</td>
-                </tr>
-                <tr>
-                    <td class="text-muted">{{ t(lang, 'session_detail.ketones') }}</td>
-                    <td>{{ urinalysis.ketones or '--' }}</td>
-                </tr>
-                <tr>
-                    <td class="text-muted">{{ t(lang, 'session_detail.density') }}</td>
-                    <td>
-                        <strong>{{ urinalysis.specific_gravity or '--' }}</strong>
-                        <small class="text-muted">({{ t(lang, 'session_detail.ref') }}: 1.012-1.050)</small>
-                    </td>
-                </tr>
-                <tr>
-                    <td class="text-muted">{{ t(lang, 'session_detail.ph') }}</td>
-                    <td>
-                        <strong>{{ urinalysis.ph or '--' }}</strong>
-                        {% if urinalysis.ph and (urinalysis.ph < 5.0 or urinalysis.ph > 7.0) %}
-                        <span class="badge badge-high">{{ t(lang, 'common.abnormal') }}</span>
-                        {% endif %}
-                        <small class="text-muted">({{ t(lang, 'session_detail.ref') }}: 5.0-7.0)</small>
-                    </td>
-                </tr>
-                <tr>
-                    <td class="text-muted">{{ t(lang, 'session_detail.proteins') }}</td>
-                    <td>
-                        <strong>{{ urinalysis.proteins or '--' }}</strong>
-                        {% if urinalysis.proteins and urinalysis.proteins.lower() != 'negativo' %}
-                        <span class="badge badge-high">{{ t(lang, 'common.present') }}</span>
-                        {% endif %}
-                    </td>
-                </tr>
-                <tr>
-                    <td class="text-muted">{{ t(lang, 'session_detail.urobilinogen') }}</td>
-                    <td>{{ urinalysis.urobilinogen or '--' }}</td>
-                </tr>
-                <tr>
-                    <td class="text-muted">{{ t(lang, 'session_detail.nitrites') }}</td>
-                    <td>{{ urinalysis.nitrites or '--' }}</td>
-                </tr>
-            </table>
-        </div>
-    </div>
-
-    <!-- Microscopic Sediment -->
-    <h4 style="margin: 1.5rem 0 1rem;">{{ t(lang, 'session_detail.microscopic_exam') }}</h4>
-    <div class="grid-3">
-        <div>
-            <table>
-                <tr>
-                    <td class="text-muted">{{ t(lang, 'session_detail.leukocytes') }}</td>
-                    <td>{{ urinalysis.leukocytes or '--' }}</td>
-                </tr>
-                <tr>
-                    <td class="text-muted">{{ t(lang, 'session_detail.erythrocytes') }}</td>
-                    <td>{{ urinalysis.erythrocytes or '--' }}</td>
-                </tr>
-                <tr>
-                    <td class="text-muted">{{ t(lang, 'session_detail.epithelial_cells') }}</td>
-                    <td>{{ urinalysis.epithelial_cells or '--' }}</td>
-                </tr>
-            </table>
-        </div>
-        <div>
-            <table>
-                <tr>
-                    <td class="text-muted">{{ t(lang, 'session_detail.casts') }}</td>
-                    <td>{{ urinalysis.casts or '--' }}</td>
-                </tr>
-                <tr>
-                    <td class="text-muted">{{ t(lang, 'session_detail.crystals') }}</td>
-                    <td>
-                        {{ urinalysis.crystals or '--' }}
-                        {% if urinalysis.crystals and urinalysis.crystals.lower() not in ['ausentes', 'ausente'] %}
-                        <span class="badge badge-high">⚠️</span>
-                        {% endif %}
-                    </td>
-                </tr>
-                <tr>
-                    <td class="text-muted">{{ t(lang, 'session_detail.mucus') }}</td>
-                    <td>{{ urinalysis.mucus or '--' }}</td>
-                </tr>
-            </table>
-        </div>
-        <div>
-            <table>
-                <tr>
-                    <td class="text-muted">{{ t(lang, 'session_detail.bacteria') }}</td>
-                    <td>
-                        {{ urinalysis.bacteria or '--' }}
-                        {% if urinalysis.bacteria and urinalysis.bacteria.lower() not in ['ausentes', 'ausente'] %}
-                        <span class="badge badge-low">⚠️</span>
-                        {% endif %}
-                    </td>
-                </tr>
-            </table>
-        </div>
-    </div>
-
-    {% if urinalysis.observations %}
-    <div style="background: var(--gray-50); padding: 1rem; border-radius: 0.375rem; margin-top: 1rem;">
-        <strong>{{ t(lang, 'session_detail.observations') }}:</strong>
-        <p style="margin: 0.5rem 0 0;">{{ urinalysis.observations }}</p>
-    </div>
-    {% endif %}
-</div>
-{% endif %}
-
-{% if comparison and results %}
-<!-- Comparison with Previous Test -->
-<div class="card">
-    <div class="card-header">
-        <h2 class="card-title">{{ t(lang, 'session_detail.comparison_previous') }}</h2>
-        <span class="text-muted">vs {{ previous_session.test_date|format_date }}</span>
-    </div>
-
-    <div class="table-responsive">
-    <table>
-        <thead>
-            <tr>
-                <th>{{ t(lang, 'session_detail.marker') }}</th>
-                <th class="mobile-hide">{{ t(lang, 'session_detail.previous') }}</th>
-                <th>{{ t(lang, 'session_detail.current') }}</th>
-                <th>{{ t(lang, 'session_detail.variation') }}</th>
-                <th>{{ t(lang, 'session_detail.trend') }}</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for comp in comparison %}
-            <tr>
-                <td><strong>{{ comp.marker_name }}</strong></td>
-                <td class="mobile-hide">{{ "%.1f"|format(comp.previous_value) if comp.previous_value is not none else '--' }}</td>
-                <td>{{ "%.1f"|format(comp.current_value) if comp.current_value is not none else '--' }}</td>
-                <td>
-                    {% if comp.change_percent is not none %}
-                        {% if comp.change_percent > 0 %}
-                            <span class="text-danger">+{{ "%.1f"|format(comp.change_percent) }}%</span>
-                        {% elif comp.change_percent < 0 %}
-                            <span class="text-success">{{ "%.1f"|format(comp.change_percent) }}%</span>
-                        {% else %}
-                            0%
-                        {% endif %}
-                    {% else %}
-                        --
-                    {% endif %}
-                </td>
-                <td>
-                    {% if comp.trend == 'improved' %}
-                        <span class="badge badge-normal">✓ {{ t(lang, 'session_detail.improved') }}</span>
-                    {% elif comp.trend == 'worsened' %}
-                        <span class="badge badge-high">⚠ {{ t(lang, 'session_detail.worsened') }}</span>
-                    {% elif comp.trend == 'stable' %}
-                        <span class="badge badge-info">→ {{ t(lang, 'common.stable') }}</span>
-                    {% else %}
-                        --
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    </div>
-</div>
-{% endif %}
 {% endblock %}
