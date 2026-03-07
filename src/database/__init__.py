@@ -30,6 +30,8 @@ from .repositories import (
 from models.domain import (
     Animal, TestSession, ProteinResult, Symptom, Observation,
     ClinicalNote, DiagnosisReport, BiochemistryResult, UrinalysisResult,
+    AnimalIdentifier, AnimalMatchDecision, SessionMeasurement,
+    PathologyFinding, SessionAsset, UnassignedReport,
     User, PasswordResetToken
 )
 
@@ -74,9 +76,25 @@ class Database(BaseDatabase):
         """Find animals by name (partial match)."""
         return self._animal_repo.find_by_name(name)
 
-    def find_or_create_animal(self, animal: Animal) -> int:
+    def find_or_create_animal(self, animal: Animal,
+                              identifiers: Optional[List[AnimalIdentifier]] = None) -> int:
         """Find existing animal or create new one."""
-        return self._animal_repo.find_or_create(animal)
+        return self._animal_repo.find_or_create(animal, identifiers)
+
+    def analyze_animal_match(self, animal: Animal,
+                             identifiers: Optional[List[AnimalIdentifier]] = None) -> AnimalMatchDecision:
+        """Analyze whether a report can be linked to an existing animal with confidence."""
+        return self._animal_repo.analyze_match(animal, identifiers)
+
+    def attach_report_to_animal(self, animal_id: int, animal: Animal,
+                                identifiers: Optional[List[AnimalIdentifier]] = None) -> int:
+        """Update and enrich an existing animal from a parsed report."""
+        return self._animal_repo.attach_report_to_animal(animal_id, animal, identifiers)
+
+    def create_animal_from_report(self, animal: Animal,
+                                  identifiers: Optional[List[AnimalIdentifier]] = None) -> int:
+        """Create a new animal directly from a parsed report."""
+        return self._animal_repo.create_from_report(animal, identifiers)
 
     def list_animals(self) -> List[Animal]:
         """List all animals."""
@@ -97,6 +115,13 @@ class Database(BaseDatabase):
     def session_exists(self, report_number: str) -> bool:
         """Check if a session with given report number already exists."""
         return self._session_repo.session_exists(report_number)
+
+    def session_exists_by_external_reference(self, source_system: str,
+                                             external_report_id: str) -> bool:
+        """Check if a session exists for a source-system-specific external ID."""
+        return self._session_repo.session_exists_by_external_reference(
+            source_system, external_report_id
+        )
 
     # =========================================================================
     # RESULT OPERATIONS
@@ -129,6 +154,57 @@ class Database(BaseDatabase):
     def get_urinalysis_for_session(self, session_id: int) -> Optional[UrinalysisResult]:
         """Get urinalysis result for a session."""
         return self._session_repo.get_urinalysis_for_session(session_id)
+
+    def create_session_measurement(self, measurement: SessionMeasurement) -> int:
+        """Insert a generic session measurement."""
+        return self._session_repo.create_session_measurement(measurement)
+
+    def get_measurements_for_session(self, session_id: int) -> List[SessionMeasurement]:
+        """Get generic measurements for a session."""
+        return self._session_repo.get_measurements_for_session(session_id)
+
+    def create_pathology_finding(self, finding: PathologyFinding) -> int:
+        """Insert a pathology finding."""
+        return self._session_repo.create_pathology_finding(finding)
+
+    def get_pathology_findings_for_session(self, session_id: int) -> List[PathologyFinding]:
+        """Get pathology findings for a session."""
+        return self._session_repo.get_pathology_findings_for_session(session_id)
+
+    def create_session_asset(self, asset: SessionAsset) -> int:
+        """Insert an extracted session asset."""
+        return self._session_repo.create_session_asset(asset)
+
+    def get_assets_for_session(self, session_id: int) -> List[SessionAsset]:
+        """Get stored session assets."""
+        return self._session_repo.get_assets_for_session(session_id)
+
+    def find_open_unassigned_report(self, source_system: Optional[str],
+                                    external_report_id: Optional[str],
+                                    report_number: Optional[str]) -> Optional[UnassignedReport]:
+        """Find an already queued report by reference."""
+        return self._session_repo.find_open_unassigned_report(
+            source_system, external_report_id, report_number
+        )
+
+    def create_unassigned_report(self, report: UnassignedReport) -> int:
+        """Create a queued unassigned report."""
+        return self._session_repo.create_unassigned_report(report)
+
+    def get_unassigned_report(self, report_id: int) -> Optional[UnassignedReport]:
+        """Get a queued report."""
+        return self._session_repo.get_unassigned_report(report_id)
+
+    def list_unassigned_reports(self, status: str = "pending") -> List[UnassignedReport]:
+        """List queued reports."""
+        return self._session_repo.list_unassigned_reports(status)
+
+    def mark_unassigned_report_assigned(self, report_id: int, animal_id: int,
+                                        session_id: int) -> bool:
+        """Mark a queued report as assigned."""
+        return self._session_repo.mark_unassigned_report_assigned(
+            report_id, animal_id, session_id
+        )
 
     # =========================================================================
     # SYMPTOM OPERATIONS

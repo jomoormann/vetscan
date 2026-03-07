@@ -26,13 +26,14 @@ keepalive = 5
 loglevel = "info"
 accesslog = "-"  # stdout
 errorlog = "-"   # stderr
+access_log_format = '%(t)s %(h)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"'
 
 # Process naming
 proc_name = "vetscan"
 
-# Restart workers after this many requests (prevents memory leaks)
-max_requests = 1000
-max_requests_jitter = 50
+# Restart workers after this many requests (0 disables recycling)
+max_requests = 0
+max_requests_jitter = 0
 
 # Preload app for faster worker spawning
 preload_app = True

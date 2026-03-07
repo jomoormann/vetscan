@@ -11,15 +11,15 @@ This module provides the high-level interface for:
 import os
 import shutil
 from datetime import date, datetime
-from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass
+from typing import Dict, List, Optional
+from dataclasses import asdict, dataclass
 import json
 
 from models import (
-    Database, Animal, TestSession, ProteinResult, 
-    Symptom, Observation, ResultFlag
+    Database, Animal, TestSession, ProteinResult, SessionAsset,
+    Symptom, Observation, AnimalMatchDecision, UnassignedReport
 )
-from pdf_parser import parse_dnatech_report, ParsedReport
+from pdf_parser import parse_lab_report, ParsedReport
 
 
 @dataclass
@@ -51,6 +51,21 @@ class AnalysisReport:
     flags_summary: Dict[str, int]  # count of normal/high/low
 
 
+@dataclass
+class ImportOutcome:
+    """Result of importing a PDF report."""
+    status: str  # imported, pending_review
+    parsed: ParsedReport
+    animal_id: Optional[int] = None
+    session_id: Optional[int] = None
+    unassigned_report_id: Optional[int] = None
+    match_decision: Optional[AnimalMatchDecision] = None
+
+    @property
+    def imported(self) -> bool:
+        return self.status == "imported"
+
+
 class VetProteinService:
     """Main service class for the veterinary protein analysis application"""
     
@@ -80,27 +95,156 @@ class VetProteinService:
     # PDF Import
     # =========================================================================
     
-    def import_pdf(self, pdf_path: str, 
-                   copy_to_uploads: bool = True) -> Tuple[int, int, ParsedReport]:
+    @staticmethod
+    def _json_default(value):
+        if isinstance(value, (date, datetime)):
+            return value.isoformat()
+        raise TypeError(f"Type {type(value)} is not JSON serializable")
+
+    def _ensure_unique_session(self, parsed: ParsedReport):
+        if parsed.session.external_report_id and parsed.session.source_system:
+            if self.db.session_exists_by_external_reference(
+                parsed.session.source_system,
+                parsed.session.external_report_id,
+            ):
+                raise ValueError(
+                    f"Report {parsed.session.external_report_id} already exists in database"
+                )
+
+        if parsed.session.report_number and self.db.session_exists(parsed.session.report_number):
+            raise ValueError(
+                f"Report {parsed.session.report_number} already exists in database"
+            )
+
+    def _persist_session(self, parsed: ParsedReport, animal_id: int) -> int:
+        parsed.session.animal_id = animal_id
+        session_id = self.db.create_test_session(parsed.session)
+
+        for result in parsed.results:
+            result.session_id = session_id
+            self.db.create_protein_result(result)
+
+        if parsed.biochemistry:
+            parsed.biochemistry.session_id = session_id
+            self.db.create_biochemistry_result(parsed.biochemistry)
+
+        if parsed.urinalysis:
+            parsed.urinalysis.session_id = session_id
+            self.db.create_urinalysis_result(parsed.urinalysis)
+
+        for measurement in parsed.measurements:
+            measurement.session_id = session_id
+            measurement.panel_name = measurement.panel_name or parsed.session.panel_name
+            self.db.create_session_measurement(measurement)
+
+        for finding in parsed.pathology_findings:
+            finding.session_id = session_id
+            self.db.create_pathology_finding(finding)
+
+        if parsed.assets:
+            assets_dir = os.path.join(self.uploads_dir, "report_assets", str(session_id))
+            os.makedirs(assets_dir, exist_ok=True)
+            for asset in parsed.assets:
+                asset_path = os.path.join(assets_dir, asset.filename)
+                with open(asset_path, "wb") as f:
+                    f.write(asset.content)
+                self.db.create_session_asset(SessionAsset(
+                    session_id=session_id,
+                    asset_type=asset.asset_type,
+                    label=asset.label,
+                    file_path=asset_path,
+                    page_number=asset.page_number,
+                    sort_order=asset.sort_order,
+                    metadata_json=json.dumps(asset.metadata, ensure_ascii=False),
+                ))
+
+        return session_id
+
+    def _queue_unassigned_report(self, parsed: ParsedReport,
+                                 match_decision: AnimalMatchDecision) -> int:
+        existing = self.db.find_open_unassigned_report(
+            parsed.session.source_system,
+            parsed.session.external_report_id,
+            parsed.session.report_number,
+        )
+        if existing:
+            return existing.id
+
+        summary = {
+            "animal_name": parsed.animal.name,
+            "species": parsed.animal.species,
+            "breed": parsed.animal.breed,
+            "owner_name": parsed.animal.owner_name,
+            "microchip": parsed.animal.microchip,
+            "age_years": parsed.animal.age_years,
+            "sex": parsed.animal.sex,
+            "report_number": parsed.session.report_number,
+            "external_report_id": parsed.session.external_report_id,
+            "report_type": parsed.session.report_type,
+            "source_system": parsed.session.source_system,
+            "report_source": parsed.session.report_source,
+            "test_date": parsed.session.test_date,
+            "sample_type": parsed.session.sample_type,
+            "lab_name": parsed.session.lab_name,
+            "clinic_name": parsed.session.clinic_name,
+            "panel_name": parsed.session.panel_name,
+            "measurement_count": len(parsed.measurements),
+            "protein_result_count": len(parsed.results),
+            "pathology_finding_count": len(parsed.pathology_findings),
+            "asset_count": len(parsed.assets),
+        }
+
+        queued = UnassignedReport(
+            filename=os.path.basename(parsed.session.pdf_path or ""),
+            pdf_path=parsed.session.pdf_path or "",
+            source_system=parsed.session.source_system,
+            report_type=parsed.session.report_type,
+            report_number=parsed.session.report_number or None,
+            external_report_id=parsed.session.external_report_id,
+            report_source=parsed.session.report_source,
+            animal_name=parsed.animal.name or None,
+            species=parsed.animal.species or None,
+            owner_name=parsed.animal.owner_name,
+            clinic_name=parsed.session.clinic_name,
+            report_date=parsed.session.test_date,
+            panel_name=parsed.session.panel_name,
+            match_reason=match_decision.reason,
+            parsed_summary_json=json.dumps(
+                summary, ensure_ascii=False, default=self._json_default
+            ),
+            candidate_matches_json=json.dumps(
+                [asdict(candidate) for candidate in match_decision.candidates],
+                ensure_ascii=False,
+                default=self._json_default,
+            ),
+        )
+        return self.db.create_unassigned_report(queued)
+
+    def _get_pending_report(self, report_id: int) -> UnassignedReport:
+        report = self.db.get_unassigned_report(report_id)
+        if not report:
+            raise ValueError(f"Queued report {report_id} not found")
+        if report.status != "pending":
+            raise ValueError(f"Queued report {report_id} is already assigned")
+        return report
+
+    def import_pdf(self, pdf_path: str,
+                   copy_to_uploads: bool = True,
+                   report_source: Optional[str] = None,
+                   force_animal_id: Optional[int] = None,
+                   force_create_animal: bool = False,
+                   allow_pending_assignment: bool = True) -> ImportOutcome:
         """
         Import a PDF report into the database.
-        
-        Args:
-            pdf_path: Path to the PDF file
-            copy_to_uploads: Whether to copy the PDF to the uploads directory
-            
-        Returns:
-            Tuple of (animal_id, session_id, parsed_report)
         """
+        if force_animal_id is not None and force_create_animal:
+            raise ValueError("force_animal_id and force_create_animal cannot be used together")
+
         # Parse the PDF
-        parsed = parse_dnatech_report(pdf_path)
-        
+        parsed = parse_lab_report(pdf_path)
+
         # Check if report already exists
-        if parsed.session.report_number:
-            if self.db.session_exists(parsed.session.report_number):
-                raise ValueError(
-                    f"Report {parsed.session.report_number} already exists in database"
-                )
+        self._ensure_unique_session(parsed)
         
         # Copy PDF to uploads directory if requested
         stored_path = pdf_path
@@ -110,30 +254,108 @@ class VetProteinService:
             if pdf_path != stored_path:
                 shutil.copy2(pdf_path, stored_path)
             parsed.session.pdf_path = stored_path
-        
-        # Find or create the animal
-        animal_id = self.db.find_or_create_animal(parsed.animal)
-        
-        # Create the test session
-        parsed.session.animal_id = animal_id
-        session_id = self.db.create_test_session(parsed.session)
-        
-        # Create protein results
-        for result in parsed.results:
-            result.session_id = session_id
-            self.db.create_protein_result(result)
-        
-        # Create biochemistry results if present
-        if parsed.biochemistry:
-            parsed.biochemistry.session_id = session_id
-            self.db.create_biochemistry_result(parsed.biochemistry)
-        
-        # Create urinalysis results if present
-        if parsed.urinalysis:
-            parsed.urinalysis.session_id = session_id
-            self.db.create_urinalysis_result(parsed.urinalysis)
-        
-        return animal_id, session_id, parsed
+        else:
+            parsed.session.pdf_path = stored_path
+
+        parsed.session.report_source = report_source or parsed.session.report_source or stored_path
+
+        if force_animal_id is not None:
+            animal_id = self.db.attach_report_to_animal(
+                force_animal_id, parsed.animal, parsed.animal_identifiers
+            )
+            session_id = self._persist_session(parsed, animal_id)
+            return ImportOutcome(
+                status="imported",
+                animal_id=animal_id,
+                session_id=session_id,
+                parsed=parsed,
+            )
+
+        if force_create_animal:
+            animal_id = self.db.create_animal_from_report(
+                parsed.animal, parsed.animal_identifiers
+            )
+            session_id = self._persist_session(parsed, animal_id)
+            return ImportOutcome(
+                status="imported",
+                animal_id=animal_id,
+                session_id=session_id,
+                parsed=parsed,
+            )
+
+        match_decision = self.db.analyze_animal_match(
+            parsed.animal, parsed.animal_identifiers
+        )
+
+        if match_decision.action == "match_existing" and match_decision.animal_id:
+            animal_id = self.db.attach_report_to_animal(
+                match_decision.animal_id,
+                parsed.animal,
+                parsed.animal_identifiers,
+            )
+            session_id = self._persist_session(parsed, animal_id)
+            return ImportOutcome(
+                status="imported",
+                animal_id=animal_id,
+                session_id=session_id,
+                parsed=parsed,
+                match_decision=match_decision,
+            )
+
+        if match_decision.action == "manual_review" and allow_pending_assignment:
+            unassigned_report_id = self._queue_unassigned_report(parsed, match_decision)
+            return ImportOutcome(
+                status="pending_review",
+                parsed=parsed,
+                unassigned_report_id=unassigned_report_id,
+                match_decision=match_decision,
+            )
+
+        animal_id = self.db.create_animal_from_report(
+            parsed.animal, parsed.animal_identifiers
+        )
+        session_id = self._persist_session(parsed, animal_id)
+        return ImportOutcome(
+            status="imported",
+            animal_id=animal_id,
+            session_id=session_id,
+            parsed=parsed,
+            match_decision=match_decision,
+        )
+
+    def get_unassigned_reports(self, status: str = "pending") -> List[UnassignedReport]:
+        """List queued reports awaiting manual assignment."""
+        return self.db.list_unassigned_reports(status)
+
+    def assign_unassigned_report_to_animal(self, report_id: int,
+                                           animal_id: int) -> ImportOutcome:
+        """Assign a queued report to an existing animal."""
+        report = self._get_pending_report(report_id)
+        if not self.db.get_animal(animal_id):
+            raise ValueError(f"Animal {animal_id} not found")
+
+        outcome = self.import_pdf(
+            report.pdf_path,
+            copy_to_uploads=False,
+            report_source=report.report_source,
+            force_animal_id=animal_id,
+            allow_pending_assignment=False,
+        )
+        self.db.mark_unassigned_report_assigned(report_id, animal_id, outcome.session_id)
+        return outcome
+
+    def create_animal_from_unassigned_report(self, report_id: int) -> ImportOutcome:
+        """Assign a queued report by creating a new animal entry."""
+        report = self._get_pending_report(report_id)
+        outcome = self.import_pdf(
+            report.pdf_path,
+            copy_to_uploads=False,
+            report_source=report.report_source,
+            force_create_animal=True,
+            allow_pending_assignment=False,
+        )
+        self.db.mark_unassigned_report_assigned(report_id, outcome.animal_id, outcome.session_id)
+        return outcome
     
     # =========================================================================
     # Data Retrieval
@@ -473,17 +695,21 @@ def demo():
         for pdf_path in pdf_files:
             print(f"\n📄 Importing: {pdf_path.split('/')[-1]}")
             try:
-                animal_id, session_id, parsed = service.import_pdf(
+                outcome = service.import_pdf(
                     pdf_path, copy_to_uploads=False
                 )
-                imported.append((animal_id, session_id, parsed))
-                print(f"   ✓ {parsed.animal.name} - {parsed.session.report_number}")
-                print(f"     Date: {parsed.session.test_date}")
-                print(f"     Sample: {parsed.session.sample_type}")
-                if parsed.biochemistry:
-                    print(f"     UPC Ratio: {parsed.biochemistry.upc_ratio} ({parsed.biochemistry.upc_status})")
-                if parsed.urinalysis:
-                    print(f"     Urinalysis: pH {parsed.urinalysis.ph}, Density {parsed.urinalysis.specific_gravity}")
+                parsed = outcome.parsed
+                if outcome.imported:
+                    imported.append((outcome.animal_id, outcome.session_id, parsed))
+                    print(f"   ✓ {parsed.animal.name} - {parsed.session.report_number}")
+                    print(f"     Date: {parsed.session.test_date}")
+                    print(f"     Sample: {parsed.session.sample_type}")
+                    if parsed.biochemistry:
+                        print(f"     UPC Ratio: {parsed.biochemistry.upc_ratio} ({parsed.biochemistry.upc_status})")
+                    if parsed.urinalysis:
+                        print(f"     Urinalysis: pH {parsed.urinalysis.ph}, Density {parsed.urinalysis.specific_gravity}")
+                else:
+                    print(f"   ? Queued for manual review: {parsed.animal.name}")
                     
             except Exception as e:
                 print(f"   ✗ Error: {e}")

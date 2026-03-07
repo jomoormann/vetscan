@@ -4,9 +4,20 @@ Animal Repository for VetScan
 Handles all database operations for Animal entities.
 """
 
+import re
+import unicodedata
+from difflib import SequenceMatcher
 from typing import List, Optional
 
-from models.domain import Animal, Symptom, Observation, ClinicalNote
+from models.domain import (
+    Animal,
+    Symptom,
+    Observation,
+    ClinicalNote,
+    AnimalIdentifier,
+    AnimalMatchCandidate,
+    AnimalMatchDecision,
+)
 
 
 class AnimalRepository:
@@ -33,13 +44,13 @@ class AnimalRepository:
         """
         cursor = self.db.conn.execute("""
             INSERT INTO animals (name, species, breed, microchip, age_years,
-                                age_months, sex, weight_kg, neutered,
+                                owner_name, age_months, sex, weight_kg, neutered,
                                 medical_history, notes, responsible_vet)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (animal.name, animal.species, animal.breed, animal.microchip,
-              animal.age_years, animal.age_months, animal.sex, animal.weight_kg,
-              animal.neutered, animal.medical_history, animal.notes,
-              animal.responsible_vet))
+              animal.age_years, animal.owner_name, animal.age_months, animal.sex,
+              animal.weight_kg, animal.neutered, animal.medical_history,
+              animal.notes, animal.responsible_vet))
         self.db.conn.commit()
         return cursor.lastrowid
 
@@ -74,7 +85,265 @@ class AnimalRepository:
             "SELECT * FROM animals WHERE name LIKE ?", (f"%{name}%",))
         return [Animal(**dict(row)) for row in cursor.fetchall()]
 
-    def find_or_create(self, animal: Animal) -> int:
+    def _normalize_text(self, value: Optional[str]) -> str:
+        if not value:
+            return ""
+        value = unicodedata.normalize("NFKD", value)
+        value = "".join(ch for ch in value if not unicodedata.combining(ch))
+        value = value.lower().strip()
+        value = re.sub(r"[^a-z0-9\s]", " ", value)
+        return " ".join(value.split())
+
+    def _canonical_species(self, value: Optional[str]) -> str:
+        normalized = self._normalize_text(value)
+        if "can" in normalized or "dog" in normalized:
+            return "canine"
+        if "fel" in normalized or "cat" in normalized:
+            return "feline"
+        return normalized
+
+    def _owner_matches(self, left: Optional[str], right: Optional[str]) -> bool:
+        left_norm = self._normalize_text(left)
+        right_norm = self._normalize_text(right)
+        if not left_norm or not right_norm:
+            return False
+        return (
+            left_norm == right_norm
+            or left_norm in right_norm
+            or right_norm in left_norm
+        )
+
+    def _update_from_report(self, animal_id: int, animal: Animal):
+        existing = self.get(animal_id)
+        if not existing:
+            return
+
+        updates = {}
+        if animal.breed and (not existing.breed or existing.breed == "Indeterminado"):
+            updates["breed"] = animal.breed
+        if animal.owner_name and not existing.owner_name:
+            updates["owner_name"] = animal.owner_name
+        if animal.microchip and not existing.microchip:
+            updates["microchip"] = animal.microchip
+        if animal.age_years and not existing.age_years:
+            updates["age_years"] = animal.age_years
+        if animal.age_months and not existing.age_months:
+            updates["age_months"] = animal.age_months
+        if animal.sex and existing.sex == "U" and animal.sex != "U":
+            updates["sex"] = animal.sex
+        if animal.neutered is not None and existing.neutered is None:
+            updates["neutered"] = animal.neutered
+        if animal.responsible_vet and not existing.responsible_vet:
+            updates["responsible_vet"] = animal.responsible_vet
+        if updates:
+            self.update(animal_id, **updates)
+
+    def find_identifier(self, source_system: str, identifier_type: str,
+                        identifier_value: str) -> Optional[int]:
+        cursor = self.db.conn.execute("""
+            SELECT animal_id FROM animal_identifiers
+            WHERE source_system = ? AND identifier_type = ? AND identifier_value = ?
+        """, (source_system, identifier_type, identifier_value))
+        row = cursor.fetchone()
+        return row["animal_id"] if row else None
+
+    def upsert_identifier(self, animal_id: int, identifier: AnimalIdentifier):
+        if not identifier.identifier_value:
+            return
+        self.db.conn.execute("""
+            INSERT INTO animal_identifiers (
+                animal_id, source_system, identifier_type, identifier_value
+            ) VALUES (?, ?, ?, ?)
+            ON CONFLICT(source_system, identifier_type, identifier_value)
+            DO UPDATE SET animal_id = excluded.animal_id
+        """, (
+            animal_id,
+            identifier.source_system,
+            identifier.identifier_type,
+            identifier.identifier_value,
+        ))
+        self.db.conn.commit()
+
+    def _candidate_from_animal(self, animal: Animal, confidence: float,
+                               reason: str) -> AnimalMatchCandidate:
+        return AnimalMatchCandidate(
+            animal_id=animal.id,
+            name=animal.name,
+            species=animal.species,
+            owner_name=animal.owner_name,
+            microchip=animal.microchip,
+            confidence=round(confidence, 4),
+            reason=reason,
+        )
+
+    def _get_all_candidates(self) -> List[Animal]:
+        cursor = self.db.conn.execute("SELECT * FROM animals")
+        return [Animal(**dict(row)) for row in cursor.fetchall()]
+
+    def analyze_match(self, animal: Animal,
+                      identifiers: Optional[List[AnimalIdentifier]] = None) -> AnimalMatchDecision:
+        identifiers = identifiers or []
+
+        for identifier in identifiers:
+            animal_id = self.find_identifier(
+                identifier.source_system,
+                identifier.identifier_type,
+                identifier.identifier_value,
+            )
+            if animal_id:
+                matched = self.get(animal_id)
+                return AnimalMatchDecision(
+                    action="match_existing",
+                    animal_id=animal_id,
+                    confidence=1.0,
+                    reason=f"exact_{identifier.identifier_type}",
+                    candidates=[self._candidate_from_animal(
+                        matched, 1.0, f"Exact {identifier.identifier_type}"
+                    )] if matched else [],
+                )
+
+        if animal.microchip:
+            cursor = self.db.conn.execute(
+                "SELECT id FROM animals WHERE microchip = ?", (animal.microchip,))
+            row = cursor.fetchone()
+            if row:
+                matched = self.get(row["id"])
+                return AnimalMatchDecision(
+                    action="match_existing",
+                    animal_id=row["id"],
+                    confidence=0.99,
+                    reason="exact_microchip",
+                    candidates=[self._candidate_from_animal(
+                        matched, 0.99, "Exact microchip"
+                    )] if matched else [],
+                )
+
+        target_name = self._normalize_text(animal.name)
+        target_species = self._canonical_species(animal.species)
+        target_owner = self._normalize_text(animal.owner_name)
+
+        if not target_name:
+            return AnimalMatchDecision(
+                action="manual_review",
+                confidence=0.0,
+                reason="missing_patient_name",
+            )
+
+        candidates = self._get_all_candidates()
+
+        exact_matches: List[AnimalMatchCandidate] = []
+        for candidate in candidates:
+            if (
+                self._normalize_text(candidate.name) == target_name
+                and self._canonical_species(candidate.species) == target_species
+            ):
+                if target_owner:
+                    if not self._owner_matches(candidate.owner_name, animal.owner_name):
+                        continue
+                    confidence = 0.98
+                    reason = "Exact name, species, and owner"
+                else:
+                    confidence = 0.95
+                    reason = "Exact name and species"
+                exact_matches.append(self._candidate_from_animal(
+                    candidate, confidence, reason
+                ))
+
+        if len(exact_matches) == 1:
+            best = exact_matches[0]
+            return AnimalMatchDecision(
+                action="match_existing",
+                animal_id=best.animal_id,
+                confidence=best.confidence,
+                reason="exact_match",
+                candidates=exact_matches,
+            )
+        if len(exact_matches) > 1:
+            exact_matches.sort(key=lambda item: item.confidence, reverse=True)
+            return AnimalMatchDecision(
+                action="manual_review",
+                confidence=exact_matches[0].confidence,
+                reason="multiple_exact_matches",
+                candidates=exact_matches[:5],
+            )
+
+        scored: List[AnimalMatchCandidate] = []
+        for candidate in candidates:
+            if self._canonical_species(candidate.species) != target_species:
+                continue
+
+            name_score = SequenceMatcher(
+                None,
+                self._normalize_text(candidate.name),
+                target_name,
+            ).ratio()
+            if name_score < 0.72:
+                continue
+
+            confidence = name_score * 0.72
+            reasons = [f"Name similarity {name_score:.0%}"]
+
+            if self._owner_matches(candidate.owner_name, animal.owner_name):
+                confidence += 0.18
+                reasons.append("owner match")
+            if candidate.age_years and animal.age_years:
+                if abs(candidate.age_years - animal.age_years) <= 1:
+                    confidence += 0.05
+                    reasons.append("age aligned")
+            if candidate.breed and animal.breed:
+                if self._normalize_text(candidate.breed) == self._normalize_text(animal.breed):
+                    confidence += 0.03
+                    reasons.append("breed match")
+
+            scored.append(self._candidate_from_animal(
+                candidate,
+                min(confidence, 0.99),
+                ", ".join(reasons),
+            ))
+
+        scored.sort(key=lambda item: item.confidence, reverse=True)
+
+        if scored:
+            best = scored[0]
+            runner_up = scored[1].confidence if len(scored) > 1 else 0.0
+            if best.confidence >= 0.93 and (best.confidence - runner_up) >= 0.08:
+                return AnimalMatchDecision(
+                    action="match_existing",
+                    animal_id=best.animal_id,
+                    confidence=best.confidence,
+                    reason="high_confidence_fuzzy_match",
+                    candidates=[best],
+                )
+
+            return AnimalMatchDecision(
+                action="manual_review",
+                confidence=best.confidence,
+                reason="ambiguous_existing_match",
+                candidates=scored[:5],
+            )
+
+        return AnimalMatchDecision(
+            action="create_new",
+            confidence=0.9,
+            reason="no_plausible_existing_match",
+        )
+
+    def attach_report_to_animal(self, animal_id: int, animal: Animal,
+                                identifiers: Optional[List[AnimalIdentifier]] = None) -> int:
+        self._update_from_report(animal_id, animal)
+        for item in identifiers or []:
+            self.upsert_identifier(animal_id, item)
+        return animal_id
+
+    def create_from_report(self, animal: Animal,
+                           identifiers: Optional[List[AnimalIdentifier]] = None) -> int:
+        animal_id = self.create(animal)
+        for item in identifiers or []:
+            self.upsert_identifier(animal_id, item)
+        return animal_id
+
+    def find_or_create(self, animal: Animal,
+                       identifiers: Optional[List[AnimalIdentifier]] = None) -> int:
         """
         Find existing animal or create new one.
 
@@ -87,31 +356,10 @@ class AnimalRepository:
         Returns:
             ID of existing or newly created animal
         """
-        # Try to find by microchip first
-        if animal.microchip:
-            cursor = self.db.conn.execute(
-                "SELECT id FROM animals WHERE microchip = ?", (animal.microchip,))
-            row = cursor.fetchone()
-            if row:
-                return row['id']
-
-        # Try to find by name + species
-        cursor = self.db.conn.execute("""
-            SELECT id FROM animals
-            WHERE LOWER(name) = LOWER(?) AND LOWER(species) = LOWER(?)
-        """, (animal.name, animal.species))
-        row = cursor.fetchone()
-        if row:
-            # Update breed if it was "Indeterminado" or empty
-            self.db.conn.execute("""
-                UPDATE animals SET breed = ?
-                WHERE id = ? AND (breed IS NULL OR breed = '' OR breed = 'Indeterminado')
-            """, (animal.breed, row['id']))
-            self.db.conn.commit()
-            return row['id']
-
-        # Create new animal
-        return self.create(animal)
+        decision = self.analyze_match(animal, identifiers)
+        if decision.action == "match_existing" and decision.animal_id:
+            return self.attach_report_to_animal(decision.animal_id, animal, identifiers)
+        return self.create_from_report(animal, identifiers)
 
     def list_all(self) -> List[Animal]:
         """
@@ -134,7 +382,7 @@ class AnimalRepository:
         Returns:
             True if update was successful
         """
-        allowed_fields = {'name', 'species', 'breed', 'microchip', 'age_years',
+        allowed_fields = {'name', 'species', 'breed', 'microchip', 'owner_name', 'age_years',
                          'age_months', 'sex', 'weight_kg', 'neutered',
                          'medical_history', 'notes', 'responsible_vet'}
         update_fields = {k: v for k, v in kwargs.items() if k in allowed_fields}

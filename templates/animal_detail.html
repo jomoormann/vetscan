@@ -66,55 +66,70 @@
     </div>
 
     {% if sessions %}
-    <div class="table-responsive">
-    <table>
-        <thead>
-            <tr>
-                <th>{{ t(lang, 'common.date') }}</th>
-                <th class="mobile-hide">{{ t(lang, 'common.report') }}</th>
-                <th class="mobile-hide">{{ t(lang, 'common.sample') }}</th>
-                <th>{{ t(lang, 'animal_detail.results') }}</th>
-                <th>{{ t(lang, 'animal_detail.upc_ratio') }}</th>
-                <th>{{ t(lang, 'common.actions') }}</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for item in sessions %}
-            <tr>
-                <td>
-                    <strong>{{ item.session.test_date|format_date }}</strong>
-                </td>
-                <td class="mobile-hide">{{ item.session.report_number or 'N/A' }}</td>
-                <td class="mobile-hide">{{ item.session.sample_type or 'N/A' }}</td>
-                <td>
-                    {% if item.abnormal_count > 0 %}
-                    <span class="badge badge-high">{{ item.abnormal_count }} {{ t(lang, 'animal_detail.abnormal_results') }}</span>
-                    {% else %}
-                    <span class="badge badge-normal">{{ t(lang, 'animal_detail.all_normal') }}</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if item.biochemistry %}
-                        {{ item.biochemistry.upc_ratio }}
-                        {% if item.biochemistry.upc_status == 'proteinurico' %}
-                        <span class="badge badge-high">{{ t(lang, 'animal_detail.proteinuric') }}</span>
-                        {% elif item.biochemistry.upc_status == 'suspeito' %}
-                        <span class="badge badge-low">{{ t(lang, 'animal_detail.suspect') }}</span>
-                        {% else %}
-                        <span class="badge badge-normal">{{ t(lang, 'common.normal') }}</span>
+    {% set grouped_sessions = session_groups if session_groups is defined and session_groups else [{'label': 'All Reports', 'rows': sessions}] %}
+    {% for group in grouped_sessions %}
+    <div style="margin-bottom: {% if not loop.last %}1.5rem{% else %}0{% endif %};">
+        <h3 style="margin-bottom: 0.75rem; color: var(--primary);">{{ group.label }}</h3>
+        <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th>{{ t(lang, 'common.date') }}</th>
+                    <th>{{ t(lang, 'common.report') }}</th>
+                    <th class="mobile-hide">Type</th>
+                    <th>{{ t(lang, 'animal_detail.results') }}</th>
+                    <th class="mobile-hide">Source</th>
+                    <th>{{ t(lang, 'common.actions') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in group.rows %}
+                <tr>
+                    <td>
+                        <strong>{{ item.session.test_date|format_date }}</strong>
+                    </td>
+                    <td>
+                        <strong>{{ item.session.report_number or item.session.external_report_id or 'N/A' }}</strong>
+                        <br><small class="text-muted">{{ item.session.sample_type or 'N/A' }}</small>
+                    </td>
+                    <td class="mobile-hide">
+                        {{ item.session.panel_name or item.session.report_type or 'N/A' }}
+                    </td>
+                    <td>
+                        <div>{{ item.report_summary or '--' }}</div>
+                        <div style="margin-top: 0.35rem;">
+                            {% if item.abnormal_count > 0 %}
+                            <span class="badge badge-high">{{ item.abnormal_count }} {{ t(lang, 'animal_detail.abnormal_results') }}</span>
+                            {% elif item.pathology_findings %}
+                            <span class="badge badge-info">Narrative report</span>
+                            {% else %}
+                            <span class="badge badge-normal">{{ t(lang, 'animal_detail.all_normal') }}</span>
+                            {% endif %}
+                            {% if item.biochemistry %}
+                                <span class="badge {% if item.biochemistry.upc_status == 'proteinurico' %}badge-high{% elif item.biochemistry.upc_status == 'suspeito' %}badge-low{% else %}badge-normal{% endif %}" style="margin-left: 0.35rem;">
+                                    UPC {{ item.biochemistry.upc_ratio }}
+                                </span>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td class="mobile-hide">
+                        <div>{{ item.session.clinic_name or item.session.lab_name or item.session.source_system or '--' }}</div>
+                        {% if item.session.report_source %}
+                        <small class="text-muted" title="{{ item.session.report_source }}">
+                            {{ item.session.report_source | truncate(48) }}
+                        </small>
                         {% endif %}
-                    {% else %}
-                    --
-                    {% endif %}
-                </td>
-                <td>
-                    <a href="/session/{{ item.session.id }}" class="btn btn-secondary">{{ t(lang, 'common.view_details') }}</a>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+                    </td>
+                    <td>
+                        <a href="/session/{{ item.session.id }}" class="btn btn-secondary">{{ t(lang, 'common.view_details') }}</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
     </div>
+    {% endfor %}
     {% else %}
     <p class="text-muted text-center" style="padding: 2rem;">
         {{ t(lang, 'animal_detail.no_tests') }}

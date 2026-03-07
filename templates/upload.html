@@ -56,11 +56,13 @@
 <script>
     const translations = {
         success: "{{ t(lang, 'upload.success') }}",
+        queued: "Queued for manual assignment",
         animalLabel: "{{ t(lang, 'upload.animal_label') }}",
         reportLabel: "{{ t(lang, 'upload.report_label') }}",
         dateLabel: "{{ t(lang, 'upload.date_label') }}",
         viewResults: "{{ t(lang, 'upload.view_results') }}",
         viewAnimal: "{{ t(lang, 'upload.view_animal') }}",
+        reviewQueue: "Review Queue",
         newUpload: "{{ t(lang, 'upload.new_upload') }}",
         onlyPdf: "{{ t(lang, 'upload.only_pdf') }}",
         communicationError: "{{ t(lang, 'upload.communication_error') }}"
@@ -129,19 +131,34 @@
             uploadProgress.style.display = 'none';
 
             if (data.success) {
-                showResult(true, `
-                    <h3>✓ ${translations.success}</h3>
-                    <p style="margin: 1rem 0;">
-                        <strong>${translations.animalLabel}:</strong> ${data.animal_name}<br>
-                        <strong>${translations.reportLabel}:</strong> ${data.report_number}<br>
-                        <strong>${translations.dateLabel}:</strong> ${data.test_date}
-                    </p>
-                    <div class="action-buttons" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-                        <a href="/session/${data.session_id}" class="btn btn-primary">${translations.viewResults}</a>
-                        <a href="/animal/${data.animal_id}" class="btn btn-secondary">${translations.viewAnimal}</a>
-                        <button onclick="resetUpload()" class="btn btn-secondary">${translations.newUpload}</button>
-                    </div>
-                `);
+                if (data.queued) {
+                    showResult(true, `
+                        <h3>${translations.queued}</h3>
+                        <p style="margin: 1rem 0;">
+                            <strong>${translations.animalLabel}:</strong> ${data.animal_name}<br>
+                            <strong>${translations.reportLabel}:</strong> ${data.report_number}<br>
+                            <strong>${translations.dateLabel}:</strong> ${data.test_date}
+                        </p>
+                        <div class="action-buttons" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                            <a href="/unassigned-reports" class="btn btn-primary">${translations.reviewQueue}</a>
+                            <button onclick="resetUpload()" class="btn btn-secondary">${translations.newUpload}</button>
+                        </div>
+                    `);
+                } else {
+                    showResult(true, `
+                        <h3>✓ ${translations.success}</h3>
+                        <p style="margin: 1rem 0;">
+                            <strong>${translations.animalLabel}:</strong> ${data.animal_name}<br>
+                            <strong>${translations.reportLabel}:</strong> ${data.report_number}<br>
+                            <strong>${translations.dateLabel}:</strong> ${data.test_date}
+                        </p>
+                        <div class="action-buttons" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                            <a href="/session/${data.session_id}" class="btn btn-primary">${translations.viewResults}</a>
+                            <a href="/animal/${data.animal_id}" class="btn btn-secondary">${translations.viewAnimal}</a>
+                            <button onclick="resetUpload()" class="btn btn-secondary">${translations.newUpload}</button>
+                        </div>
+                    `);
+                }
             } else {
                 showResult(false, data.message || translations.communicationError);
             }

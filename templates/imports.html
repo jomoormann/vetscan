@@ -57,7 +57,9 @@
                     </div>
                 </td>
                 <td>
-                    {% if imp.import_success %}
+                    {% if imp.validation_result == 'queued_manual_assignment' %}
+                        <span class="badge badge-info">Queued</span>
+                    {% elif imp.import_success %}
                         <span class="badge badge-normal">{{ t(lang, 'imports.status.success') }}</span>
                     {% elif imp.validation_result == 'duplicate' %}
                         <span class="badge badge-info">{{ t(lang, 'imports.status.duplicate') }}</span>
@@ -70,6 +72,8 @@
                 <td>
                     {% if imp.animal_id and imp.animal_name %}
                         <a href="/animal/{{ imp.animal_id }}">{{ imp.animal_name }}</a>
+                    {% elif imp.validation_result == 'queued_manual_assignment' %}
+                        <a href="/unassigned-reports">Needs assignment</a>
                     {% else %}
                         <span class="text-muted">--</span>
                     {% endif %}

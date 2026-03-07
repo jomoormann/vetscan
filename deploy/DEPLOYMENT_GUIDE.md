@@ -149,10 +149,19 @@ ssh root@76.13.5.89
 - **Auto-restart:** Yes (RestartSec=5)
 - **Bind:** 127.0.0.1:8000 (nginx proxies to this)
 - **Logs:** /var/www/vetscan.net/app/logs/
+- **Gunicorn version:** pinned to 24.1.1 in `requirements.txt`
+- **Worker recycling:** disabled (`max_requests=0`) to avoid SIGCLD-related worker replacement issues
+- **Access logs:** include timestamps via `--access-logformat`
 
 To modify the service:
 ```bash
 ssh root@76.13.5.89 'nano /etc/systemd/system/vetscan.service'
+ssh root@76.13.5.89 'systemctl daemon-reload && systemctl restart vetscan'
+```
+
+After updating gunicorn settings or versions:
+```bash
+ssh root@76.13.5.89 'cd /var/www/vetscan.net/app && source venv/bin/activate && pip install -r requirements.txt'
 ssh root@76.13.5.89 'systemctl daemon-reload && systemctl restart vetscan'
 ```
 
@@ -193,6 +202,18 @@ ssh root@76.13.5.89 'nginx -t && systemctl reload nginx'
    ```bash
    ssh root@76.13.5.89 'systemctl restart vetscan'
    ```
+
+### Unhandled signal: cld / worker timeouts
+
+**Symptoms:** `Unhandled signal: cld` followed by `WORKER TIMEOUT` in `logs/error.log`, then a service restart.
+
+**Mitigations in place:**
+- Gunicorn pinned to 24.1.1 (includes SIGCLD fix in 24.1.0)
+- Worker recycling disabled (`max_requests=0`)
+
+**If you re-enable recycling:**
+- Keep gunicorn at 24.1.0+ and monitor for SIGCLD warnings
+- Ensure access logs include timestamps to correlate with slow requests
 
 ### Database is empty after deployment
 

@@ -166,6 +166,15 @@ ssh root@76.13.5.89 'systemctl restart vetscan'
 
 # Check database
 ssh root@76.13.5.89 'cd /var/www/vetscan.net/app && source venv/bin/activate && python3 -c "import sqlite3; conn=sqlite3.connect(\"data/vet_proteins.db\"); print(\"Animals:\", conn.execute(\"SELECT COUNT(*) FROM animals\").fetchone()[0])"'
+
+# Check for zombie workers
+ssh root@76.13.5.89 'ps aux | grep gunicorn'
+
+# Check slow request logs
+ssh root@76.13.5.89 'grep -i "slow" /var/www/vetscan.net/app/logs/error.log | tail -20'
+
+# Run server monitor manually
+ssh root@76.13.5.89 'python3 /opt/server-monitor/monitor.py'
 ```
 
 ---
@@ -257,6 +266,67 @@ vet_protein_app/
 
 **Reason:** Shared hosting (82.198.229.40) had unreliable process management. Migrated to dedicated VPS (76.13.5.89) with systemd for automatic restarts.
 
+### 2026-01-25/27: Zombie Worker Issue
+
+**Symptom:** Site became unresponsive. Gunicorn master process was running but workers were defunct (zombie processes).
+
+**Root Cause:** Gunicorn workers timed out (requests exceeding 120-second timeout) and became zombies. Gunicorn logged "Unhandled signal: cld" and failed to spawn replacement workers. This is a known issue with gunicorn + uvicorn workers.
+
+**Immediate Fix:** Restart the vetscan service (`systemctl restart vetscan`).
+
+**Preventive Measures Implemented:**
+1. **Server Monitor** (`/opt/server-monitor/monitor.py`) - Runs every 5 minutes via systemd timer, checks both vetscan and joestdigital services. Auto-restarts vetscan when zombie workers are detected. Sends email alerts to jo.moormann@gmail.com.
+2. **Swap Space** - Added 2GB swap to prevent OOM kills under memory pressure.
+3. **Request Timing Middleware** - Added `TimingMiddleware` to `web_server.py` that logs slow requests (WARNING for ≥10s, INFO for ≥5s) to help identify which endpoints cause timeouts.
+
+**To investigate slow requests:**
+```bash
+ssh root@76.13.5.89 'grep -i "slow" /var/www/vetscan.net/app/logs/error.log'
+ssh root@76.13.5.89 'journalctl -u vetscan | grep -i slow'
+```
+
+---
+
+## SERVER MONITORING
+
+A monitoring system runs on the VPS to detect and auto-fix service issues.
+
+| Property | Value |
+|----------|-------|
+| **Script** | `/opt/server-monitor/monitor.py` |
+| **Timer** | `server-monitor.timer` (every 5 minutes) |
+| **Alert Email** | jo.moormann@gmail.com |
+| **Services Monitored** | vetscan.service, joestdigital.service |
+
+**What it checks:**
+- Service running status (systemctl is-active)
+- HTTP response on localhost endpoints
+- Zombie workers (for gunicorn)
+
+**Auto-fix behavior:**
+- When zombie workers are detected on vetscan, automatically restarts the service
+- Sends `[AUTO-FIX]` email notification
+
+**Email alert types:**
+- `[AUTO-FIX]` - Issue detected and automatically resolved
+- `[ALERT]` - Issue that couldn't be auto-fixed (requires manual intervention)
+- `[RECOVERED]` - Service returned to healthy state
+
+**Useful commands:**
+```bash
+# Check monitor timer status
+ssh root@76.13.5.89 'systemctl list-timers server-monitor.timer'
+
+# Run monitor manually
+ssh root@76.13.5.89 'python3 /opt/server-monitor/monitor.py'
+
+# View monitor logs
+ssh root@76.13.5.89 'journalctl -u server-monitor.service -n 20'
+
+# Check current swap usage
+ssh root@76.13.5.89 'free -h'
+```
+
 ---
 
 ## COMMON MISTAKES TO AVOID
@@ -267,6 +337,8 @@ vet_protein_app/
 4. **Adding signal handlers** - Gunicorn manages signals, don't interfere
 5. **Manual deployment** - Always use the deployment script for backups
 6. **Skipping backups** - The deploy script enforces backups for a reason
+7. **Ignoring zombie workers** - If `ps aux | grep gunicorn` shows `<defunct>` processes, restart the service immediately
+8. **Long-running requests** - Avoid synchronous operations that could exceed the 120-second worker timeout
 
 ---
 

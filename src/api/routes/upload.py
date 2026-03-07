@@ -113,11 +113,28 @@ async def upload_pdf(
         # Import the validated PDF
         service = get_service()
         try:
-            from utils.template_filters import format_date
-            animal_id, session_id, parsed = service.import_pdf(
+            outcome = service.import_pdf(
                 str(temp_path),
-                copy_to_uploads=False
+                copy_to_uploads=False,
+                report_source=f"manual upload | filename {file.filename}",
             )
+
+            parsed = outcome.parsed
+
+            if outcome.status == "pending_review":
+                logger.info(
+                    f"PDF queued for manual assignment: {parsed.animal.name}, "
+                    f"report={parsed.session.report_number or 'N/A'}"
+                )
+                return JSONResponse({
+                    "success": True,
+                    "queued": True,
+                    "message": "Report queued for manual assignment",
+                    "animal_name": parsed.animal.name,
+                    "report_number": parsed.session.report_number or "N/A",
+                    "test_date": str(parsed.session.test_date) if parsed.session.test_date else "N/A",
+                    "unassigned_report_id": outcome.unassigned_report_id,
+                })
 
             logger.info(
                 f"PDF imported: {parsed.animal.name}, "
@@ -127,8 +144,8 @@ async def upload_pdf(
             return JSONResponse({
                 "success": True,
                 "message": f"Successfully imported report for {parsed.animal.name}",
-                "animal_id": animal_id,
-                "session_id": session_id,
+                "animal_id": outcome.animal_id,
+                "session_id": outcome.session_id,
                 "animal_name": parsed.animal.name,
                 "report_number": parsed.session.report_number or "N/A",
                 "test_date": str(parsed.session.test_date) if parsed.session.test_date else "N/A"

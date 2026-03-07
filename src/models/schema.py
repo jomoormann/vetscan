@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS animals (
     species TEXT DEFAULT 'Canídeo',
     breed TEXT,
     microchip TEXT UNIQUE,
+    owner_name TEXT,
     age_years REAL,
     age_months INTEGER,
     sex TEXT DEFAULT 'U',
@@ -33,6 +34,15 @@ CREATE TABLE IF NOT EXISTS test_sessions (
     closing_date DATE,
     sample_type TEXT DEFAULT 'Soro',
     lab_name TEXT DEFAULT 'DNAtech',
+    source_system TEXT DEFAULT 'dnatech',
+    report_type TEXT DEFAULT 'dnatech_proteinogram',
+    external_report_id TEXT,
+    report_source TEXT,
+    reported_at TIMESTAMP,
+    received_at TIMESTAMP,
+    clinic_name TEXT,
+    panel_name TEXT,
+    raw_metadata_json TEXT,
     pdf_path TEXT,
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -113,6 +123,7 @@ CREATE TABLE IF NOT EXISTS research_references (
 -- Create indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_test_sessions_animal_id ON test_sessions(animal_id);
 CREATE INDEX IF NOT EXISTS idx_test_sessions_test_date ON test_sessions(test_date);
+CREATE INDEX IF NOT EXISTS idx_test_sessions_external_id ON test_sessions(source_system, external_report_id);
 CREATE INDEX IF NOT EXISTS idx_protein_results_session_id ON protein_results(session_id);
 CREATE INDEX IF NOT EXISTS idx_protein_results_marker ON protein_results(marker_name);
 CREATE INDEX IF NOT EXISTS idx_symptoms_animal_id ON symptoms(animal_id);
@@ -165,6 +176,104 @@ CREATE TABLE IF NOT EXISTS urinalysis_results (
 
 CREATE INDEX IF NOT EXISTS idx_biochemistry_session ON biochemistry_results(session_id);
 CREATE INDEX IF NOT EXISTS idx_urinalysis_session ON urinalysis_results(session_id);
+
+-- External animal identifiers
+CREATE TABLE IF NOT EXISTS animal_identifiers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    animal_id INTEGER NOT NULL,
+    source_system TEXT NOT NULL,
+    identifier_type TEXT NOT NULL,
+    identifier_value TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (animal_id) REFERENCES animals(id) ON DELETE CASCADE,
+    UNIQUE(source_system, identifier_type, identifier_value)
+);
+CREATE INDEX IF NOT EXISTS idx_animal_identifiers_animal ON animal_identifiers(animal_id);
+
+-- Generic measurements for analyzer and other structured reports
+CREATE TABLE IF NOT EXISTS session_measurements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    panel_name TEXT,
+    measurement_code TEXT NOT NULL,
+    measurement_name TEXT NOT NULL,
+    value_numeric REAL,
+    value_text TEXT,
+    unit TEXT,
+    reference_min REAL,
+    reference_max REAL,
+    reference_text TEXT,
+    flag TEXT DEFAULT 'normal',
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES test_sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_session_measurements_session ON session_measurements(session_id);
+
+-- Narrative pathology findings and specimen-level sections
+CREATE TABLE IF NOT EXISTS pathology_findings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    section_type TEXT NOT NULL,
+    specimen_label TEXT,
+    title TEXT,
+    sample_site TEXT,
+    sample_method TEXT,
+    clinical_history TEXT,
+    microscopic_description TEXT,
+    diagnosis TEXT,
+    comment TEXT,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES test_sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_pathology_findings_session ON pathology_findings(session_id);
+
+-- Extracted report assets such as cytology images
+CREATE TABLE IF NOT EXISTS session_assets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    asset_type TEXT NOT NULL,
+    label TEXT,
+    file_path TEXT NOT NULL,
+    page_number INTEGER,
+    sort_order INTEGER DEFAULT 0,
+    metadata_json TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES test_sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_session_assets_session ON session_assets(session_id);
+
+-- Reports that need manual assignment before a session is created
+CREATE TABLE IF NOT EXISTS unassigned_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL,
+    pdf_path TEXT NOT NULL,
+    source_system TEXT,
+    report_type TEXT,
+    report_number TEXT,
+    external_report_id TEXT,
+    report_source TEXT,
+    animal_name TEXT,
+    species TEXT,
+    owner_name TEXT,
+    clinic_name TEXT,
+    report_date DATE,
+    panel_name TEXT,
+    match_reason TEXT,
+    parsed_summary_json TEXT,
+    candidate_matches_json TEXT,
+    status TEXT DEFAULT 'pending',
+    assigned_animal_id INTEGER,
+    session_id INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    assigned_at TIMESTAMP,
+    FOREIGN KEY (assigned_animal_id) REFERENCES animals(id) ON DELETE SET NULL,
+    FOREIGN KEY (session_id) REFERENCES test_sessions(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_unassigned_reports_status ON unassigned_reports(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_unassigned_reports_external ON unassigned_reports(source_system, external_report_id);
+CREATE INDEX IF NOT EXISTS idx_unassigned_reports_number ON unassigned_reports(report_number);
 
 -- Diagnosis reports table (AI-generated differential diagnoses)
 CREATE TABLE IF NOT EXISTS diagnosis_reports (

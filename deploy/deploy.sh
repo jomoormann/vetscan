@@ -52,15 +52,22 @@ rsync -avz --progress \
 echo ""
 
 # Step 4: Restart the service using systemd
-echo "STEP 4: Restarting VetScan service"
+echo "STEP 4: Installing/updating Python dependencies"
+echo "----------------------------------------------"
+run_ssh "cd $REMOTE_APP_DIR && source venv/bin/activate && pip install -r requirements.txt"
+echo "Dependencies updated"
+echo ""
+
+# Step 5: Restart the service using systemd
+echo "STEP 5: Restarting VetScan service"
 echo "----------------------------------------------"
 run_ssh 'systemctl restart vetscan'
 echo "Service restarted"
 sleep 3
 echo ""
 
-# Step 5: MANDATORY - Verify database has data
-echo "STEP 5: Verifying database integrity (MANDATORY)"
+# Step 6: MANDATORY - Verify database has data
+echo "STEP 6: Verifying database integrity (MANDATORY)"
 echo "----------------------------------------------"
 ANIMAL_COUNT=$(run_ssh "cd $REMOTE_APP_DIR && source venv/bin/activate && python3 -c \"import sqlite3; conn=sqlite3.connect('data/vet_proteins.db'); print(conn.execute('SELECT COUNT(*) FROM animals').fetchone()[0])\"")
 echo "Animals in database: $ANIMAL_COUNT"
@@ -73,8 +80,8 @@ if [ "$ANIMAL_COUNT" -eq "0" ]; then
 fi
 echo ""
 
-# Step 6: Verify server is running
-echo "STEP 6: Verifying server is running"
+# Step 7: Verify server is running
+echo "STEP 7: Verifying server is running"
 echo "----------------------------------------------"
 run_ssh 'systemctl is-active vetscan && echo "VetScan service: RUNNING" || echo "VetScan service: NOT RUNNING"'
 HTTP_STATUS=$(curl -skL -o /dev/null -w "%{http_code}" https://vetscan.net/login)

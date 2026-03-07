@@ -2,7 +2,7 @@
 Email Importer for Veterinary Protein Analysis Application
 
 Fetches emails via IMAP, validates PDF attachments, and imports
-legitimate DNAtech reports using the existing import pipeline.
+supported lab reports using the existing import pipeline.
 """
 
 import email
@@ -18,7 +18,7 @@ from typing import List, Optional, Tuple
 import traceback
 
 from email_config import EmailConfig, get_email_config
-from pdf_validator import PDFValidator, ValidationReport, ValidationResult
+from pdf_validator import PDFValidator, ValidationResult
 from app import VetProteinService
 from models import Database
 
@@ -36,6 +36,7 @@ class ImportResult:
     report_number: Optional[str] = None
     animal_id: Optional[int] = None
     session_id: Optional[int] = None
+    unassigned_report_id: Optional[int] = None
 
 
 @dataclass
@@ -84,13 +85,13 @@ class RateLimiter:
 
 class EmailImporter:
     """
-    Imports DNAtech lab reports from email attachments.
+    Imports supported lab reports from email attachments.
 
     Workflow:
     1. Connect to IMAP server
     2. Fetch unread emails from INBOX
     3. Extract PDF attachments
-    4. Validate each PDF (security + DNAtech markers)
+    4. Validate each PDF (security + supported report markers)
     5. Import valid PDFs using VetProteinService
     6. Move processed emails to appropriate folders
     7. Log all operations to database
@@ -343,12 +344,25 @@ class EmailImporter:
                         f.write(content)
 
                     # Import the PDF
-                    animal_id, session_id, parsed = service.import_pdf(
+                    outcome = service.import_pdf(
                         upload_path,
-                        copy_to_uploads=False  # Already in uploads
+                        copy_to_uploads=False,  # Already in uploads
+                        report_source=f"email uid {email_uid} | from {email_from} | attachment {filename}",
                     )
 
                     self.rate_limiter.record_import()
+
+                    if outcome.status == "pending_review":
+                        return ImportResult(
+                            success=True,
+                            email_uid=email_uid,
+                            email_subject=email_subject,
+                            email_from=email_from,
+                            attachment_name=filename,
+                            validation_result="queued_manual_assignment",
+                            report_number=outcome.parsed.session.report_number,
+                            unassigned_report_id=outcome.unassigned_report_id,
+                        )
 
                     return ImportResult(
                         success=True,
@@ -357,9 +371,9 @@ class EmailImporter:
                         email_from=email_from,
                         attachment_name=filename,
                         validation_result=ValidationResult.VALID.value,
-                        report_number=parsed.session.report_number,
-                        animal_id=animal_id,
-                        session_id=session_id
+                        report_number=outcome.parsed.session.report_number,
+                        animal_id=outcome.animal_id,
+                        session_id=outcome.session_id
                     )
 
                 except ValueError as e:
@@ -488,7 +502,13 @@ class EmailImporter:
 
                     if result.success:
                         batch.imports_successful += 1
-                        self._log(f"    Imported successfully: {result.report_number}")
+                        if result.validation_result == "queued_manual_assignment":
+                            self._log(
+                                f"    Queued for manual assignment: "
+                                f"{result.report_number or result.attachment_name}"
+                            )
+                        else:
+                            self._log(f"    Imported successfully: {result.report_number}")
                     elif result.validation_result == "duplicate":
                         batch.imports_skipped += 1
                         self._log(f"    Skipped (duplicate): {result.report_number}")

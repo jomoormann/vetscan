@@ -64,13 +64,26 @@ class Database:
 
     def _run_migrations(self):
         """Run database migrations for schema changes."""
-        # Migration: Add responsible_vet column to animals table if it doesn't exist
-        cursor = self.conn.execute("PRAGMA table_info(animals)")
-        columns = [row[1] for row in cursor.fetchall()]
-        if "responsible_vet" not in columns:
-            self.conn.execute("ALTER TABLE animals ADD COLUMN responsible_vet TEXT")
-            self.conn.commit()
-            logger.info("Migration: Added responsible_vet column to animals table")
+        def ensure_column(table: str, column: str, definition: str):
+            cursor = self.conn.execute(f"PRAGMA table_info({table})")
+            columns = [row[1] for row in cursor.fetchall()]
+            if column not in columns:
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+                self.conn.commit()
+                logger.info(f"Migration: Added {column} column to {table} table")
+
+        ensure_column("animals", "responsible_vet", "TEXT")
+        ensure_column("animals", "owner_name", "TEXT")
+
+        ensure_column("test_sessions", "source_system", "TEXT DEFAULT 'dnatech'")
+        ensure_column("test_sessions", "report_type", "TEXT DEFAULT 'dnatech_proteinogram'")
+        ensure_column("test_sessions", "external_report_id", "TEXT")
+        ensure_column("test_sessions", "report_source", "TEXT")
+        ensure_column("test_sessions", "reported_at", "TIMESTAMP")
+        ensure_column("test_sessions", "received_at", "TIMESTAMP")
+        ensure_column("test_sessions", "clinic_name", "TEXT")
+        ensure_column("test_sessions", "panel_name", "TEXT")
+        ensure_column("test_sessions", "raw_metadata_json", "TEXT")
 
     def __enter__(self):
         """Context manager entry."""

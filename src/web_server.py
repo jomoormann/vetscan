@@ -18,6 +18,7 @@ import hashlib
 from datetime import date, datetime, timedelta
 from typing import Optional, List
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Form, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -35,7 +36,6 @@ load_dotenv()
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from models import Database, Animal, Symptom, Observation, TestSession, ClinicalNote, DiagnosisReport, User
-from pdf_parser import parse_dnatech_report
 from app import VetProteinService
 from i18n import get_text, get_language_from_request, SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE
 from auth import AuthService, hash_password, verify_password, validate_password, validate_email
@@ -391,6 +391,7 @@ STATIC_DIR.mkdir(exist_ok=True)
 
 # Mount static files for game assets and other static content
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 
 # =============================================================================
@@ -604,6 +605,77 @@ def json_serial(obj):
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
     raise TypeError(f"Type {type(obj)} not serializable")
+
+
+def build_upload_url(file_path: Optional[str]) -> Optional[str]:
+    """Convert an absolute uploads path to a static /uploads URL when possible."""
+    if not file_path:
+        return None
+
+    try:
+        relative_path = Path(file_path).resolve().relative_to(UPLOADS_DIR.resolve())
+        return f"/uploads/{relative_path.as_posix()}"
+    except Exception:
+        normalized = file_path.replace("\\", "/")
+        if "/uploads/" in normalized:
+            return f"/uploads/{normalized.split('/uploads/', 1)[1]}"
+        return None
+
+
+def describe_report_item(item: dict) -> str:
+    """Human-readable summary for a session row in the animal page."""
+    if item["results"]:
+        return f"{len(item['results'])} protein markers"
+    if item["measurements"]:
+        return f"{len(item['measurements'])} measurements"
+    if item["pathology_findings"]:
+        detail = f"{len(item['pathology_findings'])} findings"
+        if item["session_assets"]:
+            detail += f" | {len(item['session_assets'])} images"
+        return detail
+    if item["biochemistry"] or item["urinalysis"]:
+        return "Renal and urine markers"
+    return "Imported report"
+
+
+def build_session_groups(sessions_with_results: List[dict]) -> List[dict]:
+    """Group animal history rows by report family for the UI."""
+    grouped = {}
+
+    for item in sessions_with_results:
+        session = item["session"]
+        report_type = (session.report_type or "").lower()
+        source_system = (session.source_system or "").lower()
+
+        if report_type == "dnatech_proteinogram":
+            key = "protein_reports"
+            label = "Protein Reports"
+            sort_order = 1
+        elif "cytology" in report_type or "immuno" in report_type or source_system == "vedis":
+            key = "pathology_reports"
+            label = "Pathology Reports"
+            sort_order = 3
+        elif session.panel_name or item["measurements"]:
+            key = "analyzer_reports"
+            label = "Analyzer Panels"
+            sort_order = 2
+        else:
+            key = "other_reports"
+            label = "Other Reports"
+            sort_order = 4
+
+        if key not in grouped:
+            grouped[key] = {
+                "key": key,
+                "label": label,
+                "sort_order": sort_order,
+                "rows": [],
+            }
+
+        item["report_summary"] = describe_report_item(item)
+        grouped[key]["rows"].append(item)
+
+    return sorted(grouped.values(), key=lambda group: group["sort_order"])
 
 
 def get_lang(request: Request) -> str:
@@ -1414,14 +1486,23 @@ async def view_animal(request: Request, animal_id: int):
         sessions_with_results = []
         for session in sessions:
             results = service.db.get_results_for_session(session.id)
+            measurements = service.db.get_measurements_for_session(session.id)
             biochem = service.db.get_biochemistry_for_session(session.id)
             urinalysis = service.db.get_urinalysis_for_session(session.id)
+            pathology_findings = service.db.get_pathology_findings_for_session(session.id)
+            session_assets = service.db.get_assets_for_session(session.id)
+            abnormal_count = sum(1 for r in results if r.flag != 'normal')
+            if not abnormal_count:
+                abnormal_count = sum(1 for m in measurements if m.flag != 'normal')
             sessions_with_results.append({
                 'session': session,
                 'results': results,
+                'measurements': measurements,
                 'biochemistry': biochem,
                 'urinalysis': urinalysis,
-                'abnormal_count': sum(1 for r in results if r.flag != 'normal')
+                'pathology_findings': pathology_findings,
+                'session_assets': session_assets,
+                'abnormal_count': abnormal_count
             })
 
         # Generate CSRF token
@@ -1433,6 +1514,7 @@ async def view_animal(request: Request, animal_id: int):
             "lang": lang,
             "animal": animal,
             "sessions": sessions_with_results,
+            "session_groups": build_session_groups(sessions_with_results),
             "symptoms": symptoms,
             "observations": observations,
             "clinical_notes": clinical_notes,
@@ -1543,8 +1625,11 @@ async def view_session(request: Request, session_id: int):
 
         # Get all results
         results = service.db.get_results_for_session(session_id)
+        measurements = service.db.get_measurements_for_session(session_id)
         biochem = service.db.get_biochemistry_for_session(session_id)
         urinalysis = service.db.get_urinalysis_for_session(session_id)
+        pathology_findings = service.db.get_pathology_findings_for_session(session_id)
+        session_assets = service.db.get_assets_for_session(session_id)
 
         # Get previous session for comparison
         all_sessions = service.db.get_sessions_for_animal(session.animal_id)
@@ -1567,8 +1652,11 @@ async def view_session(request: Request, session_id: int):
             "animal": animal,
             "session": session,
             "results": results,
+            "measurements": measurements,
             "biochemistry": biochem,
             "urinalysis": urinalysis,
+            "pathology_findings": pathology_findings,
+            "session_assets": session_assets,
             "previous_session": previous_session,
             "comparison": comparison,
             "current_user": current_user
@@ -1694,6 +1782,104 @@ async def view_imports(request: Request):
         service.close()
 
 
+@app.get("/unassigned-reports", response_class=HTMLResponse)
+async def view_unassigned_reports(request: Request, error: Optional[str] = None):
+    """View reports that need manual assignment."""
+    lang = get_lang(request)
+    current_user = getattr(request.state, 'user', None)
+    service = get_service()
+    try:
+        pending_reports = service.get_unassigned_reports()
+        animals = service.db.list_animals()
+
+        report_items = []
+        for report in pending_reports:
+            summary = json.loads(report.parsed_summary_json or "{}")
+            candidates = json.loads(report.candidate_matches_json or "[]")
+            report_items.append({
+                "report": report,
+                "summary": summary,
+                "candidates": candidates,
+                "pdf_url": build_upload_url(report.pdf_path),
+            })
+
+        csrf_raw = request.cookies.get(CSRF_COOKIE_NAME) or generate_csrf_token()
+        signed_csrf = create_csrf_signed_token(csrf_raw)
+
+        response = templates.TemplateResponse("unassigned_reports.html", {
+            "request": request,
+            "lang": lang,
+            "current_user": current_user,
+            "pending_reports": report_items,
+            "animals": animals,
+            "error": error,
+            "csrf_token": signed_csrf,
+        })
+        response.set_cookie(
+            key=CSRF_COOKIE_NAME,
+            value=csrf_raw,
+            max_age=3600,
+            httponly=True,
+            samesite="strict",
+            secure=request.url.scheme == "https"
+        )
+        return set_lang_cookie(response, lang)
+    except Exception as e:
+        logger.exception("Error in view_unassigned_reports")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        service.close()
+
+
+@app.post("/unassigned-reports/{report_id}/assign-existing")
+async def assign_unassigned_report_existing(
+    request: Request,
+    report_id: int,
+    animal_id: int = Form(...),
+    csrf_token: str = Form(None)
+):
+    """Assign a queued report to an existing animal."""
+    if not validate_csrf(request, csrf_token):
+        return JSONResponse({"success": False, "message": "Invalid request"}, status_code=403)
+
+    service = get_service()
+    try:
+        outcome = service.assign_unassigned_report_to_animal(report_id, animal_id)
+        return RedirectResponse(url=f"/animal/{outcome.animal_id}", status_code=302)
+    except Exception as e:
+        logger.exception(f"Error assigning queued report {report_id} to animal {animal_id}")
+        return RedirectResponse(
+            url=f"/unassigned-reports?error={quote_plus(str(e))}",
+            status_code=302
+        )
+    finally:
+        service.close()
+
+
+@app.post("/unassigned-reports/{report_id}/create-animal")
+async def assign_unassigned_report_new_animal(
+    request: Request,
+    report_id: int,
+    csrf_token: str = Form(None)
+):
+    """Assign a queued report by creating a new animal entry."""
+    if not validate_csrf(request, csrf_token):
+        return JSONResponse({"success": False, "message": "Invalid request"}, status_code=403)
+
+    service = get_service()
+    try:
+        outcome = service.create_animal_from_unassigned_report(report_id)
+        return RedirectResponse(url=f"/animal/{outcome.animal_id}", status_code=302)
+    except Exception as e:
+        logger.exception(f"Error creating animal from queued report {report_id}")
+        return RedirectResponse(
+            url=f"/unassigned-reports?error={quote_plus(str(e))}",
+            status_code=302
+        )
+    finally:
+        service.close()
+
+
 @app.post("/upload")
 async def upload_pdf(request: Request, file: UploadFile = File(...), csrf_token: str = Form(None)):
     """Handle PDF upload with security validation"""
@@ -1758,10 +1944,28 @@ async def upload_pdf(request: Request, file: UploadFile = File(...), csrf_token:
         # Import the validated PDF
         service = get_service()
         try:
-            animal_id, session_id, parsed = service.import_pdf(
+            outcome = service.import_pdf(
                 str(temp_path),
-                copy_to_uploads=False
+                copy_to_uploads=False,
+                report_source=f"manual upload | filename {file.filename}",
             )
+
+            parsed = outcome.parsed
+
+            if outcome.status == "pending_review":
+                logger.info(
+                    f"PDF queued for manual assignment: {parsed.animal.name}, "
+                    f"report={parsed.session.report_number or 'N/A'}"
+                )
+                return JSONResponse({
+                    "success": True,
+                    "queued": True,
+                    "message": "Report queued for manual assignment",
+                    "animal_name": parsed.animal.name,
+                    "report_number": parsed.session.report_number or "N/A",
+                    "test_date": format_date(parsed.session.test_date),
+                    "unassigned_report_id": outcome.unassigned_report_id,
+                })
 
             logger.info(
                 f"PDF imported: {parsed.animal.name}, "
@@ -1771,8 +1975,8 @@ async def upload_pdf(request: Request, file: UploadFile = File(...), csrf_token:
             return JSONResponse({
                 "success": True,
                 "message": f"Successfully imported report for {parsed.animal.name}",
-                "animal_id": animal_id,
-                "session_id": session_id,
+                "animal_id": outcome.animal_id,
+                "session_id": outcome.session_id,
                 "animal_name": parsed.animal.name,
                 "report_number": parsed.session.report_number or "N/A",
                 "test_date": format_date(parsed.session.test_date)

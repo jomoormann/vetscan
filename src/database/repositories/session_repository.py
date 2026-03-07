@@ -8,7 +8,8 @@ BiochemistryResult, and UrinalysisResult entities.
 from typing import Dict, List, Optional
 
 from models.domain import (
-    TestSession, ProteinResult, BiochemistryResult, UrinalysisResult
+    TestSession, ProteinResult, BiochemistryResult, UrinalysisResult,
+    SessionMeasurement, PathologyFinding, SessionAsset, UnassignedReport
 )
 
 
@@ -41,10 +42,18 @@ class SessionRepository:
         cursor = self.db.conn.execute("""
             INSERT INTO test_sessions (animal_id, report_number, test_date,
                                       closing_date, sample_type, lab_name,
+                                      source_system, report_type,
+                                      external_report_id, report_source,
+                                      reported_at, received_at, clinic_name,
+                                      panel_name, raw_metadata_json,
                                       pdf_path, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (session.animal_id, session.report_number, session.test_date,
               session.closing_date, session.sample_type, session.lab_name,
+              session.source_system, session.report_type,
+              session.external_report_id, session.report_source,
+              session.reported_at, session.received_at, session.clinic_name,
+              session.panel_name, session.raw_metadata_json,
               session.pdf_path, session.notes))
         self.db.conn.commit()
         return cursor.lastrowid
@@ -72,6 +81,15 @@ class SessionRepository:
         cursor = self.db.conn.execute(
             "SELECT 1 FROM test_sessions WHERE report_number = ?",
             (report_number,))
+        return cursor.fetchone() is not None
+
+    def session_exists_by_external_reference(self, source_system: str,
+                                             external_report_id: str) -> bool:
+        """Check if a session exists for a source-system-specific external ID."""
+        cursor = self.db.conn.execute("""
+            SELECT 1 FROM test_sessions
+            WHERE source_system = ? AND external_report_id = ?
+        """, (source_system, external_report_id))
         return cursor.fetchone() is not None
 
     def delete_session(self, session_id: int) -> bool:
@@ -181,3 +199,208 @@ class SessionRepository:
         if row:
             return UrinalysisResult(**dict(row))
         return None
+
+    # -------------------------------------------------------------------------
+    # Generic Measurements
+    # -------------------------------------------------------------------------
+
+    def create_session_measurement(self, measurement: SessionMeasurement) -> int:
+        """Insert a generic session measurement."""
+        cursor = self.db.conn.execute("""
+            INSERT INTO session_measurements (
+                session_id, panel_name, measurement_code, measurement_name,
+                value_numeric, value_text, unit, reference_min, reference_max,
+                reference_text, flag, sort_order
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            measurement.session_id,
+            measurement.panel_name,
+            measurement.measurement_code,
+            measurement.measurement_name,
+            measurement.value_numeric,
+            measurement.value_text,
+            measurement.unit,
+            measurement.reference_min,
+            measurement.reference_max,
+            measurement.reference_text,
+            measurement.flag,
+            measurement.sort_order,
+        ))
+        self.db.conn.commit()
+        return cursor.lastrowid
+
+    def get_measurements_for_session(self, session_id: int) -> List[SessionMeasurement]:
+        """Get generic measurements for a session."""
+        cursor = self.db.conn.execute("""
+            SELECT * FROM session_measurements
+            WHERE session_id = ?
+            ORDER BY sort_order ASC, id ASC
+        """, (session_id,))
+        return [SessionMeasurement(**dict(row)) for row in cursor.fetchall()]
+
+    # -------------------------------------------------------------------------
+    # Pathology Findings
+    # -------------------------------------------------------------------------
+
+    def create_pathology_finding(self, finding: PathologyFinding) -> int:
+        """Insert a pathology finding."""
+        cursor = self.db.conn.execute("""
+            INSERT INTO pathology_findings (
+                session_id, section_type, specimen_label, title, sample_site,
+                sample_method, clinical_history, microscopic_description,
+                diagnosis, comment, sort_order
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            finding.session_id,
+            finding.section_type,
+            finding.specimen_label,
+            finding.title,
+            finding.sample_site,
+            finding.sample_method,
+            finding.clinical_history,
+            finding.microscopic_description,
+            finding.diagnosis,
+            finding.comment,
+            finding.sort_order,
+        ))
+        self.db.conn.commit()
+        return cursor.lastrowid
+
+    def get_pathology_findings_for_session(self, session_id: int) -> List[PathologyFinding]:
+        """Get pathology findings for a session."""
+        cursor = self.db.conn.execute("""
+            SELECT * FROM pathology_findings
+            WHERE session_id = ?
+            ORDER BY sort_order ASC, id ASC
+        """, (session_id,))
+        return [PathologyFinding(**dict(row)) for row in cursor.fetchall()]
+
+    # -------------------------------------------------------------------------
+    # Session Assets
+    # -------------------------------------------------------------------------
+
+    def create_session_asset(self, asset: SessionAsset) -> int:
+        """Insert an extracted session asset."""
+        cursor = self.db.conn.execute("""
+            INSERT INTO session_assets (
+                session_id, asset_type, label, file_path,
+                page_number, sort_order, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            asset.session_id,
+            asset.asset_type,
+            asset.label,
+            asset.file_path,
+            asset.page_number,
+            asset.sort_order,
+            asset.metadata_json,
+        ))
+        self.db.conn.commit()
+        return cursor.lastrowid
+
+    def get_assets_for_session(self, session_id: int) -> List[SessionAsset]:
+        """Get stored assets for a session."""
+        cursor = self.db.conn.execute("""
+            SELECT * FROM session_assets
+            WHERE session_id = ?
+            ORDER BY sort_order ASC, id ASC
+        """, (session_id,))
+        return [SessionAsset(**dict(row)) for row in cursor.fetchall()]
+
+    # -------------------------------------------------------------------------
+    # Unassigned Reports
+    # -------------------------------------------------------------------------
+
+    def find_open_unassigned_report(self, source_system: Optional[str],
+                                    external_report_id: Optional[str],
+                                    report_number: Optional[str]) -> Optional[UnassignedReport]:
+        """Find an existing pending report so repeated imports do not duplicate it."""
+        if source_system and external_report_id:
+            cursor = self.db.conn.execute("""
+                SELECT * FROM unassigned_reports
+                WHERE status = 'pending'
+                  AND source_system = ?
+                  AND external_report_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+            """, (source_system, external_report_id))
+            row = cursor.fetchone()
+            if row:
+                return UnassignedReport(**dict(row))
+
+        if report_number:
+            cursor = self.db.conn.execute("""
+                SELECT * FROM unassigned_reports
+                WHERE status = 'pending'
+                  AND report_number = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+            """, (report_number,))
+            row = cursor.fetchone()
+            if row:
+                return UnassignedReport(**dict(row))
+
+        return None
+
+    def create_unassigned_report(self, report: UnassignedReport) -> int:
+        """Insert a report awaiting manual assignment."""
+        cursor = self.db.conn.execute("""
+            INSERT INTO unassigned_reports (
+                filename, pdf_path, source_system, report_type, report_number,
+                external_report_id, report_source, animal_name, species, owner_name,
+                clinic_name, report_date, panel_name, match_reason,
+                parsed_summary_json, candidate_matches_json, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            report.filename,
+            report.pdf_path,
+            report.source_system,
+            report.report_type,
+            report.report_number,
+            report.external_report_id,
+            report.report_source,
+            report.animal_name,
+            report.species,
+            report.owner_name,
+            report.clinic_name,
+            report.report_date,
+            report.panel_name,
+            report.match_reason,
+            report.parsed_summary_json,
+            report.candidate_matches_json,
+            report.status,
+        ))
+        self.db.conn.commit()
+        return cursor.lastrowid
+
+    def get_unassigned_report(self, report_id: int) -> Optional[UnassignedReport]:
+        """Get a queued report by ID."""
+        cursor = self.db.conn.execute(
+            "SELECT * FROM unassigned_reports WHERE id = ?", (report_id,))
+        row = cursor.fetchone()
+        if row:
+            return UnassignedReport(**dict(row))
+        return None
+
+    def list_unassigned_reports(self, status: str = "pending") -> List[UnassignedReport]:
+        """List queued reports by status."""
+        cursor = self.db.conn.execute("""
+            SELECT * FROM unassigned_reports
+            WHERE status = ?
+            ORDER BY created_at DESC
+        """, (status,))
+        return [UnassignedReport(**dict(row)) for row in cursor.fetchall()]
+
+    def mark_unassigned_report_assigned(self, report_id: int, animal_id: int,
+                                        session_id: int) -> bool:
+        """Mark a queued report as assigned after manual action."""
+        cursor = self.db.conn.execute("""
+            UPDATE unassigned_reports
+            SET status = 'assigned',
+                assigned_animal_id = ?,
+                session_id = ?,
+                assigned_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'pending'
+        """, (animal_id, session_id, report_id))
+        self.db.conn.commit()
+        return cursor.rowcount > 0

@@ -43,8 +43,11 @@ async def session_detail(
         raise HTTPException(status_code=404, detail="Animal not found")
 
     results = container.session_repo.get_results_for_session(session_id)
+    measurements = container.session_repo.get_measurements_for_session(session_id)
     biochemistry = container.session_repo.get_biochemistry_for_session(session_id)
     urinalysis = container.session_repo.get_urinalysis_for_session(session_id)
+    pathology_findings = container.session_repo.get_pathology_findings_for_session(session_id)
+    session_assets = container.session_repo.get_assets_for_session(session_id)
 
     # Get all sessions for comparison options
     all_sessions = container.session_repo.get_sessions_for_animal(animal.id)
@@ -55,8 +58,11 @@ async def session_detail(
         "session": session,
         "animal": animal,
         "results": results,
+        "measurements": measurements,
         "biochemistry": biochemistry,
         "urinalysis": urinalysis,
+        "pathology_findings": pathology_findings,
+        "session_assets": session_assets,
         "all_sessions": all_sessions,
         "user": getattr(request.state, 'user', None),
         **csrf_ctx

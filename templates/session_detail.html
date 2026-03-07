@@ -38,8 +38,126 @@
             <div class="text-muted mb-1">{{ t(lang, 'session_detail.closing_date') }}</div>
             <strong>{{ session.closing_date|format_date }}</strong>
         </div>
+        <div>
+            <div class="text-muted mb-1">Report Type</div>
+            <strong>{{ session.report_type or '--' }}</strong>
+        </div>
+        <div>
+            <div class="text-muted mb-1">Source System</div>
+            <strong>{{ session.source_system or '--' }}</strong>
+        </div>
+        <div>
+            <div class="text-muted mb-1">Source Reference</div>
+            <strong style="word-break: break-all;">{{ session.report_source or '--' }}</strong>
+        </div>
     </div>
 </div>
+
+{% if measurements %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ session.panel_name or 'Structured Measurements' }}</h2>
+    </div>
+
+    <div class="table-responsive">
+    <table>
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Value</th>
+                <th class="mobile-hide">Reference</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for measurement in measurements %}
+            <tr>
+                <td><strong>{{ measurement.measurement_code }}</strong></td>
+                <td>
+                    {% if measurement.value_text %}
+                        {{ measurement.value_text }}{% if measurement.unit %} {{ measurement.unit }}{% endif %}
+                    {% elif measurement.value_numeric is not none %}
+                        {{ measurement.value_numeric }}{% if measurement.unit %} {{ measurement.unit }}{% endif %}
+                    {% else %}
+                        --
+                    {% endif %}
+                </td>
+                <td class="mobile-hide">
+                    {% if measurement.reference_text %}
+                        {{ measurement.reference_text }}
+                    {% elif measurement.reference_min is not none and measurement.reference_max is not none %}
+                        {{ measurement.reference_min }} - {{ measurement.reference_max }}
+                    {% else %}
+                        --
+                    {% endif %}
+                </td>
+                <td>
+                    {% if measurement.flag == 'high' %}
+                    <span class="badge badge-high">↑ {{ t(lang, 'common.high') }}</span>
+                    {% elif measurement.flag == 'low' %}
+                    <span class="badge badge-low">↓ {{ t(lang, 'common.low') }}</span>
+                    {% else %}
+                    <span class="badge badge-normal">✓ {{ t(lang, 'common.normal') }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% endif %}
+
+{% if pathology_findings %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Pathology Findings</h2>
+    </div>
+
+    {% for finding in pathology_findings %}
+    <div style="padding: 1rem 0; border-bottom: {% if not loop.last %}1px solid var(--gray-200){% else %}none{% endif %};">
+        <div style="display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
+            <strong>
+                {% if finding.specimen_label %}{{ finding.specimen_label }}{% endif %}
+                {% if finding.title %} {{ finding.title }}{% endif %}
+            </strong>
+            <span class="text-muted">{{ finding.section_type }}</span>
+        </div>
+        {% if finding.clinical_history %}
+        <p style="margin-top: 0.75rem;"><strong>Clinical history:</strong> {{ finding.clinical_history }}</p>
+        {% endif %}
+        {% if finding.sample_method %}
+        <p style="margin-top: 0.75rem;"><strong>Sample:</strong> {{ finding.sample_method }}</p>
+        {% endif %}
+        {% if finding.diagnosis %}
+        <p style="margin-top: 0.75rem;"><strong>Diagnosis:</strong> {{ finding.diagnosis }}</p>
+        {% endif %}
+        {% if finding.microscopic_description %}
+        <p style="margin-top: 0.75rem;"><strong>Microscopic description:</strong> {{ finding.microscopic_description }}</p>
+        {% endif %}
+        {% if finding.comment %}
+        <p style="margin-top: 0.75rem;"><strong>Comment:</strong> {{ finding.comment }}</p>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if session_assets %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Extracted Images</h2>
+    </div>
+    <div class="grid-2">
+        {% for asset in session_assets %}
+        <div>
+            <div class="text-muted mb-1">{{ asset.label or asset.asset_type }}{% if asset.page_number %} · page {{ asset.page_number }}{% endif %}</div>
+            <img src="/uploads/{{ asset.file_path.split('/uploads/', 1)[1] if '/uploads/' in asset.file_path else asset.file_path }}" alt="{{ asset.label or asset.asset_type }}" style="width: 100%; border-radius: 0.5rem; border: 1px solid var(--gray-200);" />
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
 
 {% if biochemistry %}
 <!-- Biochemistry Results (UPC) -->
@@ -90,6 +208,7 @@
 </div>
 {% endif %}
 
+{% if results %}
 <!-- Protein Results -->
 <div class="card">
     <div class="card-header">
@@ -155,6 +274,7 @@
     </table>
     </div>
 </div>
+{% endif %}
 
 {% if urinalysis %}
 <!-- Urinalysis Results -->
@@ -297,7 +417,7 @@
 </div>
 {% endif %}
 
-{% if comparison %}
+{% if comparison and results %}
 <!-- Comparison with Previous Test -->
 <div class="card">
     <div class="card-header">

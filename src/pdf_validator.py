@@ -13,6 +13,7 @@ from typing import Optional
 import pdfplumber
 
 from email_config import get_email_config
+from pdf_parser import detect_report_type
 
 
 class ValidationResult(Enum):
@@ -39,7 +40,7 @@ class ValidationReport:
 
 class PDFValidator:
     """
-    Validates PDF files for security and DNAtech report authenticity.
+    Validates PDF files for security and supported report authenticity.
 
     Security checks performed (in order):
     1. File extension check
@@ -47,7 +48,7 @@ class PDFValidator:
     3. PDF magic bytes verification
     4. Suspicious content scan (JavaScript, Launch actions, etc.)
     5. PDF structure validation (must parse with pdfplumber)
-    6. DNAtech marker verification
+    6. Supported report verification
     """
 
     # PDF magic bytes
@@ -64,33 +65,13 @@ class PDFValidator:
         b'/XFA',
     ]
 
-    # Required markers - protein report must have these core elements
-    # (relaxed to support redacted PDFs without lab headers)
-    REQUIRED_MARKERS = [
-        r'PROTEINOGRAMA|ELECTROFORESE\s+DE\s+PROTE[IÍ]NAS',  # Report type
-    ]
-
-    # Supporting markers (must find at least 3 to confirm it's a protein report)
-    SUPPORTING_MARKERS = [
-        r'Albumina',
-        r'Prote[ií]nas?\s+totais',
-        r'Alfa\s*[12]',
-        r'Beta',
-        r'Gama',
-        r'Esp[ée]cie',
-        r'Ra[çc]a',
-        r'Data\s+de\s+fecho',
-        r'Amostra',
-        r'Resultado',
-        r'g/dL',
-        r'Rel\.\s*Albumina',
-    ]
-
     # Patterns to extract report number (tries multiple formats)
     REPORT_NUMBER_PATTERNS = [
         r'Folha\s+de\s+Trabalho\s+N[º°o]\s*[:\s]*(\d+/\d+)',  # Standard format
         r'N[º°o]\s*[:\s]*(\d+/\d+)',  # Shorter format
         r'bolt(\d+)_(\d+)\.pdf',  # From filename: bolt2257_1537496.pdf -> 2257/1537496
+        r'Exam ID\s+(\d+)',
+        r'ID exame\s+(\d+)',
     ]
 
     def __init__(self, max_size_mb: Optional[int] = None):
@@ -176,8 +157,8 @@ class PDFValidator:
                 message=f"PDF parsing failed: {e}"
             )
 
-        # Check 7: DNAtech markers
-        markers_result = self._check_dnatech_markers(text_content)
+        # Check 7: supported report markers
+        markers_result = self._check_supported_markers(text_content)
         if not markers_result['valid']:
             return ValidationReport(
                 is_valid=False,
@@ -192,11 +173,11 @@ class PDFValidator:
         return ValidationReport(
             is_valid=True,
             result_code=ValidationResult.VALID,
-            message="PDF is a valid DNAtech report",
+            message=f"PDF is a valid supported report ({markers_result['report_type']})",
             report_number=report_number,
             details={
                 'file_size': file_size,
-                'markers_found': markers_result.get('found_markers', [])
+                'report_type': markers_result.get('report_type')
             }
         )
 
@@ -238,58 +219,25 @@ class PDFValidator:
 
         return '\n'.join(text_parts)
 
-    def _check_dnatech_markers(self, text: str) -> dict:
-        """
-        Check for required DNAtech report markers.
-
-        Returns:
-            Dict with 'valid' bool and details about found markers
-        """
-        found_required = []
-        missing_required = []
-
-        # Check required markers
-        for pattern in self.REQUIRED_MARKERS:
-            if re.search(pattern, text, re.IGNORECASE):
-                found_required.append(pattern)
-            else:
-                missing_required.append(pattern)
-
-        # If missing required markers, fail immediately
-        if missing_required:
+    def _check_supported_markers(self, text: str) -> dict:
+        """Check if the text matches any supported report family."""
+        report_type = detect_report_type(text)
+        if not report_type:
             return {
                 'valid': False,
-                'message': f"Missing required markers: {missing_required}",
-                'found_markers': found_required,
-                'missing_markers': missing_required
+                'message': "PDF does not match any supported report type",
+                'report_type': None,
             }
-
-        # Check supporting markers (need at least 3 to confirm protein report)
-        found_supporting = []
-        for pattern in self.SUPPORTING_MARKERS:
-            if re.search(pattern, text, re.IGNORECASE):
-                found_supporting.append(pattern)
-
-        if len(found_supporting) < 3:
-            return {
-                'valid': False,
-                'message': f"Found only {len(found_supporting)} supporting markers "
-                          f"(need at least 3): {found_supporting}",
-                'found_markers': found_required + found_supporting,
-                'supporting_count': len(found_supporting)
-            }
-
         return {
             'valid': True,
-            'message': "All required markers found",
-            'found_markers': found_required + found_supporting,
-            'supporting_count': len(found_supporting)
+            'message': f"Matched {report_type}",
+            'report_type': report_type,
         }
 
     def _extract_report_number(self, text: str, filename: str = None) -> Optional[str]:
         """Extract report number from PDF text or filename."""
         # Try text patterns first
-        for pattern in self.REPORT_NUMBER_PATTERNS[:2]:
+        for pattern in self.REPORT_NUMBER_PATTERNS[:4]:
             match = re.search(pattern, text)
             if match:
                 return match.group(1)

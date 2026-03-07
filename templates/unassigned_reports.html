@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}Unassigned Reports - {{ t(lang, 'app.title') }}{% endblock %}
+
+{% block content %}
+<div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; gap: 1rem; flex-wrap: wrap;">
+    <div>
+        <h1 style="margin-bottom: 0.35rem;">Unassigned Reports</h1>
+        <p class="text-muted">Reports in this queue need a manual decision before they can be added to an animal history.</p>
+    </div>
+    <a href="/upload" class="btn btn-secondary">{{ t(lang, 'nav.upload') }}</a>
+</div>
+
+{% if error %}
+<div class="alert alert-error" style="margin-bottom: 1.5rem;">{{ error }}</div>
+{% endif %}
+
+{% if pending_reports %}
+    {% for item in pending_reports %}
+    {% set report = item.report %}
+    {% set summary = item.summary %}
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <h2 class="card-title">{{ summary.animal_name or report.animal_name or 'Unknown patient' }}</h2>
+                <div class="text-muted" style="margin-top: 0.35rem;">
+                    {{ report.report_type or '--' }}
+                    {% if report.report_number %}| {{ report.report_number }}{% endif %}
+                </div>
+            </div>
+            {% if item.pdf_url %}
+            <a href="{{ item.pdf_url }}" target="_blank" rel="noopener" class="btn btn-secondary">Open PDF</a>
+            {% endif %}
+        </div>
+
+        <div class="grid-3" style="margin-bottom: 1rem;">
+            <div>
+                <div class="text-muted mb-1">{{ t(lang, 'common.species') }}</div>
+                <strong>{{ summary.species or report.species or '--' }}</strong>
+            </div>
+            <div>
+                <div class="text-muted mb-1">Owner</div>
+                <strong>{{ summary.owner_name or report.owner_name or '--' }}</strong>
+            </div>
+            <div>
+                <div class="text-muted mb-1">{{ t(lang, 'common.date') }}</div>
+                <strong>{{ summary.test_date or report.report_date or '--' }}</strong>
+            </div>
+            <div>
+                <div class="text-muted mb-1">Clinic</div>
+                <strong>{{ summary.clinic_name or report.clinic_name or '--' }}</strong>
+            </div>
+            <div>
+                <div class="text-muted mb-1">Report Source</div>
+                <strong style="word-break: break-word;">{{ report.report_source or summary.report_source or '--' }}</strong>
+            </div>
+            <div>
+                <div class="text-muted mb-1">Extracted Data</div>
+                <strong>
+                    {{ summary.measurement_count or 0 }} measurements,
+                    {{ summary.pathology_finding_count or 0 }} findings,
+                    {{ summary.asset_count or 0 }} images
+                </strong>
+            </div>
+        </div>
+
+        <div style="background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem;">
+            <strong>Why it was queued</strong>
+            <p style="margin-top: 0.5rem; color: var(--gray-700);">{{ report.match_reason or 'The importer found more than one plausible assignment.' }}</p>
+        </div>
+
+        {% if item.candidates %}
+        <div style="margin-bottom: 1rem;">
+            <h3 style="margin-bottom: 0.75rem; color: var(--primary);">Suggested Existing Animals</h3>
+            {% for candidate in item.candidates %}
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; border: 1px solid var(--gray-200); border-radius: 0.5rem; padding: 0.85rem 1rem; margin-bottom: 0.75rem;">
+                <div>
+                    <strong>{{ candidate.name }}</strong>
+                    <div class="text-muted" style="margin-top: 0.25rem;">
+                        {{ candidate.species or '--' }}
+                        {% if candidate.owner_name %}| {{ candidate.owner_name }}{% endif %}
+                        {% if candidate.microchip %}| {{ candidate.microchip }}{% endif %}
+                    </div>
+                    <div class="text-muted" style="margin-top: 0.25rem;">
+                        Confidence {{ (candidate.confidence * 100)|round(0) }}% | {{ candidate.reason }}
+                    </div>
+                </div>
+                <form method="post" action="/unassigned-reports/{{ report.id }}/assign-existing">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="animal_id" value="{{ candidate.animal_id }}">
+                    <button type="submit" class="btn btn-primary">Assign to {{ candidate.name }}</button>
+                </form>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-end;">
+            <form method="post" action="/unassigned-reports/{{ report.id }}/assign-existing" style="flex: 1 1 340px;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <label for="animal-{{ report.id }}" style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Assign to any existing animal</label>
+                <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                    <select id="animal-{{ report.id }}" name="animal_id" required style="flex: 1 1 250px; min-width: 240px; padding: 0.65rem; border: 1px solid var(--gray-300); border-radius: 0.375rem;">
+                        <option value="">Select animal</option>
+                        {% for animal in animals %}
+                        <option value="{{ animal.id }}">
+                            {{ animal.name }} | {{ animal.species }}{% if animal.owner_name %} | {{ animal.owner_name }}{% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-secondary">Assign Existing</button>
+                </div>
+            </form>
+
+            <form method="post" action="/unassigned-reports/{{ report.id }}/create-animal">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-success">Create New Animal</button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+<div class="card">
+    <p class="text-muted text-center" style="padding: 2rem;">No reports are waiting for manual assignment.</p>
+</div>
+{% endif %}
+{% endblock %}

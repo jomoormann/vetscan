@@ -6,7 +6,7 @@ Based on DNAtech lab report format (Portuguese).
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import List, Optional
 
@@ -35,6 +35,7 @@ class Animal:
     species: str = "Canídeo"  # Default to dog
     breed: str = ""
     microchip: Optional[str] = None
+    owner_name: Optional[str] = None
     age_years: Optional[float] = None
     age_months: Optional[int] = None
     sex: str = "U"
@@ -75,6 +76,15 @@ class TestSession:
     closing_date: Optional[date] = None
     sample_type: str = "Soro"  # Serum
     lab_name: str = "DNAtech"
+    source_system: str = "dnatech"
+    report_type: str = "dnatech_proteinogram"
+    external_report_id: Optional[str] = None
+    report_source: Optional[str] = None
+    reported_at: Optional[datetime] = None
+    received_at: Optional[datetime] = None
+    clinic_name: Optional[str] = None
+    panel_name: Optional[str] = None
+    raw_metadata_json: Optional[str] = None
     pdf_path: Optional[str] = None
     notes: Optional[str] = None
     created_at: Optional[datetime] = None
@@ -333,6 +343,117 @@ class UrinalysisResult:
 
         self.flags = json.dumps(flagged, ensure_ascii=False) if flagged else None
         return flagged
+
+
+@dataclass
+class AnimalIdentifier:
+    """External identifier for an animal in a source system."""
+    id: Optional[int] = None
+    animal_id: int = 0
+    source_system: str = ""
+    identifier_type: str = ""
+    identifier_value: str = ""
+    created_at: Optional[datetime] = None
+
+
+@dataclass
+class SessionMeasurement:
+    """Generic structured measurement for non-protein reports."""
+    id: Optional[int] = None
+    session_id: int = 0
+    panel_name: Optional[str] = None
+    measurement_code: str = ""
+    measurement_name: str = ""
+    value_numeric: Optional[float] = None
+    value_text: Optional[str] = None
+    unit: Optional[str] = None
+    reference_min: Optional[float] = None
+    reference_max: Optional[float] = None
+    reference_text: Optional[str] = None
+    flag: str = "normal"
+    sort_order: int = 0
+    created_at: Optional[datetime] = None
+
+
+@dataclass
+class PathologyFinding:
+    """Narrative pathology finding, optionally scoped to a specimen."""
+    id: Optional[int] = None
+    session_id: int = 0
+    section_type: str = ""
+    specimen_label: Optional[str] = None
+    title: Optional[str] = None
+    sample_site: Optional[str] = None
+    sample_method: Optional[str] = None
+    clinical_history: Optional[str] = None
+    microscopic_description: Optional[str] = None
+    diagnosis: Optional[str] = None
+    comment: Optional[str] = None
+    sort_order: int = 0
+    created_at: Optional[datetime] = None
+
+
+@dataclass
+class SessionAsset:
+    """Stored asset extracted from a PDF report."""
+    id: Optional[int] = None
+    session_id: int = 0
+    asset_type: str = ""
+    label: Optional[str] = None
+    file_path: str = ""
+    page_number: Optional[int] = None
+    sort_order: int = 0
+    metadata_json: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+@dataclass
+class AnimalMatchCandidate:
+    """Possible existing-animal match for a parsed report."""
+    animal_id: int = 0
+    name: str = ""
+    species: str = ""
+    owner_name: Optional[str] = None
+    microchip: Optional[str] = None
+    confidence: float = 0.0
+    reason: str = ""
+
+
+@dataclass
+class AnimalMatchDecision:
+    """Result of evaluating whether a report can be assigned automatically."""
+    action: str = "create_new"  # match_existing, create_new, manual_review
+    animal_id: Optional[int] = None
+    confidence: float = 0.0
+    reason: str = ""
+    candidates: List[AnimalMatchCandidate] = field(default_factory=list)
+
+
+@dataclass
+class UnassignedReport:
+    """Parsed report waiting for manual assignment to an animal."""
+    id: Optional[int] = None
+    filename: str = ""
+    pdf_path: str = ""
+    source_system: Optional[str] = None
+    report_type: Optional[str] = None
+    report_number: Optional[str] = None
+    external_report_id: Optional[str] = None
+    report_source: Optional[str] = None
+    animal_name: Optional[str] = None
+    species: Optional[str] = None
+    owner_name: Optional[str] = None
+    clinic_name: Optional[str] = None
+    report_date: Optional[date] = None
+    panel_name: Optional[str] = None
+    match_reason: Optional[str] = None
+    parsed_summary_json: Optional[str] = None
+    candidate_matches_json: Optional[str] = None
+    status: str = "pending"
+    assigned_animal_id: Optional[int] = None
+    session_id: Optional[int] = None
+    created_at: Optional[datetime] = None
+    assigned_at: Optional[datetime] = None
 
 
 # =============================================================================

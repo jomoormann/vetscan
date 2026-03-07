@@ -14,15 +14,22 @@ Report structure:
 - Footer: Closing date
 """
 
-import pdfplumber
+import json
+import os
 import re
-from datetime import date
-from typing import Dict, List, Optional, Tuple, Any
+import shutil
+import subprocess
+from datetime import date, datetime
 from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple, Any
+
+import fitz
+import pdfplumber
 
 # Import our models
 from models import (
     Animal, TestSession, ProteinResult, BiochemistryResult, UrinalysisResult,
+    AnimalIdentifier, SessionMeasurement, PathologyFinding,
     parse_portuguese_date, parse_age
 )
 
@@ -32,11 +39,218 @@ class ParsedReport:
     """Container for all data extracted from a PDF report"""
     animal: Animal
     session: TestSession
-    results: List[ProteinResult]
+    results: List[ProteinResult] = field(default_factory=list)
     biochemistry: Optional[BiochemistryResult] = None
     urinalysis: Optional[UrinalysisResult] = None
+    measurements: List[SessionMeasurement] = field(default_factory=list)
+    pathology_findings: List[PathologyFinding] = field(default_factory=list)
+    animal_identifiers: List[AnimalIdentifier] = field(default_factory=list)
+    assets: List["ParsedAsset"] = field(default_factory=list)
     raw_text: str = ""
     parse_warnings: List[str] = field(default_factory=list)
+
+
+@dataclass
+class ParsedAsset:
+    """Binary asset extracted from a report before it is stored on disk."""
+    asset_type: str
+    label: Optional[str]
+    filename: str
+    content: bytes
+    page_number: Optional[int] = None
+    sort_order: int = 0
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+def _normalize_space(value: str) -> str:
+    return " ".join((value or "").split())
+
+
+def _parse_decimal(value: Optional[str]) -> Optional[float]:
+    if not value:
+        return None
+    cleaned = value.replace(",", ".").replace("<", "").replace(">", "").strip()
+    cleaned = cleaned.replace(" ", "")
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _parse_species(value: Optional[str]) -> str:
+    normalized = (value or "").strip()
+    lowered = normalized.lower()
+    if "can" in lowered or "dog" in lowered:
+        return "Canídeo"
+    if "fel" in lowered or "cat" in lowered:
+        return "Felídeo"
+    return normalized or "Canídeo"
+
+
+def _extract_pdf_text(pdf_path: str) -> str:
+    text_parts: List[str] = []
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            text_parts.append(page.extract_text() or "")
+    return "\n".join(text_parts)
+
+
+def _extract_layout_text(pdf_path: str) -> str:
+    pdftotext_path = shutil.which("pdftotext")
+    if pdftotext_path:
+        try:
+            result = subprocess.run(
+                [pdftotext_path, "-layout", pdf_path, "-"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            if result.stdout.strip():
+                return result.stdout
+        except Exception:
+            pass
+    return _extract_pdf_text(pdf_path)
+
+
+def _extract_cytology_assets(pdf_path: str) -> List[ParsedAsset]:
+    assets: List[ParsedAsset] = []
+    doc = fitz.open(pdf_path)
+    seen_xrefs = set()
+
+    for page_index in range(doc.page_count):
+        page = doc.load_page(page_index)
+        for image_index, image_info in enumerate(page.get_images(full=True)):
+            xref = image_info[0]
+            if xref in seen_xrefs:
+                continue
+            info = doc.extract_image(xref)
+            width = info.get("width") or 0
+            height = info.get("height") or 0
+            if width < 300 or height < 300:
+                continue
+            seen_xrefs.add(xref)
+            ext = info.get("ext", "bin")
+            assets.append(ParsedAsset(
+                asset_type="cytology_image",
+                label=f"Cytology image {len(assets) + 1}",
+                filename=f"cytology_page_{page_index + 1}_{image_index + 1}.{ext}",
+                content=info.get("image", b""),
+                page_number=page_index + 1,
+                sort_order=len(assets),
+                metadata={
+                    "xref": xref,
+                    "width": width,
+                    "height": height,
+                    "ext": ext,
+                },
+            ))
+
+    doc.close()
+    return assets
+
+
+def _clean_vedis_text(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    ignored_prefixes = (
+        "Exam ID",
+        "ID exame",
+        "Vedis .",
+        "Page ",
+        "Página ",
+        "PATIENT",
+        "PACIENTE",
+        "Owner:",
+        "Tutor:",
+        "Specie:",
+        "Espécie:",
+        "Breed:",
+        "Raça:",
+        "Gender:",
+        "Sexo:",
+        "DOB/Age:",
+        "DN/Idade:",
+        "Date of receipt",
+        "Date of report",
+        "Data de receção",
+        "Data de relatório",
+        "CLIENT",
+        "ENTIDADE",
+        "Clínica Veterinária CVS",
+        "SOS Animal",
+        "Attending Vet",
+        "Veterinário/a",
+        "Pathologist",
+        "Technical Director",
+        "Em caso de dúvidas",
+        "In case of doubt",
+        "reports@vedis.pt",
+        "Andrea Renzi",
+        "Nazaré Cunha",
+    )
+    cleaned_lines = []
+    for raw_line in value.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if any(line.startswith(prefix) for prefix in ignored_prefixes):
+            continue
+        cleaned_lines.append(line)
+    return _normalize_space("\n".join(cleaned_lines))
+
+
+def _is_vedis_noise_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return True
+    ignored_prefixes = (
+        "Vedis .",
+        "Page ",
+        "Página ",
+        "PATIENT",
+        "PACIENTE",
+        "Owner:",
+        "Tutor:",
+        "Specie:",
+        "Espécie:",
+        "Breed:",
+        "Raça:",
+        "Gender:",
+        "Sexo:",
+        "DOB/Age:",
+        "DN/Idade:",
+        "Date of receipt",
+        "Date of report",
+        "Data de receção",
+        "Data de relatório",
+        "CLIENT",
+        "ENTIDADE",
+        "Clínica Veterinária CVS",
+        "SOS Animal",
+        "Attending Vet",
+        "Veterinário/a",
+        "Pathologist",
+        "Technical Director",
+        "Em caso de dúvidas",
+        "In case of doubt",
+        "reports@vedis.pt",
+        "Andrea Renzi",
+        "Nazaré Cunha",
+    )
+    return any(stripped.startswith(prefix) for prefix in ignored_prefixes)
+
+
+def detect_report_type(text: str) -> Optional[str]:
+    upper_text = text.upper()
+    if "PROTEINOGRAMA" in upper_text or "ELECTROFORESE DE PROTEINAS" in upper_text:
+        return "dnatech_proteinogram"
+    if "CYTOLOGY REPORT" in upper_text:
+        return "vedis_cytology"
+    if "RELATÓRIO IMUNOCITOQUÍMICA" in upper_text or "IMUNOCITOQUÍMICA" in upper_text:
+        return "vedis_immunocytochemistry"
+    if "ID PACIENTE" in upper_text and "RESULTADO" in upper_text:
+        return "cvs_analyzer"
+    return None
 
 
 class DNAtechParser:
@@ -62,7 +276,9 @@ class DNAtechParser:
         'animal_name': r'^Animal\s+([A-Za-zÀ-ÿ]+)',
         'species': r'Esp[ée]cie\s+([A-Za-zÀ-ÿ]+)',
         'breed': r'Ra[çc]a\s+([A-Za-zÀ-ÿ\s]+?)(?=\n|Microchip|$)',
-        'microchip': r'Microchip\s+(\d+)',
+        'microchip': r'Microchip(?:\s+No Cliente:)?\s+([A-Za-z0-9\-]+)',
+        'owner_name': r'Propriet[áa]rio\s+([A-Za-zÀ-ÿ\s]+?)(?=\n|Amostra|$)',
+        'client_ref': r'No Cliente:\s*([A-Za-z0-9\-]+)',
         'age': r'Idade\s+(.+?)(?=\n|Amostra)',
         'sample': r'Amostra\s+([A-Za-zÀ-ÿ\s\|]+?)(?=\n|VrokGuur)',
     }
@@ -139,7 +355,8 @@ class DNAtechParser:
         animal = self._parse_animal_data(full_text)
         session = self._parse_session_data(full_text, pdf_path)
         results = self._parse_results(full_text, tables)
-        
+        animal_identifiers = self._parse_animal_identifiers(full_text)
+
         # Parse additional sections
         biochemistry = self._parse_biochemistry(full_text)
         urinalysis = self._parse_urinalysis(full_text)
@@ -150,6 +367,7 @@ class DNAtechParser:
             results=results,
             biochemistry=biochemistry,
             urinalysis=urinalysis,
+            animal_identifiers=animal_identifiers,
             raw_text=full_text,
             parse_warnings=self.warnings
         )
@@ -193,6 +411,7 @@ class DNAtechParser:
         species = self._extract_pattern(text, 'species') or "Canídeo"
         breed = self._extract_pattern(text, 'breed') or ""
         microchip = self._extract_pattern(text, 'microchip')
+        owner_name = self._extract_pattern(text, 'owner_name')
         age_str = self._extract_pattern(text, 'age') or ""
         
         # Parse age and extract sex
@@ -203,9 +422,10 @@ class DNAtechParser:
         
         animal = Animal(
             name=name,
-            species=species,
+            species=_parse_species(species),
             breed=breed,
             microchip=microchip,
+            owner_name=_normalize_space(owner_name),
             age_years=age_years,
             age_months=age_months,
             sex=sex
@@ -242,10 +462,35 @@ class DNAtechParser:
             closing_date=closing_date,
             sample_type=sample_type.strip(),
             lab_name="DNAtech",
+            source_system="dnatech",
+            report_type="dnatech_proteinogram",
+            external_report_id=report_number or None,
+            report_source=pdf_path,
             pdf_path=pdf_path
         )
         
         return session
+
+    def _parse_animal_identifiers(self, text: str) -> List[AnimalIdentifier]:
+        identifiers: List[AnimalIdentifier] = []
+
+        client_ref = self._extract_pattern(text, 'client_ref')
+        if client_ref:
+            identifiers.append(AnimalIdentifier(
+                source_system="dnatech",
+                identifier_type="client_ref",
+                identifier_value=client_ref,
+            ))
+
+        microchip = self._extract_pattern(text, 'microchip')
+        if microchip and microchip.isdigit():
+            identifiers.append(AnimalIdentifier(
+                source_system="microchip",
+                identifier_type="microchip",
+                identifier_value=microchip,
+            ))
+
+        return identifiers
     
     def _parse_results(self, text: str, tables: List) -> List[ProteinResult]:
         """
@@ -633,18 +878,693 @@ class DNAtechParser:
         return None
 
 
+class CVSAnalyzerParser:
+    """Parser for structured CVS analyzer result PDFs."""
+
+    def parse_pdf(self, pdf_path: str) -> ParsedReport:
+        text = _extract_layout_text(pdf_path)
+        name_line = self._line_starting(text, "Nome animal:")
+        line_match = re.match(r'Nome animal:(.*?)\s{2,}ID paciente:([^\s]+)\s{2,}Tutor:(.*)$', name_line or "")
+        animal_name = _normalize_space(line_match.group(1)) if line_match else None
+        patient_id = _normalize_space(line_match.group(2)) if line_match else None
+        owner_name = _normalize_space(line_match.group(3)) if line_match else None
+
+        sample_line = self._line_starting(text, "Amostra:")
+        sample_match = re.match(r'Amostra:([^\s]+)\s{2,}Lab\.:\s*(.*?)\s{2,}Vers[ãa]o:(.*)$', sample_line or "")
+        sample_slot = _normalize_space(sample_match.group(1)) if sample_match else None
+        version = _normalize_space(sample_match.group(3)) if sample_match else None
+
+        species_line = self._line_starting(text, "Espécies:")
+        species_match = re.match(r'Esp[ée]cies:(.*?)\s{2,}Operador:([^\s]+)\s{2,}M[áa]quina:([^\s]+)$', species_line or "")
+        species = _normalize_space(species_match.group(1)) if species_match else None
+        operator = _normalize_space(species_match.group(2)) if species_match else None
+        machine_id = _normalize_space(species_match.group(3)) if species_match else None
+
+        age_line = self._line_starting(text, "Idade:")
+        age_match = re.match(r'Idade:(.*?)\s{2,}Identifica[çc][ãa]o:([^\s]+)\s{2,}Amostra:([^\s]+)$', age_line or "")
+        identification = _normalize_space(age_match.group(2)) if age_match else None
+        sample_type = _normalize_space(age_match.group(3)) if age_match else None
+        test_datetime = self._parse_datetime(text)
+        test_date = test_datetime.date() if test_datetime else None
+        clinic_name = self._extract_first_nonempty_line(text)
+
+        measurements = self._parse_measurements(text)
+        panel_name = self._infer_panel_name([m.measurement_code for m in measurements])
+
+        report_token_parts = [
+            patient_id or "unknown",
+            test_datetime.strftime("%Y%m%d%H%M%S") if test_datetime else "unknown",
+            sample_slot or "report",
+        ]
+        external_report_id = "/".join(report_token_parts)
+        report_number = f"CVS/{external_report_id}"
+
+        anomalies = self._extract(text, r'\*Anomalias na amostra:\s*([^\n]+)')
+        metadata = {
+            "version": version,
+            "operator": operator,
+            "machine_id": machine_id,
+            "identification": identification,
+            "sample_slot": sample_slot,
+            "sample_anomalies": anomalies,
+        }
+
+        animal = Animal(
+            name=(animal_name or "Unknown").strip(),
+            species=_parse_species(species),
+            owner_name=(owner_name or "").strip() or None,
+        )
+        session = TestSession(
+            report_number=report_number,
+            test_date=test_date,
+            closing_date=test_date,
+            sample_type=(sample_type or "Plasma").strip(),
+            lab_name=clinic_name or "CVS SOS Animal",
+            source_system="cvs_analyzer",
+            report_type="cvs_analyzer",
+            external_report_id=external_report_id,
+            report_source=pdf_path,
+            reported_at=test_datetime,
+            clinic_name=clinic_name or "CVS SOS Animal",
+            panel_name=panel_name,
+            raw_metadata_json=json.dumps(metadata, ensure_ascii=False),
+            pdf_path=pdf_path,
+        )
+        animal_identifiers = []
+        if patient_id:
+            animal_identifiers.append(AnimalIdentifier(
+                source_system="cvs_analyzer",
+                identifier_type="patient_id",
+                identifier_value=patient_id,
+            ))
+
+        return ParsedReport(
+            animal=animal,
+            session=session,
+            measurements=measurements,
+            animal_identifiers=animal_identifiers,
+            raw_text=text,
+        )
+
+    def _extract(self, text: str, pattern: str) -> Optional[str]:
+        match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+        if not match:
+            return None
+        return _normalize_space(match.group(1))
+
+    def _line_starting(self, text: str, prefix: str) -> Optional[str]:
+        for line in text.splitlines():
+            if line.strip().startswith(prefix):
+                return line.strip()
+        return None
+
+    def _extract_first_nonempty_line(self, text: str) -> Optional[str]:
+        for line in text.splitlines():
+            cleaned = line.strip()
+            if cleaned:
+                return cleaned
+        return None
+
+    def _parse_datetime(self, text: str) -> Optional[datetime]:
+        match = re.search(
+            r'Hor[áa]rio teste:\s*(\d{4}\.\d{2}\.\d{2})\s+No\.:.*?\s+(\d{2}:\d{2}:\d{2})',
+            text,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if not match:
+            return None
+        combined = f"{match.group(1)} {match.group(2)}"
+        try:
+            return datetime.strptime(combined, "%Y.%m.%d %H:%M:%S")
+        except ValueError:
+            return None
+
+    def _parse_measurements(self, text: str) -> List[SessionMeasurement]:
+        measurements: List[SessionMeasurement] = []
+        capture = False
+        for raw_line in text.splitlines():
+            line = raw_line.rstrip()
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("Ensaio") and "Resultado" in stripped:
+                capture = True
+                continue
+            if stripped.startswith("Interpretação relatório"):
+                break
+            if not capture:
+                continue
+            if stripped.startswith("Ensaio") and "Significado Clínico" in stripped:
+                continue
+
+            parts = re.split(r'\s{2,}', stripped)
+            if len(parts) < 2:
+                continue
+            code = parts[0].strip()
+            if not code:
+                continue
+            value_part = parts[1].strip()
+            ref_text = parts[2].strip() if len(parts) > 2 else None
+            flag = "normal"
+            flag_match = re.search(r'\s([HL])$', value_part)
+            if flag_match:
+                flag = "high" if flag_match.group(1) == "H" else "low"
+                value_part = value_part[:flag_match.start()].strip()
+
+            value_match = re.match(r'(?P<value>(?:[<>]\s*)?\d+(?:[.,]\d+)?)\s*(?P<unit>.*)', value_part)
+            if value_match:
+                value_text = value_match.group("value").strip()
+                unit = value_match.group("unit").strip() or None
+            else:
+                value_text = value_part
+                unit = None
+
+            reference_min = None
+            reference_max = None
+            if ref_text and "-" in ref_text:
+                ref_parts = ref_text.split("-", 1)
+                reference_min = _parse_decimal(ref_parts[0])
+                reference_max = _parse_decimal(ref_parts[1])
+
+            measurements.append(SessionMeasurement(
+                measurement_code=code,
+                measurement_name=code,
+                value_numeric=_parse_decimal(value_text),
+                value_text=value_text,
+                unit=unit,
+                reference_min=reference_min,
+                reference_max=reference_max,
+                reference_text=ref_text,
+                flag=flag,
+                sort_order=len(measurements),
+            ))
+
+        return measurements
+
+    def _infer_panel_name(self, codes: List[str]) -> str:
+        code_set = {code.upper() for code in codes}
+        if {"CREA", "BUN", "GLU", "PHOS", "NA", "K"} & code_set:
+            return "renal_electrolyte_panel"
+        if {"ALB", "TP", "GLOB", "AST", "ALT"} & code_set:
+            return "hepatic_protein_panel"
+        return "analyzer_panel"
+
+
+class VedisCytologyParser:
+    """Parser for Vedis cytology pathology reports."""
+
+    def parse_pdf(self, pdf_path: str) -> ParsedReport:
+        text = _extract_layout_text(pdf_path)
+        patient = self._parse_patient(text)
+        clinic_name = "Clínica Veterinária CVS SOS Animal" if "Clínica Veterinária CVS" in text else None
+        attending_vet = self._next_first_column_after_label(text, "Attending Vet")
+        exam_id = self._extract(text, r'Exam ID\s+(\d+)')
+        receipt_date = parse_portuguese_date(self._value_after_label_line(text, "Date of receipt"))
+        report_date = parse_portuguese_date(self._value_after_label_line(text, "Date of report"))
+        clinical_history = _clean_vedis_text(self._extract_block(text, "CLINICAL HISTORY", "DIAGNOSIS"))
+        specimens = self._parse_specimens(text, clinical_history)
+        general_comment = _clean_vedis_text(self._extract_block(text, "GENERAL COMMENT", "TRADUÇÃO"))
+        assets = _extract_cytology_assets(pdf_path)
+
+        animal = Animal(
+            name=patient["name"] or "Unknown",
+            species=_parse_species(patient["species"]),
+            breed=patient["breed"] or "",
+            owner_name=patient["owner"],
+            sex=patient["sex"],
+            neutered=patient["neutered"],
+            age_years=patient["age_years"],
+            age_months=patient["age_months"],
+            responsible_vet=attending_vet,
+        )
+        session = TestSession(
+            report_number=f"VEDIS/{exam_id}" if exam_id else f"VEDIS/{os.path.basename(pdf_path)}",
+            test_date=report_date,
+            closing_date=report_date,
+            sample_type="Cytology",
+            lab_name="Vedis",
+            source_system="vedis",
+            report_type="cytology",
+            external_report_id=exam_id,
+            report_source=pdf_path,
+            reported_at=datetime.combine(report_date, datetime.min.time()) if report_date else None,
+            received_at=datetime.combine(receipt_date, datetime.min.time()) if receipt_date else None,
+            clinic_name=clinic_name or "Clínica Veterinária CVS SOS Animal",
+            panel_name="cytology",
+            raw_metadata_json=json.dumps({
+                "attending_vet": attending_vet,
+                "general_comment": general_comment,
+            }, ensure_ascii=False),
+            pdf_path=pdf_path,
+        )
+
+        findings = specimens
+        if general_comment:
+            findings.append(PathologyFinding(
+                section_type="general_comment",
+                title="General comment",
+                comment=general_comment,
+                sort_order=len(findings),
+            ))
+
+        return ParsedReport(
+            animal=animal,
+            session=session,
+            pathology_findings=findings,
+            assets=assets,
+            raw_text=text,
+        )
+
+    def _extract(self, text: str, pattern: str) -> Optional[str]:
+        match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
+        if not match:
+            return None
+        return _normalize_space(match.group(1))
+
+    def _extract_line(self, text: str, label: str) -> Optional[str]:
+        match = re.search(rf'^{label}\s*(.*?)\s*$', text, re.IGNORECASE | re.MULTILINE)
+        if not match:
+            return None
+        value = _normalize_space(match.group(1))
+        return value or None
+
+    def _value_after_label_line(self, text: str, label: str) -> Optional[str]:
+        lines = [line.rstrip() for line in text.splitlines()]
+        for index, raw_line in enumerate(lines):
+            stripped = raw_line.strip()
+            if not stripped.startswith(label):
+                continue
+            inline_value = stripped[len(label):].strip(" :")
+            if inline_value:
+                return _normalize_space(re.split(r'\s{2,}', inline_value)[0])
+            for followup in lines[index + 1:]:
+                candidate = followup.strip()
+                if candidate:
+                    return _normalize_space(re.split(r'\s{2,}', candidate)[0])
+        return None
+
+    def _next_first_column_after_label(self, text: str, label: str) -> Optional[str]:
+        lines = [line.rstrip() for line in text.splitlines()]
+        for index, raw_line in enumerate(lines):
+            if raw_line.strip().startswith(label):
+                for followup in lines[index + 1:]:
+                    candidate = followup.strip()
+                    if candidate:
+                        return _normalize_space(re.split(r'\s{2,}', candidate)[0])
+        return None
+
+    def _right_column_between_markers(self, text: str, anchor: str,
+                                      start_label: str, end_label: str) -> Optional[str]:
+        lines = [line.rstrip() for line in text.splitlines()]
+        anchored = False
+        collecting = False
+        parts: List[str] = []
+        for raw_line in lines:
+            stripped = raw_line.strip()
+            if not stripped:
+                continue
+            if not anchored:
+                if anchor in stripped:
+                    anchored = True
+                continue
+            if not collecting:
+                if start_label in stripped:
+                    collecting = True
+                continue
+            if end_label in stripped:
+                break
+            columns = re.split(r'\s{2,}', stripped)
+            if len(columns) >= 2:
+                parts.append(columns[-1].strip())
+            elif not _is_vedis_noise_line(stripped):
+                parts.append(stripped)
+        return _normalize_space(" ".join(parts)) or None
+
+    def _extract_name_before(self, text: str, label: str) -> Optional[str]:
+        lines = [line.rstrip() for line in text.splitlines()]
+        for index, raw_line in enumerate(lines):
+            if raw_line.strip().startswith(label):
+                for candidate_line in reversed(lines[:index]):
+                    candidate = candidate_line.strip()
+                    if not candidate:
+                        continue
+                    candidate = re.split(r'\s{2,}', candidate)[0].strip()
+                    if not candidate or candidate in {"PATIENT", "PACIENTE"}:
+                        continue
+                    if ":" in candidate or candidate.startswith("Vedis"):
+                        continue
+                    return candidate
+        return None
+
+    def _extract_name_after_heading(self, text: str, heading: str) -> Optional[str]:
+        lines = [line.rstrip() for line in text.splitlines()]
+        heading_index = None
+        for index, raw_line in enumerate(lines):
+            if raw_line.strip() == heading:
+                heading_index = index
+                break
+        if heading_index is None:
+            return None
+        for candidate_line in lines[heading_index + 1:]:
+            candidate = candidate_line.strip()
+            if not candidate:
+                continue
+            if candidate.startswith("Vedis"):
+                continue
+            first_column = re.split(r'\s{2,}', candidate)[0].strip()
+            if not first_column or ":" in first_column or first_column in {"CYTOLOGY REPORT", "RELATÓRIO IMUNOCITOQUÍMICA"}:
+                continue
+            return first_column
+        return None
+
+    def _extract_block(self, text: str, start: str, end: str) -> str:
+        match = re.search(
+            rf'{re.escape(start)}\s+(.*?)\s+{re.escape(end)}',
+            text,
+            re.IGNORECASE | re.DOTALL,
+        )
+        return match.group(1) if match else ""
+
+    def _parse_patient(self, text: str) -> Dict[str, Any]:
+        name = self._extract_name_after_heading(text, "PATIENT")
+        owner = self._value_after_label_line(text, "Owner:")
+        species = self._value_after_label_line(text, "Specie:")
+        breed = self._value_after_label_line(text, "Breed:")
+        gender = self._value_after_label_line(text, "Gender:")
+        age_str = self._value_after_label_line(text, "DOB/Age:")
+        sex = "U"
+        neutered = None
+        if gender:
+            lowered = gender.lower()
+            sex = "M" if "male" in lowered else ("F" if "female" in lowered else "U")
+            neutered = "neuter" in lowered
+        age_years = _parse_decimal(re.search(r'(\d+)', age_str or "") and re.search(r'(\d+)', age_str or "").group(1))
+        return {
+            "name": name,
+            "owner": owner,
+            "species": species,
+            "breed": breed,
+            "sex": sex,
+            "neutered": neutered,
+            "age_years": age_years,
+            "age_months": None,
+        }
+
+    def _parse_specimens(self, text: str, clinical_history: str) -> List[PathologyFinding]:
+        history_by_label = {}
+        for label, body in re.findall(r'([AB])-\s*(.*?)(?=(?:[AB]-\s)|$)', clinical_history or ""):
+            history_by_label[label] = body.strip()
+
+        findings: List[PathologyFinding] = []
+        specimen_patterns = {
+            "A": r'A-\s*([^\n]+)\s+DIAGNOSIS\s+(.*?)\s+SAMPLE\s+(.*?)\s+MICROSCOPIC DESCRIPTION\s+(.*?)(?=\s+B-\s*[^\n]+|GENERAL COMMENT)',
+            "B": r'B-\s*([^\n]+)\s+DIAGNOSIS\s+(.*?)\s+SAMPLE\s+(.*?)\s+MICROSCOPIC DESCRIPTION\s+(.*?)(?=GENERAL COMMENT)',
+        }
+        for label, pattern in specimen_patterns.items():
+            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+            if not match:
+                continue
+            title = _clean_vedis_text(match.group(1))
+            diagnosis = _clean_vedis_text(match.group(2))
+            sample_method = _clean_vedis_text(match.group(3))
+            microscopic_description = _clean_vedis_text(match.group(4))
+            findings.append(PathologyFinding(
+                section_type="cytology_specimen",
+                specimen_label=label,
+                title=title,
+                sample_site=title,
+                sample_method=sample_method,
+                clinical_history=history_by_label.get(label),
+                microscopic_description=microscopic_description,
+                diagnosis=diagnosis,
+                sort_order=len(findings),
+            ))
+
+        if not any(finding.specimen_label == "A" for finding in findings):
+            title = self._extract(text, r'A-\s*([^\n]+)')
+            diagnosis = self._right_column_between_markers(text, "A- Left kidney", "DIAGNOSIS", "SAMPLE")
+            sample_method = self._right_column_between_markers(text, "A- Left kidney", "SAMPLE", "MICROSCOPIC DESCRIPTION")
+            microscopic_description = self._right_column_between_markers(text, "A- Left kidney", "MICROSCOPIC DESCRIPTION", "B- Retroperitoneum")
+            if diagnosis or sample_method or microscopic_description:
+                findings.insert(0, PathologyFinding(
+                    section_type="cytology_specimen",
+                    specimen_label="A",
+                    title=_clean_vedis_text(title) or "Specimen A",
+                    sample_site=_clean_vedis_text(title) or "Specimen A",
+                    sample_method=sample_method,
+                    clinical_history=history_by_label.get("A"),
+                    microscopic_description=microscopic_description,
+                    diagnosis=diagnosis,
+                    sort_order=0,
+                ))
+                for index, finding in enumerate(findings):
+                    finding.sort_order = index
+        return findings
+
+
+class VedisImmunocytochemistryParser:
+    """Parser for Vedis immunocytochemistry reports."""
+
+    def parse_pdf(self, pdf_path: str) -> ParsedReport:
+        text = _extract_layout_text(pdf_path)
+        patient = self._parse_patient(text)
+        clinic_name = "Clínica Veterinária CVS SOS Animal" if "Clínica Veterinária CVS" in text else None
+        attending_vet = self._next_first_column_after_label(text, "Veterinário/a")
+        exam_id = self._extract(text, r'ID exame\s+(\d+)')
+        receipt_date = parse_portuguese_date(self._value_after_label_line(text, "Data de receção"))
+        report_date = parse_portuguese_date(self._value_after_label_line(text, "Data de relatório"))
+        product_sent = _clean_vedis_text(self._extract_block(text, "PRODUTO ENVIADO", "DESCRIÇÃO MICROSCÓPICA"))
+        microscopic_description = _clean_vedis_text(self._extract_block(text, "DESCRIÇÃO MICROSCÓPICA", "DIAGNÓSTICO"))
+        diagnosis = self._right_column_between_labels(text, "DIAGNÓSTICO", "COMENTÁRIO GERAL") or _clean_vedis_text(self._extract_block(text, "DIAGNÓSTICO", "COMENTÁRIO GERAL"))
+        comment = self._right_column_between_labels(text, "COMENTÁRIO GERAL", "Data de receção") or _clean_vedis_text(self._extract_block(text, "COMENTÁRIO GERAL", "Pathologist"))
+        if not comment:
+            comment = _clean_vedis_text(self._extract_block(text, "COMENTÁRIO GERAL", "Em caso de dúvidas"))
+
+        measurements = self._parse_markers(text)
+        assets = _extract_cytology_assets(pdf_path)
+
+        animal = Animal(
+            name=patient["name"] or "Unknown",
+            species=_parse_species(patient["species"]),
+            breed=patient["breed"] or "",
+            owner_name=patient["owner"],
+            sex=patient["sex"],
+            neutered=patient["neutered"],
+            age_years=patient["age_years"],
+            age_months=patient["age_months"],
+            responsible_vet=attending_vet,
+        )
+        session = TestSession(
+            report_number=f"VEDIS/{exam_id}" if exam_id else f"VEDIS/{os.path.basename(pdf_path)}",
+            test_date=report_date,
+            closing_date=report_date,
+            sample_type="Immunocytochemistry",
+            lab_name="Vedis",
+            source_system="vedis",
+            report_type="immunocytochemistry",
+            external_report_id=exam_id,
+            report_source=pdf_path,
+            reported_at=datetime.combine(report_date, datetime.min.time()) if report_date else None,
+            received_at=datetime.combine(receipt_date, datetime.min.time()) if receipt_date else None,
+            clinic_name=clinic_name or "Clínica Veterinária CVS SOS Animal",
+            panel_name="immunocytochemistry",
+            raw_metadata_json=json.dumps({
+                "product_sent": product_sent,
+            }, ensure_ascii=False),
+            pdf_path=pdf_path,
+        )
+        findings = [PathologyFinding(
+            section_type="immunocytochemistry",
+            title="Immunocytochemistry",
+            sample_method=product_sent,
+            microscopic_description=microscopic_description,
+            diagnosis=diagnosis,
+            comment=comment,
+            sort_order=0,
+        )]
+
+        return ParsedReport(
+            animal=animal,
+            session=session,
+            measurements=measurements,
+            pathology_findings=findings,
+            assets=assets,
+            raw_text=text,
+        )
+
+    def _extract(self, text: str, pattern: str) -> Optional[str]:
+        match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
+        if not match:
+            return None
+        return _normalize_space(match.group(1))
+
+    def _extract_line(self, text: str, label: str) -> Optional[str]:
+        match = re.search(rf'^{label}\s*(.*?)\s*$', text, re.IGNORECASE | re.MULTILINE)
+        if not match:
+            return None
+        value = _normalize_space(match.group(1))
+        return value or None
+
+    def _value_after_label_line(self, text: str, label: str) -> Optional[str]:
+        lines = [line.rstrip() for line in text.splitlines()]
+        for index, raw_line in enumerate(lines):
+            stripped = raw_line.strip()
+            if not stripped.startswith(label):
+                continue
+            inline_value = stripped[len(label):].strip(" :")
+            if inline_value:
+                return _normalize_space(re.split(r'\s{2,}', inline_value)[0])
+            for followup in lines[index + 1:]:
+                candidate = followup.strip()
+                if candidate:
+                    return _normalize_space(re.split(r'\s{2,}', candidate)[0])
+        return None
+
+    def _next_first_column_after_label(self, text: str, label: str) -> Optional[str]:
+        lines = [line.rstrip() for line in text.splitlines()]
+        for index, raw_line in enumerate(lines):
+            if raw_line.strip().startswith(label):
+                for followup in lines[index + 1:]:
+                    candidate = followup.strip()
+                    if candidate:
+                        return _normalize_space(re.split(r'\s{2,}', candidate)[0])
+        return None
+
+    def _right_column_between_labels(self, text: str, start_label: str,
+                                     end_label: str) -> Optional[str]:
+        lines = [line.rstrip() for line in text.splitlines()]
+        collecting = False
+        parts: List[str] = []
+        for raw_line in lines:
+            stripped = raw_line.strip()
+            if not stripped:
+                continue
+            if not collecting:
+                if start_label in stripped:
+                    collecting = True
+                continue
+            if end_label in stripped:
+                break
+            columns = re.split(r'\s{2,}', stripped)
+            if len(columns) >= 2:
+                parts.append(columns[-1].strip())
+            elif not _is_vedis_noise_line(stripped):
+                parts.append(stripped)
+        return _normalize_space(" ".join(parts)) or None
+
+    def _extract_name_before(self, text: str, label: str) -> Optional[str]:
+        lines = [line.rstrip() for line in text.splitlines()]
+        for index, raw_line in enumerate(lines):
+            if raw_line.strip().startswith(label):
+                for candidate_line in reversed(lines[:index]):
+                    candidate = candidate_line.strip()
+                    if not candidate:
+                        continue
+                    candidate = re.split(r'\s{2,}', candidate)[0].strip()
+                    if not candidate or candidate in {"PATIENT", "PACIENTE"}:
+                        continue
+                    if ":" in candidate or candidate.startswith("Vedis"):
+                        continue
+                    return candidate
+        return None
+
+    def _extract_name_after_heading(self, text: str, heading: str) -> Optional[str]:
+        lines = [line.rstrip() for line in text.splitlines()]
+        heading_index = None
+        for index, raw_line in enumerate(lines):
+            if raw_line.strip() == heading:
+                heading_index = index
+                break
+        if heading_index is None:
+            return None
+        for candidate_line in lines[heading_index + 1:]:
+            candidate = candidate_line.strip()
+            if not candidate:
+                continue
+            if candidate.startswith("Vedis"):
+                continue
+            first_column = re.split(r'\s{2,}', candidate)[0].strip()
+            if not first_column or ":" in first_column or first_column in {"RELATÓRIO IMUNOCITOQUÍMICA"}:
+                continue
+            return first_column
+        return None
+
+    def _extract_block(self, text: str, start: str, end: str) -> str:
+        match = re.search(
+            rf'{re.escape(start)}\s+(.*?)\s+{re.escape(end)}',
+            text,
+            re.IGNORECASE | re.DOTALL,
+        )
+        return match.group(1) if match else ""
+
+    def _parse_patient(self, text: str) -> Dict[str, Any]:
+        name = self._extract_name_after_heading(text, "PACIENTE")
+        owner = self._value_after_label_line(text, "Tutor:")
+        species = self._value_after_label_line(text, "Espécie:")
+        breed = self._value_after_label_line(text, "Raça:")
+        gender = self._value_after_label_line(text, "Sexo:")
+        age_str = self._value_after_label_line(text, "DN/Idade:")
+        sex = "U"
+        neutered = None
+        if gender:
+            lowered = gender.lower()
+            sex = "M" if "male" in lowered else ("F" if "female" in lowered else "U")
+            neutered = "neuter" in lowered
+        age_years = _parse_decimal(re.search(r'(\d+)', age_str or "") and re.search(r'(\d+)', age_str or "").group(1))
+        return {
+            "name": name,
+            "owner": owner,
+            "species": species,
+            "breed": breed,
+            "sex": sex,
+            "neutered": neutered,
+            "age_years": age_years,
+            "age_months": None,
+        }
+
+    def _parse_markers(self, text: str) -> List[SessionMeasurement]:
+        measurements: List[SessionMeasurement] = []
+        if re.search(r'CD3.*?>\s*85-90%', text, re.IGNORECASE | re.DOTALL):
+            measurements.append(SessionMeasurement(
+                panel_name="immunocytochemistry",
+                measurement_code="CD3",
+                measurement_name="CD3",
+                value_text="positive (>85-90%)",
+                flag="high",
+                sort_order=len(measurements),
+            ))
+        if re.search(r'PAX-?5.*?N[ãa]o se observam', text, re.IGNORECASE | re.DOTALL) or re.search(r'CD3 \+ / PAX5 -', text, re.IGNORECASE):
+            measurements.append(SessionMeasurement(
+                panel_name="immunocytochemistry",
+                measurement_code="PAX5",
+                measurement_name="PAX5",
+                value_text="negative",
+                flag="normal",
+                sort_order=len(measurements),
+            ))
+        return measurements
+
+
+def parse_lab_report(pdf_path: str) -> ParsedReport:
+    """Parse any supported report type."""
+    text = _extract_pdf_text(pdf_path)
+    report_type = detect_report_type(text)
+
+    if report_type == "dnatech_proteinogram":
+        return DNAtechParser().parse_pdf(pdf_path)
+    if report_type == "cvs_analyzer":
+        return CVSAnalyzerParser().parse_pdf(pdf_path)
+    if report_type == "vedis_cytology":
+        return VedisCytologyParser().parse_pdf(pdf_path)
+    if report_type == "vedis_immunocytochemistry":
+        return VedisImmunocytochemistryParser().parse_pdf(pdf_path)
+
+    raise ValueError(f"Unsupported report format for {os.path.basename(pdf_path)}")
+
+
 def parse_dnatech_report(pdf_path: str) -> ParsedReport:
-    """
-    Convenience function to parse a DNAtech report.
-    
-    Args:
-        pdf_path: Path to the PDF file
-        
-    Returns:
-        ParsedReport with all extracted data
-    """
-    parser = DNAtechParser()
-    return parser.parse_pdf(pdf_path)
+    """Backwards-compatible alias for the generic report parser."""
+    return parse_lab_report(pdf_path)
 
 
 # =============================================================================
