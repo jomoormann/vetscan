@@ -109,6 +109,9 @@ def _extract_layout_text(pdf_path: str) -> str:
                 return result.stdout
         except Exception:
             pass
+    layout_text = _extract_word_layout_text(pdf_path)
+    if layout_text.strip():
+        return layout_text
     return _extract_pdf_text(pdf_path)
 
 
@@ -255,6 +258,81 @@ def _is_vedis_noise_line(line: str) -> bool:
         "Nazaré Cunha",
     )
     return any(stripped.startswith(prefix) for prefix in ignored_prefixes)
+
+
+def _extract_word_layout_text(pdf_path: str) -> str:
+    """Fallback layout extractor when pdftotext is unavailable."""
+    page_texts: List[str] = []
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            words = page.extract_words(use_text_flow=False) or []
+            filtered_words: List[Dict[str, Any]] = []
+            for word in words:
+                text = (word.get("text") or "").strip()
+                if not text:
+                    continue
+
+                x0 = float(word.get("x0") or 0.0)
+                x1 = float(word.get("x1") or x0)
+                width = x1 - x0
+
+                # Ignore the far-left vertical glyph noise that appears in Vedis
+                # reports when pdfplumber is used without pdftotext.
+                if x1 <= 40 and width <= 12:
+                    continue
+
+                filtered_words.append(word)
+
+            filtered_words.sort(key=lambda item: (
+                round(float(item.get("top") or 0.0), 1),
+                float(item.get("x0") or 0.0),
+            ))
+
+            lines: List[List[Dict[str, Any]]] = []
+            current_line: List[Dict[str, Any]] = []
+            current_top: Optional[float] = None
+
+            for word in filtered_words:
+                top = float(word.get("top") or 0.0)
+                if current_top is None or abs(top - current_top) <= 3:
+                    current_line.append(word)
+                    current_top = top if current_top is None else min(current_top, top)
+                    continue
+                lines.append(current_line)
+                current_line = [word]
+                current_top = top
+
+            if current_line:
+                lines.append(current_line)
+
+            rendered_lines: List[str] = []
+            for line_words in lines:
+                ordered = sorted(line_words, key=lambda item: float(item.get("x0") or 0.0))
+                parts: List[str] = []
+                previous_x1: Optional[float] = None
+
+                for word in ordered:
+                    x0 = float(word.get("x0") or 0.0)
+                    x1 = float(word.get("x1") or x0)
+                    if previous_x1 is not None:
+                        gap = x0 - previous_x1
+                        if gap >= 36:
+                            parts.append("    ")
+                        elif gap >= 14:
+                            parts.append("  ")
+                        else:
+                            parts.append(" ")
+                    parts.append((word.get("text") or "").strip())
+                    previous_x1 = x1
+
+                line = "".join(parts).strip()
+                if not line:
+                    continue
+                rendered_lines.append(line)
+
+            page_texts.append("\n".join(rendered_lines))
+
+    return "\n\n".join(page_texts)
 
 
 def detect_report_type(text: str) -> Optional[str]:
@@ -1237,7 +1315,11 @@ class VedisCytologyParser:
         lines = [line.rstrip() for line in text.splitlines()]
         heading_index = None
         for index, raw_line in enumerate(lines):
-            if raw_line.strip() == heading:
+            stripped = raw_line.strip()
+            if not stripped:
+                continue
+            first_column = re.split(r'\s{2,}', stripped)[0].strip()
+            if first_column == heading or stripped == heading:
                 heading_index = index
                 break
         if heading_index is None:
