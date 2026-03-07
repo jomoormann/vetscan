@@ -58,16 +58,26 @@ run_ssh "cd $REMOTE_APP_DIR && source venv/bin/activate && pip install -r requir
 echo "Dependencies updated"
 echo ""
 
-# Step 5: Restart the service using systemd
-echo "STEP 5: Restarting VetScan service"
+# Step 5: Install and reload systemd email importer units
+echo "STEP 5: Installing email import systemd units"
+echo "----------------------------------------------"
+run_ssh "install -m 644 $REMOTE_APP_DIR/deploy/vetscan-email-import.service /etc/systemd/system/vetscan-email-import.service"
+run_ssh "install -m 644 $REMOTE_APP_DIR/deploy/vetscan-email-import.timer /etc/systemd/system/vetscan-email-import.timer"
+run_ssh "systemctl daemon-reload"
+run_ssh "systemctl enable --now vetscan-email-import.timer"
+echo "Email import units installed"
+echo ""
+
+# Step 6: Restart the service using systemd
+echo "STEP 6: Restarting VetScan service"
 echo "----------------------------------------------"
 run_ssh 'systemctl restart vetscan'
 echo "Service restarted"
 sleep 3
 echo ""
 
-# Step 6: MANDATORY - Verify database has data
-echo "STEP 6: Verifying database integrity (MANDATORY)"
+# Step 7: MANDATORY - Verify database has data
+echo "STEP 7: Verifying database integrity (MANDATORY)"
 echo "----------------------------------------------"
 ANIMAL_COUNT=$(run_ssh "cd $REMOTE_APP_DIR && source venv/bin/activate && python3 -c \"import sqlite3; conn=sqlite3.connect('data/vet_proteins.db'); print(conn.execute('SELECT COUNT(*) FROM animals').fetchone()[0])\"")
 echo "Animals in database: $ANIMAL_COUNT"
@@ -80,10 +90,11 @@ if [ "$ANIMAL_COUNT" -eq "0" ]; then
 fi
 echo ""
 
-# Step 7: Verify server is running
-echo "STEP 7: Verifying server is running"
+# Step 8: Verify server is running
+echo "STEP 8: Verifying server is running"
 echo "----------------------------------------------"
 run_ssh 'systemctl is-active vetscan && echo "VetScan service: RUNNING" || echo "VetScan service: NOT RUNNING"'
+run_ssh 'systemctl is-active vetscan-email-import.timer && echo "Email import timer: RUNNING" || echo "Email import timer: NOT RUNNING"'
 HTTP_STATUS=$(curl -skL -o /dev/null -w "%{http_code}" https://vetscan.net/login)
 echo "HTTP Status: $HTTP_STATUS"
 echo ""

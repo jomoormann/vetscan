@@ -252,6 +252,7 @@ class EmailImporter:
         """Move email to specified folder."""
         try:
             self._ensure_folder_exists(folder)
+            self.imap.select('INBOX')
             # Copy to destination folder
             status, _ = self.imap.uid('copy', uid, folder)
             if status == 'OK':
