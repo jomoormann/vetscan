@@ -124,10 +124,21 @@ def _extract_cytology_assets(pdf_path: str) -> List[ParsedAsset]:
             if xref in seen_xrefs:
                 continue
             info = doc.extract_image(xref)
+            rects = page.get_image_rects(xref)
             width = info.get("width") or 0
             height = info.get("height") or 0
             if width < 300 or height < 300:
                 continue
+
+            display_rect = rects[0] if rects else None
+            if display_rect:
+                display_area = display_rect.width * display_rect.height
+                lower_page_start = display_rect.y0 / max(page.rect.height, 1)
+                if display_area < 15000:
+                    continue
+                if lower_page_start > 0.75 and display_rect.height < (page.rect.height * 0.15):
+                    continue
+
             seen_xrefs.add(xref)
             ext = info.get("ext", "bin")
             assets.append(ParsedAsset(
@@ -142,6 +153,12 @@ def _extract_cytology_assets(pdf_path: str) -> List[ParsedAsset]:
                     "width": width,
                     "height": height,
                     "ext": ext,
+                    "bbox": [
+                        round(display_rect.x0, 2),
+                        round(display_rect.y0, 2),
+                        round(display_rect.x1, 2),
+                        round(display_rect.y1, 2),
+                    ] if display_rect else None,
                 },
             ))
 

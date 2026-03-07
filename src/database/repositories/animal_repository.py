@@ -232,22 +232,41 @@ class AnimalRepository:
         candidates = self._get_all_candidates()
 
         exact_matches: List[AnimalMatchCandidate] = []
+        exact_missing_owner_matches: List[AnimalMatchCandidate] = []
+        exact_conflicting_owner_matches: List[AnimalMatchCandidate] = []
         for candidate in candidates:
             if (
                 self._normalize_text(candidate.name) == target_name
                 and self._canonical_species(candidate.species) == target_species
             ):
                 if target_owner:
-                    if not self._owner_matches(candidate.owner_name, animal.owner_name):
+                    candidate_owner = self._normalize_text(candidate.owner_name)
+                    if self._owner_matches(candidate.owner_name, animal.owner_name):
+                        confidence = 0.98
+                        reason = "Exact name, species, and owner"
+                        exact_matches.append(self._candidate_from_animal(
+                            candidate, confidence, reason
+                        ))
                         continue
-                    confidence = 0.98
-                    reason = "Exact name, species, and owner"
+                    if not candidate_owner:
+                        exact_missing_owner_matches.append(self._candidate_from_animal(
+                            candidate,
+                            0.94,
+                            "Exact name and species; owner missing on existing record",
+                        ))
+                        continue
+                    exact_conflicting_owner_matches.append(self._candidate_from_animal(
+                        candidate,
+                        0.9,
+                        "Exact name and species but owner differs",
+                    ))
+                    continue
                 else:
                     confidence = 0.95
                     reason = "Exact name and species"
-                exact_matches.append(self._candidate_from_animal(
-                    candidate, confidence, reason
-                ))
+                    exact_matches.append(self._candidate_from_animal(
+                        candidate, confidence, reason
+                    ))
 
         if len(exact_matches) == 1:
             best = exact_matches[0]
@@ -265,6 +284,30 @@ class AnimalRepository:
                 confidence=exact_matches[0].confidence,
                 reason="multiple_exact_matches",
                 candidates=exact_matches[:5],
+            )
+
+        if (
+            not exact_matches
+            and len(exact_missing_owner_matches) == 1
+            and not exact_conflicting_owner_matches
+        ):
+            best = exact_missing_owner_matches[0]
+            return AnimalMatchDecision(
+                action="match_existing",
+                animal_id=best.animal_id,
+                confidence=best.confidence,
+                reason="exact_match_missing_owner_on_existing_record",
+                candidates=[best],
+            )
+
+        if exact_missing_owner_matches or exact_conflicting_owner_matches:
+            combined_exact = exact_matches + exact_missing_owner_matches + exact_conflicting_owner_matches
+            combined_exact.sort(key=lambda item: item.confidence, reverse=True)
+            return AnimalMatchDecision(
+                action="manual_review",
+                confidence=combined_exact[0].confidence,
+                reason="ambiguous_exact_match",
+                candidates=combined_exact[:5],
             )
 
         scored: List[AnimalMatchCandidate] = []
