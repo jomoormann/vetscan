@@ -57,9 +57,25 @@ class Database:
         """Create database schema if not exists."""
         if not self.conn:
             self.connect()
+
+        try:
+            self.conn.executescript(SCHEMA_SQL)
+            self.conn.commit()
+        except sqlite3.OperationalError as exc:
+            if "no such column" not in str(exc):
+                raise
+
+            # Older production databases may be missing columns referenced by
+            # new indexes in SCHEMA_SQL. Add legacy columns first, then retry.
+            logger.warning(f"Schema apply hit legacy-column issue, retrying migrations: {exc}")
+            self.conn.rollback()
+            self._run_migrations()
+            self.conn.executescript(SCHEMA_SQL)
+            self.conn.commit()
+
+        self._run_migrations()
         self.conn.executescript(SCHEMA_SQL)
         self.conn.commit()
-        self._run_migrations()
         logger.info(f"Database initialized: {self.db_path}")
 
     def _run_migrations(self):
