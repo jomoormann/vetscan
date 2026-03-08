@@ -30,7 +30,9 @@
     </div>
 </div>
 
+{% if pending_reports or recent_failures %}
 <div class="grid-2">
+    {% if pending_reports %}
     <section class="card">
         <div class="card-header">
             <div>
@@ -38,7 +40,6 @@
                 <h2 class="card-title">{{ t(lang, 'dashboard.assignment_queue') }}</h2>
             </div>
         </div>
-        {% if pending_reports %}
         <div class="list-stack">
             {% for item in pending_reports %}
             {% set report = item.report %}
@@ -62,11 +63,10 @@
             </div>
             {% endfor %}
         </div>
-        {% else %}
-        <div class="empty-state">{{ t(lang, 'dashboard.no_pending_reports') }}</div>
-        {% endif %}
     </section>
+    {% endif %}
 
+    {% if recent_failures %}
     <section class="card">
         <div class="card-header">
             <div>
@@ -74,7 +74,6 @@
                 <h2 class="card-title">{{ t(lang, 'dashboard.import_failures') }}</h2>
             </div>
         </div>
-        {% if recent_failures %}
         <div class="list-stack">
             {% for failure in recent_failures %}
             <div class="list-item">
@@ -87,11 +86,10 @@
             </div>
             {% endfor %}
         </div>
-        {% else %}
-        <div class="empty-state">{{ t(lang, 'dashboard.no_recent_failures') }}</div>
-        {% endif %}
     </section>
+    {% endif %}
 </div>
+{% endif %}
 
 <section class="card">
     <div class="card-header">
