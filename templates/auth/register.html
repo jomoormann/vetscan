@@ -8,19 +8,20 @@
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <style>
         :root {
-            --primary: #135E4B;
-            --primary-dark: #0d4436;
-            --primary-light: #A1D8B5;
-            --accent: #4CB572;
-            --accent-light: #d4ebe0;
-            --danger: #C4214A;
-            --gray-50: #f7faf8;
-            --gray-100: #f0f5f2;
-            --gray-200: #CCDCDB;
-            --gray-300: #b8ccc9;
-            --gray-500: #5f7a74;
-            --gray-700: #2d4a44;
-            --gray-900: #1a2f2a;
+            --primary: #FF8B5A;
+            --primary-dark: #FF5A5A;
+            --primary-light: #FFD45A;
+            --accent: #FFA95A;
+            --accent-light: #ffedd8;
+            --danger: #FF5A5A;
+            --gray-50: #fffaf5;
+            --gray-100: #fff1e4;
+            --gray-200: #ffd4be;
+            --gray-300: #ffb996;
+            --gray-400: #d7a18b;
+            --gray-500: #8a645b;
+            --gray-700: #6a4237;
+            --gray-900: #4a2a24;
         }
 
         * {
@@ -47,7 +48,7 @@
         .register-card {
             background: white;
             border-radius: 1rem;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1), 0 8px 25px rgba(0, 0, 0, 0.08);
+            box-shadow: 0 22px 60px rgba(160, 92, 58, 0.16), 0 8px 25px rgba(160, 92, 58, 0.08);
             padding: 2.5rem;
             text-align: center;
         }
@@ -95,7 +96,7 @@
         .form-group input:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(19, 94, 75, 0.15);
+            box-shadow: 0 0 0 3px rgba(255, 139, 90, 0.2);
         }
 
         .form-group input::placeholder {
@@ -125,7 +126,7 @@
         .btn-register:hover {
             background: var(--primary-dark);
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(19, 94, 75, 0.3);
+            box-shadow: 0 4px 12px rgba(255, 139, 90, 0.3);
         }
 
         .btn-register:active {
@@ -133,8 +134,8 @@
         }
 
         .error-message {
-            background: #fee2e2;
-            color: #991b1b;
+            background: #ffe1e1;
+            color: #b53333;
             padding: 0.75rem 1rem;
             border-radius: 0.5rem;
             margin-bottom: 1.25rem;
@@ -144,7 +145,7 @@
 
         .success-message {
             background: var(--accent-light);
-            color: #166534;
+            color: #9a5f1d;
             padding: 0.75rem 1rem;
             border-radius: 0.5rem;
             margin-bottom: 1.25rem;
