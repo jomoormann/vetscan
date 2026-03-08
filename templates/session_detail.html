@@ -194,7 +194,11 @@
                     <div class="table-meta" style="margin-bottom: 0.65rem;">
                         {{ asset.label or asset.asset_type }}{% if asset.page_number %} · {{ t(lang, 'session_detail.page').format(page=asset.page_number) }}{% endif %}
                     </div>
-                    <img src="/uploads/{{ asset.file_path.split('/uploads/', 1)[1] if '/uploads/' in asset.file_path else asset.file_path }}" alt="{{ asset.label or asset.asset_type }}" style="width: 100%; border-radius: 14px; border: 1px solid var(--line);">
+                    {% if asset.url %}
+                    <img src="{{ asset.url }}" alt="{{ asset.label or asset.asset_type }}" style="width: 100%; border-radius: 14px; border: 1px solid var(--line);">
+                    {% else %}
+                    <div class="empty-state" style="padding: 1rem;">{{ t(lang, 'session_detail.media_unavailable') }}</div>
+                    {% endif %}
                 </div>
                 {% endfor %}
             </div>

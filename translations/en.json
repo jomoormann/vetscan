@@ -390,7 +390,8 @@
         "source_reference": "Source reference",
         "context": "Context",
         "previous_report": "Previous report",
-        "open_previous": "Open previous"
+        "open_previous": "Open previous",
+        "media_unavailable": "Media unavailable"
     },
     "upload": {
         "title": "Upload PDF Report",

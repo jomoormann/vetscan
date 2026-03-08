@@ -1037,6 +1037,8 @@ def build_upload_url(file_path: Optional[str]) -> Optional[str]:
         return f"/uploads/{relative_path.as_posix()}"
     except Exception:
         normalized = file_path.replace("\\", "/")
+        if normalized.startswith("uploads/"):
+            return f"/{normalized}"
         if "/uploads/" in normalized:
             return f"/uploads/{normalized.split('/uploads/', 1)[1]}"
         return None
@@ -2992,6 +2994,8 @@ async def view_session(request: Request, session_id: int):
         urinalysis = service.db.get_urinalysis_for_session(session_id)
         pathology_findings = service.db.get_pathology_findings_for_session(session_id)
         session_assets = service.db.get_assets_for_session(session_id)
+        for asset in session_assets:
+            asset.url = build_upload_url(asset.file_path)
 
         # Get previous session for comparison
         all_sessions = service.db.get_sessions_for_animal(session.animal_id)

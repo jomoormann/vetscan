@@ -390,7 +390,8 @@
         "source_reference": "Referência de origem",
         "context": "Contexto",
         "previous_report": "Relatório anterior",
-        "open_previous": "Abrir anterior"
+        "open_previous": "Abrir anterior",
+        "media_unavailable": "Media indisponível"
     },
     "upload": {
         "title": "Carregar Relatório PDF",
