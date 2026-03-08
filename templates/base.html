@@ -183,6 +183,18 @@
             margin-bottom: 0.9rem;
         }
 
+        .sidebar-user-link {
+            display: block;
+            padding: 0.1rem;
+            border-radius: 14px;
+            transition: background 0.2s ease;
+        }
+
+        .sidebar-user-link:hover {
+            background: rgba(255, 255, 255, 0.06);
+            color: inherit;
+        }
+
         .sidebar-user-chip strong {
             font-size: 0.92rem;
             color: #fff;
@@ -1109,10 +1121,12 @@
 
                 <div class="sidebar-footer">
                     {% if current_user %}
-                    <div class="sidebar-user-chip">
-                        <strong>{{ current_user.display_name or current_user.email }}</strong>
-                        <span>{{ t(lang, 'app.practice_access') }}</span>
-                    </div>
+                    <a href="/profile" class="sidebar-user-link">
+                        <div class="sidebar-user-chip">
+                            <strong>{{ current_user.display_name or current_user.email }}</strong>
+                            <span>{{ t(lang, 'app.practice_access') }}</span>
+                        </div>
+                    </a>
                     {% endif %}
                     <div class="sidebar-footer-actions">
                         <div class="lang-switcher">

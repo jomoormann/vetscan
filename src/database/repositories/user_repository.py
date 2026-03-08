@@ -111,8 +111,11 @@ class UserRepository:
         Returns:
             True if update was successful
         """
-        allowed_fields = {'display_name', 'is_active', 'is_approved', 'is_superuser',
-                         'password_hash', 'last_login_at', 'approved_at', 'approved_by_user_id'}
+        allowed_fields = {
+            'email', 'email_normalized', 'display_name', 'is_active', 'is_approved',
+            'is_superuser', 'password_hash', 'last_login_at', 'approved_at',
+            'approved_by_user_id'
+        }
         update_fields = {k: v for k, v in kwargs.items() if k in allowed_fields}
         if not update_fields:
             return False

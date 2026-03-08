@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t(lang, 'profile.title') }} · {{ t(lang, 'app.title') }}{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <div>
+        <div class="eyebrow">{{ t(lang, 'profile.kicker') }}</div>
+        <h1>{{ t(lang, 'profile.title') }}</h1>
+        <p class="text-muted">{{ t(lang, 'profile.subtitle') }}</p>
+    </div>
+</section>
+
+<section class="grid-two" style="align-items: start;">
+    <article class="panel">
+        <div class="panel-header">
+            <div>
+                <div class="card-kicker">{{ t(lang, 'profile.account_details') }}</div>
+                <h2>{{ t(lang, 'profile.identity_title') }}</h2>
+            </div>
+        </div>
+
+        {% if profile_success %}
+        <div class="alert success" style="margin-bottom: 1rem;">{{ t(lang, 'profile.profile_saved') }}</div>
+        {% endif %}
+        {% if profile_error %}
+        <div class="alert danger" style="margin-bottom: 1rem;">{{ profile_error }}</div>
+        {% endif %}
+
+        <form method="post" action="/profile" class="filters">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token if csrf_token is defined else csrf_token_for_request(request) }}">
+
+            <div class="form-grid">
+                <div class="field">
+                    <label for="profile-display-name">{{ t(lang, 'profile.display_name') }}</label>
+                    <input
+                        id="profile-display-name"
+                        type="text"
+                        name="display_name"
+                        autocomplete="name"
+                        value="{{ form_values.display_name if form_values else (current_user.display_name or '') }}"
+                        required
+                    >
+                </div>
+                <div class="field">
+                    <label for="profile-email">{{ t(lang, 'profile.email') }}</label>
+                    <input
+                        id="profile-email"
+                        type="email"
+                        name="email"
+                        autocomplete="email"
+                        value="{{ form_values.email if form_values else current_user.email }}"
+                        required
+                    >
+                </div>
+            </div>
+
+            <div class="inline-actions">
+                <button type="submit" class="btn btn-primary">{{ t(lang, 'profile.save_changes') }}</button>
+            </div>
+        </form>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header">
+            <div>
+                <div class="card-kicker">{{ t(lang, 'profile.security') }}</div>
+                <h2>{{ t(lang, 'profile.password_title') }}</h2>
+            </div>
+        </div>
+
+        {% if password_success %}
+        <div class="alert success" style="margin-bottom: 1rem;">{{ t(lang, 'profile.password_saved') }}</div>
+        {% endif %}
+        {% if password_error %}
+        <div class="alert danger" style="margin-bottom: 1rem;">{{ password_error }}</div>
+        {% endif %}
+
+        <form method="post" action="/profile/password" class="filters">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token if csrf_token is defined else csrf_token_for_request(request) }}">
+
+            <div class="field">
+                <label for="current-password">{{ t(lang, 'profile.current_password') }}</label>
+                <input id="current-password" type="password" name="current_password" autocomplete="current-password" required>
+            </div>
+            <div class="field">
+                <label for="new-password">{{ t(lang, 'profile.new_password') }}</label>
+                <input id="new-password" type="password" name="new_password" autocomplete="new-password" required>
+                <p class="form-hint">{{ t(lang, 'profile.password_hint') }}</p>
+            </div>
+            <div class="field">
+                <label for="confirm-password">{{ t(lang, 'profile.confirm_password') }}</label>
+                <input id="confirm-password" type="password" name="confirm_password" autocomplete="new-password" required>
+            </div>
+
+            <div class="inline-actions">
+                <button type="submit" class="btn btn-primary">{{ t(lang, 'profile.update_password') }}</button>
+            </div>
+        </form>
+    </article>
+</section>
+{% endblock %}

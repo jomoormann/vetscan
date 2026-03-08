@@ -1284,6 +1284,33 @@ def render_login_template(request: Request, lang: str,
     return set_lang_cookie(response, lang)
 
 
+def render_profile_template(
+    request: Request,
+    lang: str,
+    current_user: User,
+    *,
+    profile_error: Optional[str] = None,
+    profile_success: bool = False,
+    password_error: Optional[str] = None,
+    password_success: bool = False,
+    form_values: Optional[Dict[str, str]] = None,
+    status_code: int = 200,
+) -> Response:
+    """Render the signed-in user profile page."""
+    response = render_template_with_csrf("profile.html", request, {
+        "request": request,
+        "lang": lang,
+        "current_user": current_user,
+        "profile_error": profile_error,
+        "profile_success": profile_success,
+        "password_error": password_error,
+        "password_success": password_success,
+        "form_values": form_values or {},
+        "csrf_token": csrf_token_for_request(request),
+    }, status_code=status_code)
+    return set_lang_cookie(response, lang)
+
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, lang: Optional[str] = None, error: Optional[str] = None):
     """Display login page"""
@@ -1453,6 +1480,141 @@ async def logout(request: Request, csrf_token: str = Form(None)):
     response = RedirectResponse(url="/login", status_code=302)
     clear_auth_cookie(response)
     response.delete_cookie(key=CSRF_COOKIE_NAME)
+    return response
+
+
+@app.get("/profile", response_class=HTMLResponse)
+async def profile_page(request: Request):
+    """Display profile settings for the signed-in user."""
+    lang = get_lang(request)
+    current_user = getattr(request.state, "user", None)
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=302)
+
+    return render_profile_template(
+        request,
+        lang,
+        current_user,
+        profile_success=request.query_params.get("saved") == "profile",
+        password_success=request.query_params.get("saved") == "password",
+    )
+
+
+@app.post("/profile")
+async def update_profile(
+    request: Request,
+    display_name: str = Form(...),
+    email: str = Form(...),
+    csrf_token: str = Form(None),
+):
+    """Update the signed-in user's display name and email."""
+    lang = get_lang(request)
+    current_user = getattr(request.state, "user", None)
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=302)
+
+    if not validate_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="Invalid request")
+
+    cleaned_name = (display_name or "").strip()
+    cleaned_email = (email or "").strip()
+    form_values = {"display_name": cleaned_name, "email": cleaned_email}
+
+    if not cleaned_name:
+        return render_profile_template(
+            request, lang, current_user,
+            profile_error=get_text(lang, "profile.error_name_required"),
+            form_values=form_values,
+            status_code=400,
+        )
+
+    is_valid_email, email_error = validate_email(cleaned_email)
+    if not is_valid_email:
+        return render_profile_template(
+            request, lang, current_user,
+            profile_error=email_error,
+            form_values=form_values,
+            status_code=400,
+        )
+
+    normalized_email = cleaned_email.lower()
+    service = get_service()
+    try:
+        existing_user = service.db.get_user_by_email(cleaned_email)
+        if existing_user and existing_user.id != current_user.id:
+            return render_profile_template(
+                request, lang, current_user,
+                profile_error=get_text(lang, "profile.error_email_exists"),
+                form_values=form_values,
+                status_code=400,
+            )
+
+        service.db.update_user(
+            current_user.id,
+            display_name=cleaned_name,
+            email=cleaned_email,
+            email_normalized=normalized_email,
+        )
+        updated_user = service.db.get_user(current_user.id)
+        request.state.user = updated_user
+    finally:
+        service.close()
+
+    return RedirectResponse(url="/profile?saved=profile", status_code=302)
+
+
+@app.post("/profile/password")
+async def update_profile_password(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    csrf_token: str = Form(None),
+):
+    """Update the signed-in user's password."""
+    lang = get_lang(request)
+    current_user = getattr(request.state, "user", None)
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=302)
+
+    if not validate_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="Invalid request")
+
+    if new_password != confirm_password:
+        return render_profile_template(
+            request, lang, current_user,
+            password_error=get_text(lang, "profile.error_password_mismatch"),
+            status_code=400,
+        )
+
+    if not verify_password(current_password, current_user.password_hash):
+        return render_profile_template(
+            request, lang, current_user,
+            password_error=get_text(lang, "profile.error_current_password"),
+            status_code=400,
+        )
+
+    is_valid_password, password_error = validate_password(new_password, min_length=12)
+    if not is_valid_password:
+        return render_profile_template(
+            request, lang, current_user,
+            password_error=password_error,
+            status_code=400,
+        )
+
+    service = get_service()
+    try:
+        service.db.update_user(
+            current_user.id,
+            password_hash=hash_password(new_password),
+        )
+        service.db.revoke_all_user_sessions(current_user.id)
+        new_token = create_auth_session(service, request, current_user.id)
+    finally:
+        service.close()
+
+    response = RedirectResponse(url="/profile?saved=password", status_code=302)
+    set_auth_cookie(response, request, new_token)
     return response
 
 
