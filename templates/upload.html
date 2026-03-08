@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 
-{% block title %}Upload - {{ t(lang, 'app.title') }}{% endblock %}
+{% block title %}{{ t(lang, 'upload.title') }} - {{ t(lang, 'app.title') }}{% endblock %}
 
 {% block content %}
 <div class="page-header">
     <div>
-        <div class="eyebrow">Manual intake</div>
-        <h1>Upload report</h1>
-        <p class="page-subtitle">Import a PDF manually. If the match is uncertain, the report will be routed to the review queue instead of being assigned incorrectly.</p>
+        <div class="eyebrow">{{ t(lang, 'upload.manual_intake') }}</div>
+        <h1>{{ t(lang, 'upload.page_title') }}</h1>
+        <p class="page-subtitle">{{ t(lang, 'upload.page_subtitle') }}</p>
     </div>
     <div class="inline-actions">
-        <a href="/reports" class="btn btn-secondary">Reports</a>
-        <a href="/unassigned-reports" class="btn btn-secondary">Review queue</a>
+        <a href="/reports" class="btn btn-secondary">{{ t(lang, 'nav.reports') }}</a>
+        <a href="/unassigned-reports" class="btn btn-secondary">{{ t(lang, 'dashboard.review_queue') }}</a>
     </div>
 </div>
 
@@ -19,25 +19,25 @@
     <section class="card">
         <div class="card-header">
             <div>
-                <div class="card-kicker">Drop zone</div>
-                <h2 class="card-title">Select a PDF</h2>
+                <div class="card-kicker">{{ t(lang, 'upload.drop_zone') }}</div>
+                <h2 class="card-title">{{ t(lang, 'upload.select_pdf') }}</h2>
             </div>
         </div>
 
         <div id="uploadArea" style="padding: 2.4rem 1.5rem; border: 2px dashed var(--line-strong); border-radius: 22px; background: var(--surface-muted); text-align: center; cursor: pointer;">
             <div style="font-size: 2.2rem; margin-bottom: 0.7rem;">PDF</div>
-            <h3 style="margin-bottom: 0.35rem;">Drag the file here or click to choose it</h3>
-            <p class="text-muted">Supported: DNAtech, analyzer, cytology, and immunocytochemistry reports.</p>
+            <h3 style="margin-bottom: 0.35rem;">{{ t(lang, 'upload.drag_or_click') }}</h3>
+            <p class="text-muted">{{ t(lang, 'upload.supported_types') }}</p>
             <input type="file" id="fileInput" accept=".pdf" style="display: none;">
         </div>
 
         <div id="uploadProgress" style="display: none; margin-top: 1rem;">
             <div class="list-item">
                 <div>
-                    <div class="table-title">Import in progress</div>
-                    <div class="table-meta">Validating the PDF, extracting data, and checking for a reliable animal match.</div>
+                    <div class="table-title">{{ t(lang, 'upload.import_in_progress') }}</div>
+                    <div class="table-meta">{{ t(lang, 'upload.import_in_progress_desc') }}</div>
                 </div>
-                <span class="badge badge-info">Working</span>
+                <span class="badge badge-info">{{ t(lang, 'upload.working') }}</span>
             </div>
         </div>
 
@@ -47,31 +47,31 @@
     <section class="card">
         <div class="card-header">
             <div>
-                <div class="card-kicker">How the importer behaves</div>
-                <h2 class="card-title">What to expect</h2>
+                <div class="card-kicker">{{ t(lang, 'upload.importer_behaviour') }}</div>
+                <h2 class="card-title">{{ t(lang, 'upload.what_to_expect') }}</h2>
             </div>
         </div>
         <div class="list-stack">
             <div class="list-item">
                 <div>
-                    <div class="table-title">Automatic match when safe</div>
-                    <div class="table-meta">The importer attaches the report to an existing animal only when the match is confident.</div>
+                    <div class="table-title">{{ t(lang, 'upload.automatic_match_when_safe') }}</div>
+                    <div class="table-meta">{{ t(lang, 'upload.automatic_match_when_safe_desc') }}</div>
                 </div>
-                <span class="badge badge-normal">Automatic</span>
+                <span class="badge badge-normal">{{ t(lang, 'upload.automatic') }}</span>
             </div>
             <div class="list-item">
                 <div>
-                    <div class="table-title">Manual review when uncertain</div>
-                    <div class="table-meta">Ambiguous reports go to the unassigned queue with candidate matches and source details.</div>
+                    <div class="table-title">{{ t(lang, 'upload.manual_review_when_uncertain') }}</div>
+                    <div class="table-meta">{{ t(lang, 'upload.manual_review_when_uncertain_desc') }}</div>
                 </div>
-                <span class="badge badge-low">Manual review</span>
+                <span class="badge badge-low">{{ t(lang, 'upload.manual_review') }}</span>
             </div>
             <div class="list-item">
                 <div>
-                    <div class="table-title">Source traceability</div>
-                    <div class="table-meta">Each imported report keeps its source reference and, for cytology, extracted diagnostic images.</div>
+                    <div class="table-title">{{ t(lang, 'upload.source_traceability') }}</div>
+                    <div class="table-meta">{{ t(lang, 'upload.source_traceability_desc') }}</div>
                 </div>
-                <span class="badge badge-info">Stored</span>
+                <span class="badge badge-info">{{ t(lang, 'upload.stored') }}</span>
             </div>
         </div>
     </section>
@@ -81,17 +81,17 @@
 {% block scripts %}
 <script>
     const translations = {
-        queued: 'Queued for manual assignment',
-        success: 'Report imported',
-        animalLabel: 'Animal',
-        reportLabel: 'Report',
-        dateLabel: 'Date',
-        reviewQueue: 'Open review queue',
-        openReport: 'Open report',
-        openAnimal: 'Open animal',
-        newUpload: 'Upload another',
-        communicationError: 'Could not complete the upload.',
-        onlyPdf: 'Only PDF files are supported.'
+        queued: {{ t(lang, 'upload.queued')|tojson }},
+        success: {{ t(lang, 'upload.success')|tojson }},
+        animalLabel: {{ t(lang, 'upload.animal_label')|tojson }},
+        reportLabel: {{ t(lang, 'upload.report_label')|tojson }},
+        dateLabel: {{ t(lang, 'upload.date_label')|tojson }},
+        reviewQueue: {{ t(lang, 'upload.open_review_queue')|tojson }},
+        openReport: {{ t(lang, 'upload.open_report')|tojson }},
+        openAnimal: {{ t(lang, 'upload.open_animal')|tojson }},
+        newUpload: {{ t(lang, 'upload.new_upload')|tojson }},
+        communicationError: {{ t(lang, 'upload.communication_error')|tojson }},
+        onlyPdf: {{ t(lang, 'upload.only_pdf')|tojson }}
     };
 
     const uploadArea = document.getElementById('uploadArea');

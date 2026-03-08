@@ -81,6 +81,7 @@ class SessionRepository:
                                report_type: Optional[str] = None,
                                responsible_vet: Optional[str] = None,
                                animal_id: Optional[int] = None,
+                               sort: str = "date_desc",
                                page: int = 1,
                                page_size: int = 25) -> Tuple[List[Dict], int]:
         """List imported reports with joined animal metadata."""
@@ -127,6 +128,19 @@ class SessionRepository:
         """, tuple(params)).fetchone()
         total = count_row["total"] if count_row else 0
 
+        order_clause = {
+            "date_desc": "COALESCE(ts.test_date, DATE(ts.created_at)) DESC, ts.id DESC",
+            "date_asc": "COALESCE(ts.test_date, DATE(ts.created_at)) ASC, ts.id ASC",
+            "report_asc": "COALESCE(ts.report_number, ts.external_report_id, '') COLLATE NOCASE ASC, ts.id ASC",
+            "report_desc": "COALESCE(ts.report_number, ts.external_report_id, '') COLLATE NOCASE DESC, ts.id DESC",
+            "animal_asc": "a.name COLLATE NOCASE ASC, COALESCE(ts.test_date, DATE(ts.created_at)) DESC",
+            "animal_desc": "a.name COLLATE NOCASE DESC, COALESCE(ts.test_date, DATE(ts.created_at)) DESC",
+            "vet_asc": "COALESCE(a.responsible_vet, '') COLLATE NOCASE ASC, a.name COLLATE NOCASE ASC",
+            "vet_desc": "COALESCE(a.responsible_vet, '') COLLATE NOCASE DESC, a.name COLLATE NOCASE ASC",
+            "source_asc": "COALESCE(ts.source_system, '') COLLATE NOCASE ASC, COALESCE(ts.clinic_name, ts.lab_name, '') COLLATE NOCASE ASC",
+            "source_desc": "COALESCE(ts.source_system, '') COLLATE NOCASE DESC, COALESCE(ts.clinic_name, ts.lab_name, '') COLLATE NOCASE DESC",
+        }.get(sort, "COALESCE(ts.test_date, DATE(ts.created_at)) DESC, ts.id DESC")
+
         offset = max(page - 1, 0) * page_size
         rows = self.db.conn.execute(f"""
             SELECT
@@ -158,7 +172,7 @@ class SessionRepository:
             FROM test_sessions ts
             JOIN animals a ON a.id = ts.animal_id
             {where_clause}
-            ORDER BY COALESCE(ts.test_date, DATE(ts.created_at)) DESC, ts.id DESC
+            ORDER BY {order_clause}
             LIMIT ? OFFSET ?
         """, tuple(params + [page_size, offset])).fetchall()
         return [dict(row) for row in rows], total

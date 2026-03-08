@@ -492,9 +492,16 @@ class AnimalRepository:
         total = count_row["total"] if count_row else 0
 
         order_clause = {
-            "name_asc": "a.name COLLATE NOCASE ASC",
-            "name_desc": "a.name COLLATE NOCASE DESC",
+            "name_asc": "a.name COLLATE NOCASE ASC, a.id ASC",
+            "name_desc": "a.name COLLATE NOCASE DESC, a.id DESC",
+            "owner_asc": "COALESCE(a.owner_name, '') COLLATE NOCASE ASC, a.name COLLATE NOCASE ASC",
+            "owner_desc": "COALESCE(a.owner_name, '') COLLATE NOCASE DESC, a.name COLLATE NOCASE ASC",
+            "vet_asc": "COALESCE(a.responsible_vet, '') COLLATE NOCASE ASC, a.name COLLATE NOCASE ASC",
+            "vet_desc": "COALESCE(a.responsible_vet, '') COLLATE NOCASE DESC, a.name COLLATE NOCASE ASC",
+            "last_report_desc": "COALESCE(latest_report_at, '') DESC, a.name COLLATE NOCASE ASC",
+            "last_report_asc": "COALESCE(latest_report_at, '') ASC, a.name COLLATE NOCASE ASC",
             "reports_desc": "test_count DESC, latest_report_at DESC, a.name COLLATE NOCASE ASC",
+            "reports_asc": "test_count ASC, latest_report_at DESC, a.name COLLATE NOCASE ASC",
             "updated_desc": "COALESCE(latest_report_at, latest_note_at, a.updated_at, a.created_at) DESC, a.name COLLATE NOCASE ASC",
         }.get(sort, "COALESCE(latest_report_at, latest_note_at, a.updated_at, a.created_at) DESC, a.name COLLATE NOCASE ASC")
 
@@ -526,12 +533,25 @@ class AnimalRepository:
             })
         return items, total
 
-    def search_animals(self, search: str, limit: int = 8) -> List[Dict]:
+    def search_animals(self, search: str, limit: int = 8,
+                       exclude_id: Optional[int] = None) -> List[Dict]:
         """Search animals for global search and typeahead."""
         if not search or not search.strip():
             return []
 
         wildcard = f"%{search.strip()}%"
+        filters = [
+            "a.name LIKE ?",
+            "a.owner_name LIKE ?",
+            "a.microchip LIKE ?",
+            "a.responsible_vet LIKE ?",
+            "a.breed LIKE ?",
+        ]
+        params: List[object] = [wildcard, wildcard, wildcard, wildcard, wildcard]
+        exclusion_clause = ""
+        if exclude_id is not None:
+            exclusion_clause = "AND a.id != ?"
+            params.append(exclude_id)
         rows = self.db.conn.execute("""
             SELECT
                 a.*,
@@ -539,18 +559,17 @@ class AnimalRepository:
                 MAX(COALESCE(ts.test_date, DATE(ts.created_at))) AS latest_report_at
             FROM animals a
             LEFT JOIN test_sessions ts ON ts.animal_id = a.id
-            WHERE a.name LIKE ?
-               OR a.owner_name LIKE ?
-               OR a.microchip LIKE ?
-               OR a.responsible_vet LIKE ?
-               OR a.breed LIKE ?
+            WHERE (
+                """ + " OR ".join(filters) + """
+            )
+            """ + exclusion_clause + """
             GROUP BY a.id
             ORDER BY
                 CASE WHEN a.name LIKE ? THEN 0 ELSE 1 END,
                 latest_report_at DESC,
                 a.name COLLATE NOCASE ASC
             LIMIT ?
-        """, (wildcard, wildcard, wildcard, wildcard, wildcard, wildcard, limit)).fetchall()
+        """, tuple(params + [wildcard, limit])).fetchall()
 
         return [dict(row) for row in rows]
 
@@ -645,6 +664,113 @@ class AnimalRepository:
         """
         cursor = self.db.conn.execute(
             "DELETE FROM animals WHERE id = ?", (animal_id,))
+        self.db.conn.commit()
+        return cursor.rowcount > 0
+
+    def merge_into(self, source_animal_id: int, target_animal_id: int) -> bool:
+        """Merge a duplicate animal into an existing animal record."""
+        if source_animal_id == target_animal_id:
+            return False
+
+        source = self.get(source_animal_id)
+        target = self.get(target_animal_id)
+        if not source or not target:
+            return False
+
+        def merge_text(primary: Optional[str], secondary: Optional[str]) -> Optional[str]:
+            primary_clean = (primary or "").strip()
+            secondary_clean = (secondary or "").strip()
+            if not primary_clean:
+                return secondary_clean or None
+            if not secondary_clean or secondary_clean == primary_clean:
+                return primary_clean
+            if secondary_clean in primary_clean:
+                return primary_clean
+            return f"{primary_clean}\n\nMerged from {source.name}:\n{secondary_clean}"
+
+        update_fields: Dict[str, object] = {}
+        if not target.owner_name and source.owner_name:
+            update_fields["owner_name"] = source.owner_name
+        if not target.breed and source.breed:
+            update_fields["breed"] = source.breed
+        if not target.species and source.species:
+            update_fields["species"] = source.species
+        if not target.microchip and source.microchip:
+            update_fields["microchip"] = source.microchip
+        if target.age_years is None and source.age_years is not None:
+            update_fields["age_years"] = source.age_years
+        if target.age_months is None and source.age_months is not None:
+            update_fields["age_months"] = source.age_months
+        if (target.sex or "U") == "U" and source.sex and source.sex != "U":
+            update_fields["sex"] = source.sex
+        if target.weight_kg is None and source.weight_kg is not None:
+            update_fields["weight_kg"] = source.weight_kg
+        if not target.responsible_vet and source.responsible_vet:
+            update_fields["responsible_vet"] = source.responsible_vet
+
+        merged_medical_history = merge_text(target.medical_history, source.medical_history)
+        if merged_medical_history != target.medical_history:
+            update_fields["medical_history"] = merged_medical_history
+
+        merged_notes = merge_text(target.notes, source.notes)
+        if merged_notes != target.notes:
+            update_fields["notes"] = merged_notes
+
+        if update_fields:
+            assignments = ", ".join(f"{field} = ?" for field in update_fields)
+            self.db.conn.execute(
+                f"UPDATE animals SET {assignments}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                tuple(update_fields.values()) + (target_animal_id,)
+            )
+
+        if source.microchip and target.microchip and source.microchip != target.microchip:
+            self.db.conn.execute("""
+                INSERT OR IGNORE INTO animal_identifiers (
+                    animal_id, source_system, identifier_type, identifier_value
+                ) VALUES (?, ?, ?, ?)
+            """, (target_animal_id, "merge", "microchip", source.microchip))
+
+        self.db.conn.execute("""
+            INSERT OR IGNORE INTO animal_identifiers (
+                animal_id, source_system, identifier_type, identifier_value, created_at
+            )
+            SELECT ?, source_system, identifier_type, identifier_value, created_at
+            FROM animal_identifiers
+            WHERE animal_id = ?
+        """, (target_animal_id, source_animal_id))
+        self.db.conn.execute(
+            "DELETE FROM animal_identifiers WHERE animal_id = ?",
+            (source_animal_id,),
+        )
+
+        for table in (
+            "test_sessions",
+            "symptoms",
+            "observations",
+            "clinical_notes",
+            "animal_vet_assignments",
+            "diagnosis_reports",
+        ):
+            self.db.conn.execute(
+                f"UPDATE {table} SET animal_id = ? WHERE animal_id = ?",
+                (target_animal_id, source_animal_id),
+            )
+
+        self.db.conn.execute("""
+            UPDATE unassigned_reports
+            SET assigned_animal_id = ?
+            WHERE assigned_animal_id = ?
+        """, (target_animal_id, source_animal_id))
+        self.db.conn.execute("""
+            UPDATE email_import_log
+            SET animal_id = ?
+            WHERE animal_id = ?
+        """, (target_animal_id, source_animal_id))
+
+        cursor = self.db.conn.execute(
+            "DELETE FROM animals WHERE id = ?",
+            (source_animal_id,),
+        )
         self.db.conn.commit()
         return cursor.rowcount > 0
 

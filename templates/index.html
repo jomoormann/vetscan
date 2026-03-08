@@ -1,37 +1,37 @@
 {% extends "base.html" %}
 
-{% block title %}Inbox - {{ t(lang, 'app.title') }}{% endblock %}
+{% block title %}{{ t(lang, 'dashboard.inbox_title') }} - {{ t(lang, 'app.title') }}{% endblock %}
 
 {% block content %}
 <div class="page-header">
     <div>
-        <div class="eyebrow">Practice-wide view</div>
-        <h1>Inbox</h1>
-        <p class="page-subtitle">Start with what needs action, then move into patients and reports.</p>
+        <div class="eyebrow">{{ t(lang, 'dashboard.practice_view') }}</div>
+        <h1>{{ t(lang, 'dashboard.inbox_title') }}</h1>
+        <p class="page-subtitle">{{ t(lang, 'dashboard.inbox_subtitle') }}</p>
     </div>
     <div class="inline-actions">
-        <a href="/upload" class="btn btn-primary">Upload report</a>
-        <a href="/animals/new" class="btn btn-secondary">New animal</a>
-        <a href="/unassigned-reports" class="btn btn-secondary">Review queue</a>
+        <a href="/upload" class="btn btn-primary">{{ t(lang, 'dashboard.upload_report') }}</a>
+        <a href="/animals/new" class="btn btn-secondary">{{ t(lang, 'dashboard.new_animal') }}</a>
+        <a href="/unassigned-reports" class="btn btn-secondary">{{ t(lang, 'dashboard.review_queue') }}</a>
     </div>
 </div>
 
 <div class="stats-grid" style="margin-bottom: 1.25rem;">
     <div class="kpi-card">
         <div class="kpi-value">{{ stats.total_animals or 0 }}</div>
-        <div class="kpi-label">Registered animals</div>
+        <div class="kpi-label">{{ t(lang, 'dashboard.registered_animals') }}</div>
     </div>
     <div class="kpi-card">
         <div class="kpi-value">{{ stats.total_reports or 0 }}</div>
-        <div class="kpi-label">Imported reports</div>
+        <div class="kpi-label">{{ t(lang, 'dashboard.imported_reports') }}</div>
     </div>
     <div class="kpi-card">
         <div class="kpi-value" style="color: var(--warning);">{{ stats.pending_reports or 0 }}</div>
-        <div class="kpi-label">Reports waiting for assignment</div>
+        <div class="kpi-label">{{ t(lang, 'dashboard.pending_reports') }}</div>
     </div>
     <div class="kpi-card">
         <div class="kpi-value" style="color: var(--danger);">{{ stats.failed_imports or 0 }}</div>
-        <div class="kpi-label">Import failures to review</div>
+        <div class="kpi-label">{{ t(lang, 'dashboard.failed_imports') }}</div>
     </div>
 </div>
 
@@ -39,10 +39,10 @@
     <section class="card">
         <div class="card-header">
             <div>
-                <div class="card-kicker">Needs attention</div>
-                <h2 class="card-title">Assignment queue</h2>
+                <div class="card-kicker">{{ t(lang, 'dashboard.needs_attention') }}</div>
+                <h2 class="card-title">{{ t(lang, 'dashboard.assignment_queue') }}</h2>
             </div>
-            <a href="/unassigned-reports" class="btn btn-secondary">Open queue</a>
+            <a href="/unassigned-reports" class="btn btn-secondary">{{ t(lang, 'dashboard.open_queue') }}</a>
         </div>
         {% if pending_reports %}
         <div class="list-stack">
@@ -51,51 +51,52 @@
             {% set summary = item.summary %}
             <div class="list-item">
                 <div>
-                    <div class="table-title">{{ summary.animal_name or report.animal_name or 'Unknown patient' }}</div>
+                    <div class="table-title">{{ summary.animal_name or report.animal_name or t(lang, 'common.unknown_patient') }}</div>
                     <div class="table-meta">
-                        {{ report.report_number or report.external_report_id or report.filename }}
-                        {% if report.report_type %} · {{ report.report_type|replace('_', ' ')|title }}{% endif %}
+                        {% set pending_label = report.report_number or report.external_report_id or report.filename %}
+                        <span class="text-truncate" style="max-width: 18rem;" title="{{ pending_label }}">{{ pending_label|truncate(38, False, '...') }}</span>
+                        {% if item.report_type_label %} · {{ item.report_type_label }}{% endif %}
                     </div>
                     <div class="table-meta">
                         {{ summary.owner_name or report.owner_name or '--' }}
                         {% if summary.clinic_name or report.clinic_name %} · {{ summary.clinic_name or report.clinic_name }}{% endif %}
                     </div>
                 </div>
-                <div class="inline-actions">
-                    <span class="badge badge-low">Needs assignment</span>
-                    <a href="/unassigned-reports" class="btn btn-secondary">Review</a>
+                    <div class="inline-actions">
+                    <span class="badge badge-low">{{ t(lang, 'dashboard.needs_assignment') }}</span>
+                    <a href="/unassigned-reports" class="btn btn-secondary">{{ t(lang, 'common.review') }}</a>
                 </div>
             </div>
             {% endfor %}
         </div>
         {% else %}
-        <div class="empty-state">No reports are waiting for manual assignment.</div>
+        <div class="empty-state">{{ t(lang, 'dashboard.no_pending_reports') }}</div>
         {% endif %}
     </section>
 
     <section class="card">
         <div class="card-header">
             <div>
-                <div class="card-kicker">Needs attention</div>
-                <h2 class="card-title">Import failures</h2>
+                <div class="card-kicker">{{ t(lang, 'dashboard.needs_attention') }}</div>
+                <h2 class="card-title">{{ t(lang, 'dashboard.import_failures') }}</h2>
             </div>
-            <a href="/imports" class="btn btn-secondary">View imports</a>
+            <a href="/imports" class="btn btn-secondary">{{ t(lang, 'dashboard.view_imports') }}</a>
         </div>
         {% if recent_failures %}
         <div class="list-stack">
             {% for failure in recent_failures %}
             <div class="list-item">
                 <div>
-                    <div class="table-title">{{ failure.attachment_name or 'Unknown attachment' }}</div>
+                    <div class="table-title">{{ failure.attachment_name or t(lang, 'common.unknown_attachment') }}</div>
                     <div class="table-meta">{{ failure.email_from or '--' }}</div>
-                    <div class="table-meta">{{ failure.error_message or 'Import failed' }}</div>
+                    <div class="table-meta">{{ failure.error_message or t(lang, 'dashboard.import_failed_message') }}</div>
                 </div>
-                <span class="badge badge-high">Failed</span>
+                <span class="badge badge-high">{{ t(lang, 'common.failed') }}</span>
             </div>
             {% endfor %}
         </div>
         {% else %}
-        <div class="empty-state">No recent failed imports.</div>
+        <div class="empty-state">{{ t(lang, 'dashboard.no_recent_failures') }}</div>
         {% endif %}
     </section>
 </div>
@@ -104,10 +105,10 @@
     <section class="card">
         <div class="card-header">
             <div>
-                <div class="card-kicker">Recent activity</div>
-                <h2 class="card-title">Reports</h2>
+                <div class="card-kicker">{{ t(lang, 'dashboard.recent_activity') }}</div>
+                <h2 class="card-title">{{ t(lang, 'nav.reports') }}</h2>
             </div>
-            <a href="/reports" class="btn btn-secondary">All reports</a>
+            <a href="/reports" class="btn btn-secondary">{{ t(lang, 'dashboard.all_reports') }}</a>
         </div>
         {% if recent_reports %}
         <div class="table-shell">
@@ -115,11 +116,11 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>Date</th>
-                            <th>Report</th>
-                            <th>Animal</th>
-                            <th class="desktop-hide">Summary</th>
-                            <th>Action</th>
+                            <th>{{ t(lang, 'common.date') }}</th>
+                            <th>{{ t(lang, 'common.report') }}</th>
+                            <th>{{ t(lang, 'common.animal') }}</th>
+                            <th class="desktop-hide">{{ t(lang, 'common.summary') }}</th>
+                            <th>{{ t(lang, 'common.actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -127,7 +128,8 @@
                         <tr>
                             <td>{{ report.test_date|format_date if report.test_date else '--' }}</td>
                             <td>
-                                <div class="table-title">{{ report.report_number or report.external_report_id or ('Report ' ~ report.id) }}</div>
+                                {% set recent_label = report.report_number or report.external_report_id or ('Report ' ~ report.id) %}
+                                <div class="table-title text-truncate" title="{{ recent_label }}">{{ recent_label|truncate(42, False, '...') }}</div>
                                 <div class="table-meta">{{ report.display_type }} · {{ report.source_system or '--' }}</div>
                             </td>
                             <td>
@@ -135,7 +137,7 @@
                                 <div class="table-meta">{{ report.owner_name or '--' }}{% if report.responsible_vet %} · {{ report.responsible_vet }}{% endif %}</div>
                             </td>
                             <td class="desktop-hide">{{ report.summary }}</td>
-                            <td><a href="/session/{{ report.id }}" class="btn btn-secondary">Open</a></td>
+                            <td><a href="/session/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -143,17 +145,17 @@
             </div>
         </div>
         {% else %}
-        <div class="empty-state">No reports have been imported yet.</div>
+        <div class="empty-state">{{ t(lang, 'dashboard.no_reports') }}</div>
         {% endif %}
     </section>
 
     <section class="card">
         <div class="card-header">
             <div>
-                <div class="card-kicker">Recent activity</div>
-                <h2 class="card-title">Animals</h2>
+                <div class="card-kicker">{{ t(lang, 'dashboard.recent_activity') }}</div>
+                <h2 class="card-title">{{ t(lang, 'nav.animals') }}</h2>
             </div>
-            <a href="/animals" class="btn btn-secondary">All animals</a>
+            <a href="/animals" class="btn btn-secondary">{{ t(lang, 'dashboard.all_animals') }}</a>
         </div>
         {% if recent_animals %}
         <div class="table-shell">
@@ -161,10 +163,10 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>Animal</th>
-                            <th>Owner</th>
-                            <th>Responsible vet</th>
-                            <th>Reports</th>
+                            <th>{{ t(lang, 'common.animal') }}</th>
+                            <th>{{ t(lang, 'common.pet_owner') }}</th>
+                            <th>{{ t(lang, 'animal.responsible_vet') }}</th>
+                            <th>{{ t(lang, 'nav.reports') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -189,7 +191,7 @@
             </div>
         </div>
         {% else %}
-        <div class="empty-state">No animals are registered yet.</div>
+        <div class="empty-state">{{ t(lang, 'dashboard.no_animals') }}</div>
         {% endif %}
     </section>
 </div>
@@ -197,8 +199,8 @@
 <section class="card">
     <div class="card-header">
         <div>
-            <div class="card-kicker">Continuity</div>
-            <h2 class="card-title">Recent vet changes</h2>
+            <div class="card-kicker">{{ t(lang, 'dashboard.continuity') }}</div>
+            <h2 class="card-title">{{ t(lang, 'dashboard.recent_vet_changes') }}</h2>
         </div>
     </div>
     {% if recent_handovers %}
@@ -207,23 +209,23 @@
         <div class="list-item">
             <div>
                 <div class="table-title"><a href="/animal/{{ item.animal_id }}">{{ item.animal_name }}</a></div>
-                <div class="table-meta">Assigned to {{ item.vet_name }}</div>
+                <div class="table-meta">{{ t(lang, 'dashboard.assigned_to').format(vet=item.vet_name) }}</div>
                 <div class="table-meta">
                     {{ item.start_date|format_date if item.start_date else '--' }}
-                    {% if item.changed_by_name %} · changed by {{ item.changed_by_name }}{% endif %}
+                    {% if item.changed_by_name %} · {{ t(lang, 'dashboard.changed_by').format(user=item.changed_by_name) }}{% endif %}
                     {% if item.change_reason %} · {{ item.change_reason }}{% endif %}
                 </div>
             </div>
             {% if not item.end_date %}
-            <span class="badge badge-info">Current</span>
+            <span class="badge badge-info">{{ t(lang, 'common.current') }}</span>
             {% else %}
-            <span class="badge badge-normal">Previous</span>
+            <span class="badge badge-normal">{{ t(lang, 'common.previous') }}</span>
             {% endif %}
         </div>
         {% endfor %}
     </div>
     {% else %}
-    <div class="empty-state">No vet handovers have been recorded yet.</div>
+    <div class="empty-state">{{ t(lang, 'dashboard.no_vet_handovers') }}</div>
     {% endif %}
 </section>
 {% endblock %}

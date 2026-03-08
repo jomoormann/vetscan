@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 
-{% block title %}New animal - {{ t(lang, 'app.title') }}{% endblock %}
+{% block title %}{{ t(lang, 'animal_form.title') }} - {{ t(lang, 'app.title') }}{% endblock %}
 
 {% block content %}
 <div class="page-header">
     <div>
-        <div class="eyebrow">Manual patient entry</div>
-        <h1>New animal</h1>
-        <p class="page-subtitle">Create a patient record before reports arrive, or when a report cannot create the record automatically.</p>
+        <div class="eyebrow">{{ t(lang, 'animal_form.entry') }}</div>
+        <h1>{{ t(lang, 'animal_form.title') }}</h1>
+        <p class="page-subtitle">{{ t(lang, 'animal_form.subtitle') }}</p>
     </div>
     <div class="inline-actions">
-        <a href="/animals" class="btn btn-secondary">Back to animals</a>
+        <a href="/animals" class="btn btn-secondary">{{ t(lang, 'animal_form.back_to_animals') }}</a>
     </div>
 </div>
 
@@ -24,71 +24,71 @@
 
         <div class="grid-2">
             <div class="field">
-                <label for="animal-name">Animal name</label>
+                <label for="animal-name">{{ t(lang, 'animal_form.animal_name') }}</label>
                 <input id="animal-name" name="name" required value="{{ form_values.name or '' }}">
             </div>
             <div class="field">
-                <label for="animal-owner">Pet owner</label>
+                <label for="animal-owner">{{ t(lang, 'common.pet_owner') }}</label>
                 <input id="animal-owner" name="owner_name" value="{{ form_values.owner_name or '' }}">
             </div>
             <div class="field">
-                <label for="animal-species">Species</label>
+                <label for="animal-species">{{ t(lang, 'common.species') }}</label>
                 <select id="animal-species" name="species" required>
                     {% set current_species = form_values.species or 'Canídeo' %}
-                    <option value="Canídeo" {% if current_species == 'Canídeo' %}selected{% endif %}>Canídeo</option>
-                    <option value="Felídeo" {% if current_species == 'Felídeo' %}selected{% endif %}>Felídeo</option>
-                    <option value="Equídeo" {% if current_species == 'Equídeo' %}selected{% endif %}>Equídeo</option>
-                    <option value="Exotic" {% if current_species == 'Exotic' %}selected{% endif %}>Exotic</option>
+                    <option value="Canídeo" {% if current_species == 'Canídeo' %}selected{% endif %}>{{ t(lang, 'animal_form.species_options.canideo') }}</option>
+                    <option value="Felídeo" {% if current_species == 'Felídeo' %}selected{% endif %}>{{ t(lang, 'animal_form.species_options.felideo') }}</option>
+                    <option value="Equídeo" {% if current_species == 'Equídeo' %}selected{% endif %}>{{ t(lang, 'animal_form.species_options.equideo') }}</option>
+                    <option value="Exotic" {% if current_species == 'Exotic' %}selected{% endif %}>{{ t(lang, 'animal_form.species_options.exotic') }}</option>
                 </select>
             </div>
             <div class="field">
-                <label for="animal-breed">Breed</label>
+                <label for="animal-breed">{{ t(lang, 'common.breed') }}</label>
                 <input id="animal-breed" name="breed" value="{{ form_values.breed or '' }}">
             </div>
             <div class="field">
-                <label for="animal-vet">Responsible vet</label>
-                <input id="animal-vet" name="responsible_vet" value="{{ form_values.responsible_vet or '' }}" placeholder="Current case owner">
+                <label for="animal-vet">{{ t(lang, 'animal.responsible_vet') }}</label>
+                <input id="animal-vet" name="responsible_vet" value="{{ form_values.responsible_vet or '' }}" placeholder="{{ t(lang, 'animal_form.vet_placeholder') }}">
             </div>
             <div class="field">
-                <label for="animal-microchip">Microchip</label>
+                <label for="animal-microchip">{{ t(lang, 'animal_detail.microchip') }}</label>
                 <input id="animal-microchip" name="microchip" value="{{ form_values.microchip or '' }}">
             </div>
             <div class="field">
-                <label for="animal-age-years">Age (years)</label>
+                <label for="animal-age-years">{{ t(lang, 'animal_form.age_years') }}</label>
                 <input id="animal-age-years" name="age_years" type="number" step="0.1" min="0" value="{{ form_values.age_years or '' }}">
             </div>
             <div class="field">
-                <label for="animal-age-months">Age (months)</label>
+                <label for="animal-age-months">{{ t(lang, 'animal_form.age_months') }}</label>
                 <input id="animal-age-months" name="age_months" type="number" min="0" max="11" value="{{ form_values.age_months or '' }}">
             </div>
             <div class="field">
-                <label for="animal-sex">Sex</label>
+                <label for="animal-sex">{{ t(lang, 'common.sex') }}</label>
                 {% set current_sex = form_values.sex or 'U' %}
                 <select id="animal-sex" name="sex">
-                    <option value="U" {% if current_sex == 'U' %}selected{% endif %}>Unknown</option>
-                    <option value="M" {% if current_sex == 'M' %}selected{% endif %}>Male</option>
-                    <option value="F" {% if current_sex == 'F' %}selected{% endif %}>Female</option>
+                    <option value="U" {% if current_sex == 'U' %}selected{% endif %}>{{ t(lang, 'common.unknown') }}</option>
+                    <option value="M" {% if current_sex == 'M' %}selected{% endif %}>{{ t(lang, 'common.male') }}</option>
+                    <option value="F" {% if current_sex == 'F' %}selected{% endif %}>{{ t(lang, 'common.female') }}</option>
                 </select>
             </div>
             <div class="field">
-                <label for="animal-weight">Weight (kg)</label>
+                <label for="animal-weight">{{ t(lang, 'animal_form.weight') }}</label>
                 <input id="animal-weight" name="weight_kg" type="number" step="0.1" min="0" value="{{ form_values.weight_kg or '' }}">
             </div>
         </div>
 
         <div class="field">
-            <label for="animal-history">Medical history</label>
+            <label for="animal-history">{{ t(lang, 'animal_form.medical_history') }}</label>
             <textarea id="animal-history" name="medical_history">{{ form_values.medical_history or '' }}</textarea>
         </div>
 
         <div class="field">
-            <label for="animal-notes">General notes</label>
+            <label for="animal-notes">{{ t(lang, 'animal_form.general_notes') }}</label>
             <textarea id="animal-notes" name="notes">{{ form_values.notes or '' }}</textarea>
         </div>
 
         <div class="filters-actions">
-            <button type="submit" class="btn btn-primary">Create animal</button>
-            <a href="/animals" class="btn btn-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary">{{ t(lang, 'animal_form.create_animal') }}</button>
+            <a href="/animals" class="btn btn-secondary">{{ t(lang, 'common.cancel') }}</a>
         </div>
     </form>
 </section>

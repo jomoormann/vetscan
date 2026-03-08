@@ -128,9 +128,10 @@ class Database(BaseDatabase):
             page_size=page_size,
         )
 
-    def search_animals(self, search: str, limit: int = 8) -> List[Dict]:
+    def search_animals(self, search: str, limit: int = 8,
+                       exclude_id: Optional[int] = None) -> List[Dict]:
         """Search animals for global search and typeahead."""
-        return self._animal_repo.search_animals(search, limit)
+        return self._animal_repo.search_animals(search, limit, exclude_id)
 
     def list_responsible_vets(self) -> List[str]:
         """List distinct responsible vets for filtering."""
@@ -139,6 +140,10 @@ class Database(BaseDatabase):
     def get_vet_assignment_history(self, animal_id: int) -> List[AnimalVetAssignment]:
         """Get responsible-vet assignment history for an animal."""
         return self._animal_repo.get_vet_assignment_history(animal_id)
+
+    def merge_animals(self, source_animal_id: int, target_animal_id: int) -> bool:
+        """Merge a duplicate animal into an existing animal."""
+        return self._animal_repo.merge_into(source_animal_id, target_animal_id)
 
     # =========================================================================
     # SESSION OPERATIONS
@@ -161,6 +166,7 @@ class Database(BaseDatabase):
                                report_type: Optional[str] = None,
                                responsible_vet: Optional[str] = None,
                                animal_id: Optional[int] = None,
+                               sort: str = "date_desc",
                                page: int = 1,
                                page_size: int = 25):
         """List imported reports with pagination and joined animal metadata."""
@@ -170,6 +176,7 @@ class Database(BaseDatabase):
             report_type=report_type,
             responsible_vet=responsible_vet,
             animal_id=animal_id,
+            sort=sort,
             page=page,
             page_size=page_size,
         )

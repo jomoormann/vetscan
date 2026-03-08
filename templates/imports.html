@@ -1,43 +1,43 @@
 {% extends "base.html" %}
 
-{% block title %}Imports - {{ t(lang, 'app.title') }}{% endblock %}
+{% block title %}{{ t(lang, 'imports.page_title') }} - {{ t(lang, 'app.title') }}{% endblock %}
 
 {% block content %}
 <div class="page-header">
     <div>
-        <div class="eyebrow">Email audit</div>
-        <h1>Imports</h1>
-        <p class="page-subtitle">Audit what arrived through the mailbox, what imported successfully, and what still needs review.</p>
+        <div class="eyebrow">{{ t(lang, 'imports.audit') }}</div>
+        <h1>{{ t(lang, 'imports.page_title') }}</h1>
+        <p class="page-subtitle">{{ t(lang, 'imports.page_subtitle') }}</p>
     </div>
     <div class="inline-actions">
-        <a href="/unassigned-reports" class="btn btn-secondary">Review queue</a>
-        <a href="/reports" class="btn btn-secondary">Reports</a>
+        <a href="/unassigned-reports" class="btn btn-secondary">{{ t(lang, 'dashboard.review_queue') }}</a>
+        <a href="/reports" class="btn btn-secondary">{{ t(lang, 'nav.reports') }}</a>
     </div>
 </div>
 
 <section class="card">
     <div class="card-header">
         <div>
-            <div class="card-kicker">Mailbox</div>
+            <div class="card-kicker">{{ t(lang, 'imports.mailbox') }}</div>
             <h2 class="card-title">{{ email_address }}</h2>
         </div>
     </div>
     <div class="stats-grid">
         <div class="kpi-card">
             <div class="kpi-value">{{ stats.total }}</div>
-            <div class="kpi-label">Recent import attempts</div>
+            <div class="kpi-label">{{ t(lang, 'imports.recent_attempts') }}</div>
         </div>
         <div class="kpi-card">
             <div class="kpi-value" style="color: var(--success);">{{ stats.successful }}</div>
-            <div class="kpi-label">Successful</div>
+            <div class="kpi-label">{{ t(lang, 'imports.successful') }}</div>
         </div>
         <div class="kpi-card">
             <div class="kpi-value" style="color: var(--danger);">{{ stats.failed }}</div>
-            <div class="kpi-label">Failed</div>
+            <div class="kpi-label">{{ t(lang, 'imports.failed') }}</div>
         </div>
         <div class="kpi-card">
             <div class="kpi-value" style="color: var(--warning);">{{ stats.skipped }}</div>
-            <div class="kpi-label">Skipped or duplicate</div>
+            <div class="kpi-label">{{ t(lang, 'imports.skipped_or_duplicate') }}</div>
         </div>
     </div>
 </section>
@@ -45,8 +45,8 @@
 <section class="card">
     <div class="card-header">
         <div>
-            <div class="card-kicker">Audit trail</div>
-            <h2 class="card-title">Recent email imports</h2>
+            <div class="card-kicker">{{ t(lang, 'imports.audit_trail') }}</div>
+            <h2 class="card-title">{{ t(lang, 'imports.recent_email_imports') }}</h2>
         </div>
     </div>
     {% if imports %}
@@ -55,11 +55,11 @@
             <table>
                 <thead>
                     <tr>
-                        <th>When</th>
-                        <th>Email</th>
-                        <th>Attachment</th>
-                        <th>Status</th>
-                        <th>Animal</th>
+                        <th>{{ t(lang, 'imports.when') }}</th>
+                        <th>{{ t(lang, 'imports.email') }}</th>
+                        <th>{{ t(lang, 'imports.attachment') }}</th>
+                        <th>{{ t(lang, 'common.status') }}</th>
+                        <th>{{ t(lang, 'common.animal') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -75,22 +75,22 @@
                         </td>
                         <td>
                             {% if imp.validation_result == 'queued_manual_assignment' %}
-                            <span class="badge badge-low">Queued</span>
+                            <span class="badge badge-low">{{ t(lang, 'imports.status.queued') }}</span>
                             {% elif imp.import_success %}
-                            <span class="badge badge-normal">Imported</span>
+                            <span class="badge badge-normal">{{ t(lang, 'imports.status.success') }}</span>
                             {% elif imp.validation_result == 'duplicate' %}
-                            <span class="badge badge-info">Duplicate</span>
+                            <span class="badge badge-info">{{ t(lang, 'imports.status.duplicate') }}</span>
                             {% elif imp.validation_result == 'rate_limited' %}
-                            <span class="badge badge-info">Rate limited</span>
+                            <span class="badge badge-info">{{ t(lang, 'imports.status.rate_limited') }}</span>
                             {% else %}
-                            <span class="badge badge-high" title="{{ imp.error_message }}">Failed</span>
+                            <span class="badge badge-high" title="{{ imp.error_message }}">{{ t(lang, 'imports.status.failed') }}</span>
                             {% endif %}
                         </td>
                         <td>
                             {% if imp.animal_id and imp.animal_name %}
                             <a href="/animal/{{ imp.animal_id }}">{{ imp.animal_name }}</a>
                             {% elif imp.validation_result == 'queued_manual_assignment' %}
-                            <a href="/unassigned-reports">Needs assignment</a>
+                            <a href="/unassigned-reports">{{ t(lang, 'imports.needs_assignment') }}</a>
                             {% else %}
                             <span class="text-muted">--</span>
                             {% endif %}
@@ -102,7 +102,7 @@
         </div>
     </div>
     {% else %}
-    <div class="empty-state">No import history is available yet.</div>
+    <div class="empty-state">{{ t(lang, 'imports.no_history') }}</div>
     {% endif %}
 </section>
 {% endblock %}

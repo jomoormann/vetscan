@@ -3,43 +3,46 @@
 {% block title %}{{ animal.name }} - {{ t(lang, 'app.title') }}{% endblock %}
 
 {% block content %}
+{% if merge_notice %}
+<div class="alert alert-success">{{ t(lang, 'animal_detail.merge_notice') }}</div>
+{% endif %}
 <div class="page-header">
     <div>
-        <a href="/animals" class="text-muted">← Back to animals</a>
-        <div class="eyebrow" style="margin-top: 0.5rem;">Patient workspace</div>
+        <a href="/animals" class="text-muted">← {{ t(lang, 'animal_detail.back_to_animals') }}</a>
+        <div class="eyebrow" style="margin-top: 0.5rem;">{{ t(lang, 'animal_detail.workspace') }}</div>
         <h1>{{ animal.name }}</h1>
         <p class="page-subtitle">
             {{ animal.species }}{% if animal.breed %} · {{ animal.breed }}{% endif %}
-            {% if animal.owner_name %} · Pet owner: {{ animal.owner_name }}{% endif %}
+            {% if animal.owner_name %} · {{ t(lang, 'animal_detail.pet_owner_label').format(owner=animal.owner_name) }}{% endif %}
         </p>
     </div>
     <div class="inline-actions">
-        <a href="/upload" class="btn btn-secondary">Upload report</a>
+        <a href="/upload" class="btn btn-secondary">{{ t(lang, 'dashboard.upload_report') }}</a>
         {% if report_total >= 2 %}
-        <a href="/compare/{{ animal.id }}" class="btn btn-secondary">Compare reports</a>
+        <a href="/compare/{{ animal.id }}" class="btn btn-secondary">{{ t(lang, 'animal_detail.compare_reports') }}</a>
         {% endif %}
-        <button type="button" class="btn btn-primary" onclick="triggerDiagnosis()">Update differential diagnosis</button>
+        <button type="button" class="btn btn-primary" onclick="triggerDiagnosis()">{{ t(lang, 'animal_detail.update_differential_diagnosis') }}</button>
     </div>
 </div>
 
 <div class="detail-layout">
     <section>
         <div class="tabs">
-            <a href="/animal/{{ animal.id }}?tab=overview" class="tab-link {% if active_tab == 'overview' %}is-active{% endif %}">Overview</a>
-            <a href="/animal/{{ animal.id }}?tab=reports" class="tab-link {% if active_tab == 'reports' %}is-active{% endif %}">Reports</a>
-            <a href="/animal/{{ animal.id }}?tab=notes" class="tab-link {% if active_tab == 'notes' %}is-active{% endif %}">Clinical notes</a>
-            <a href="/animal/{{ animal.id }}?tab=diagnostics" class="tab-link {% if active_tab == 'diagnostics' %}is-active{% endif %}">Diagnostics</a>
-            <a href="/animal/{{ animal.id }}?tab=profile" class="tab-link {% if active_tab == 'profile' %}is-active{% endif %}">Profile</a>
+            <a href="/animal/{{ animal.id }}?tab=overview" class="tab-link {% if active_tab == 'overview' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.overview') }}</a>
+            <a href="/animal/{{ animal.id }}?tab=reports" class="tab-link {% if active_tab == 'reports' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.reports') }}</a>
+            <a href="/animal/{{ animal.id }}?tab=notes" class="tab-link {% if active_tab == 'notes' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.notes') }}</a>
+            <a href="/animal/{{ animal.id }}?tab=diagnostics" class="tab-link {% if active_tab == 'diagnostics' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.diagnostics') }}</a>
+            <a href="/animal/{{ animal.id }}?tab=profile" class="tab-link {% if active_tab == 'profile' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.profile') }}</a>
         </div>
 
         {% if active_tab == 'overview' %}
         <section class="card">
             <div class="card-header">
                 <div>
-                    <div class="card-kicker">Latest activity</div>
-                    <h2 class="card-title">Recent reports</h2>
+                    <div class="card-kicker">{{ t(lang, 'animal_detail.latest_activity') }}</div>
+                    <h2 class="card-title">{{ t(lang, 'animal_detail.recent_reports') }}</h2>
                 </div>
-                <a href="/animal/{{ animal.id }}?tab=reports" class="btn btn-secondary">Open all reports</a>
+                <a href="/animal/{{ animal.id }}?tab=reports" class="btn btn-secondary">{{ t(lang, 'animal_detail.open_all_reports') }}</a>
             </div>
             {% if overview_reports %}
             <div class="table-shell">
@@ -47,11 +50,11 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>Date</th>
-                                <th>Report</th>
-                                <th>Type</th>
-                                <th>Summary</th>
-                                <th>Action</th>
+                                <th>{{ t(lang, 'common.date') }}</th>
+                                <th>{{ t(lang, 'common.report') }}</th>
+                                <th>{{ t(lang, 'animal_detail.type') }}</th>
+                                <th>{{ t(lang, 'common.summary') }}</th>
+                                <th>{{ t(lang, 'common.actions') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -59,12 +62,13 @@
                             <tr>
                                 <td>{{ report.test_date|format_date if report.test_date else '--' }}</td>
                                 <td>
-                                    <div class="table-title">{{ report.report_number or report.external_report_id or ('Report ' ~ report.id) }}</div>
+                                    {% set overview_label = report.report_number or report.external_report_id or ('Report ' ~ report.id) %}
+                                    <div class="table-title text-truncate" title="{{ overview_label }}">{{ overview_label|truncate(42, False, '...') }}</div>
                                     <div class="table-meta">{{ report.source_system or '--' }}</div>
                                 </td>
                                 <td>{{ report.display_type }}</td>
                                 <td>{{ report.summary }}</td>
-                                <td><a href="/session/{{ report.id }}" class="btn btn-secondary">Open</a></td>
+                                <td><a href="/session/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -72,7 +76,7 @@
                 </div>
             </div>
             {% else %}
-            <div class="empty-state">No reports are attached to this animal yet.</div>
+            <div class="empty-state">{{ t(lang, 'animal_detail.no_reports_attached') }}</div>
             {% endif %}
         </section>
 
@@ -80,21 +84,21 @@
             <section class="card">
                 <div class="card-header">
                     <div>
-                        <div class="card-kicker">Clinical context</div>
-                        <h2 class="card-title">Recent notes</h2>
+                        <div class="card-kicker">{{ t(lang, 'animal_detail.clinical_context') }}</div>
+                        <h2 class="card-title">{{ t(lang, 'animal_detail.recent_notes') }}</h2>
                     </div>
-                    <a href="/animal/{{ animal.id }}?tab=notes" class="btn btn-secondary">Open notes</a>
+                    <a href="/animal/{{ animal.id }}?tab=notes" class="btn btn-secondary">{{ t(lang, 'animal_detail.open_notes') }}</a>
                 </div>
                 {% if clinical_notes %}
                 <div class="list-stack">
                     {% for note in clinical_notes[:4] %}
                     <div class="list-item" style="display: block;">
-                        <div class="table-title">{{ note.title or 'Clinical note' }}</div>
+                        <div class="table-title">{{ note.title or t(lang, 'animal_detail.clinical_note') }}</div>
                         <div class="table-meta">
                             {{ note.note_date|format_date if note.note_date else '--' }}
-                            · {{ note.author_name or 'Unknown author' }}
+                            · {{ note.author_name or t(lang, 'animal_detail.unknown_author') }}
                             {% if note.updated_at and note.updated_at != note.created_at and note.updated_by_name %}
-                            · edited by {{ note.updated_by_name }}
+                            · {{ t(lang, 'animal_detail.edited_by').format(user=note.updated_by_name) }}
                             {% endif %}
                         </div>
                         <div style="margin-top: 0.7rem; color: var(--text-muted); line-height: 1.55;">
@@ -104,36 +108,36 @@
                     {% endfor %}
                 </div>
                 {% else %}
-                <div class="empty-state">No clinical notes yet.</div>
+                <div class="empty-state">{{ t(lang, 'animal_detail.no_clinical_notes_yet') }}</div>
                 {% endif %}
             </section>
 
             <section class="card">
                 <div class="card-header">
                     <div>
-                        <div class="card-kicker">Clinical context</div>
-                        <h2 class="card-title">Signals for review</h2>
+                        <div class="card-kicker">{{ t(lang, 'animal_detail.clinical_context') }}</div>
+                        <h2 class="card-title">{{ t(lang, 'animal_detail.signals_for_review') }}</h2>
                     </div>
                 </div>
                 <div class="list-stack">
                     <div class="list-item">
                         <div>
-                            <div class="table-title">Active symptoms</div>
-                            <div class="table-meta">{{ symptoms|length }} currently recorded</div>
+                            <div class="table-title">{{ t(lang, 'animal_detail.active_symptoms') }}</div>
+                            <div class="table-meta">{{ t(lang, 'animal_detail.currently_recorded').format(count=symptoms|length) }}</div>
                         </div>
                         <span class="badge badge-info">{{ symptoms|length }}</span>
                     </div>
                     <div class="list-item">
                         <div>
-                            <div class="table-title">Observations</div>
-                            <div class="table-meta">{{ observations|length }} longitudinal entries</div>
+                            <div class="table-title">{{ t(lang, 'animal_detail.observations') }}</div>
+                            <div class="table-meta">{{ t(lang, 'animal_detail.longitudinal_entries').format(count=observations|length) }}</div>
                         </div>
                         <span class="badge badge-info">{{ observations|length }}</span>
                     </div>
                     <div class="list-item">
                         <div>
-                            <div class="table-title">AI diagnosis reports</div>
-                            <div class="table-meta">{{ diagnosis_reports|length }} generated reports</div>
+                            <div class="table-title">{{ t(lang, 'animal_detail.ai_diagnosis_reports') }}</div>
+                            <div class="table-meta">{{ t(lang, 'animal_detail.generated_reports').format(count=diagnosis_reports|length) }}</div>
                         </div>
                         <span class="badge {% if diagnosis_reports %}badge-normal{% else %}badge-low{% endif %}">{{ diagnosis_reports|length }}</span>
                     </div>
@@ -146,32 +150,25 @@
         <section class="card">
             <div class="card-header">
                 <div>
-                    <div class="card-kicker">History</div>
-                    <h2 class="card-title">Report timeline</h2>
+                    <div class="card-kicker">{{ t(lang, 'animal_detail.history') }}</div>
+                    <h2 class="card-title">{{ t(lang, 'animal_detail.report_timeline') }}</h2>
                 </div>
-                <div class="pagination-meta">{{ report_total }} total report{% if report_total != 1 %}s{% endif %}</div>
             </div>
 
-            <form method="get" action="/animal/{{ animal.id }}" class="filters" style="margin-bottom: 1rem;">
+            <form method="get" action="/animal/{{ animal.id }}" class="filters filters-compact" style="margin-bottom: 1rem;">
                 <input type="hidden" name="tab" value="reports">
-                <div class="filters-inline" style="grid-template-columns: 2fr 1fr 1fr;">
-                    <div class="field">
-                        <label for="animal-report-type">Report family</label>
-                        <select id="animal-report-type" name="report_type">
-                            <option value="">All report families</option>
-                            {% for option in report_type_options %}
-                            <option value="{{ option.value }}" {% if report_type_filter == option.value %}selected{% endif %}>{{ option.label }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="field">
-                        <label>&nbsp;</label>
-                        <button type="submit" class="btn btn-primary">Filter reports</button>
-                    </div>
-                    <div class="field">
-                        <label>&nbsp;</label>
-                        <a href="/animal/{{ animal.id }}?tab=reports" class="btn btn-secondary">Reset</a>
-                    </div>
+                <input type="hidden" name="report_sort" value="{{ report_sort }}">
+                <div class="field">
+                    <label for="animal-report-type" class="sr-only">{{ t(lang, 'animal_detail.report_family') }}</label>
+                    <select id="animal-report-type" name="report_type" onchange="this.form.submit()">
+                        <option value="">{{ t(lang, 'animal_detail.all_report_families') }}</option>
+                        {% for option in report_type_options %}
+                        <option value="{{ option.value }}" {% if report_type_filter == option.value %}selected{% endif %}>{{ option.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="inline-actions">
+                    <a href="/animal/{{ animal.id }}?tab=reports" class="btn btn-secondary">{{ t(lang, 'common.clear') }}</a>
                 </div>
             </form>
 
@@ -181,12 +178,12 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>Date</th>
-                                <th>Report</th>
-                                <th>Type</th>
-                                <th>Source</th>
-                                <th>Summary</th>
-                                <th>Action</th>
+                                <th><a class="sort-link" href="{{ report_sort_links.date.url }}">{{ t(lang, 'common.date') }}{% if report_sort_links.date.state %}<span class="sort-state">{{ '^' if report_sort_links.date.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
+                                <th><a class="sort-link" href="{{ report_sort_links.report.url }}">{{ t(lang, 'common.report') }}{% if report_sort_links.report.state %}<span class="sort-state">{{ '^' if report_sort_links.report.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
+                                <th>{{ t(lang, 'animal_detail.type') }}</th>
+                                <th><a class="sort-link" href="{{ report_sort_links.source.url }}">{{ t(lang, 'common.source') }}{% if report_sort_links.source.state %}<span class="sort-state">{{ '^' if report_sort_links.source.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
+                                <th>{{ t(lang, 'common.summary') }}</th>
+                                <th>{{ t(lang, 'common.actions') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -194,7 +191,8 @@
                             <tr>
                                 <td>{{ report.test_date|format_date if report.test_date else '--' }}</td>
                                 <td>
-                                    <div class="table-title">{{ report.report_number or report.external_report_id or ('Report ' ~ report.id) }}</div>
+                                    {% set report_label = report.report_number or report.external_report_id or ('Report ' ~ report.id) %}
+                                    <div class="table-title text-truncate" title="{{ report_label }}">{{ report_label|truncate(42, False, '...') }}</div>
                                     <div class="table-meta">{{ report.sample_type or '--' }}</div>
                                 </td>
                                 <td>{{ report.display_type }}</td>
@@ -203,7 +201,7 @@
                                     <div class="table-meta">{{ report.clinic_name or report.lab_name or '--' }}</div>
                                 </td>
                                 <td>{{ report.summary }}</td>
-                                <td><a href="/session/{{ report.id }}" class="btn btn-secondary">Open</a></td>
+                                <td><a href="/session/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -212,21 +210,21 @@
             </div>
 
             <div class="pagination">
-                <div class="pagination-meta">Showing {{ report_pagination.range_start }}-{{ report_pagination.range_end }} of {{ report_pagination.total_items }}</div>
+                <div class="pagination-meta">{{ t(lang, 'common.showing_range').format(start=report_pagination.range_start, end=report_pagination.range_end, total=report_pagination.total_items) }}</div>
                 <div class="pagination-links">
                     {% if report_pagination.has_prev %}
-                    <a href="{{ report_pagination.prev_url }}" class="pagination-link">Previous</a>
+                    <a href="{{ report_pagination.prev_url }}" class="pagination-link">{{ t(lang, 'common.previous') }}</a>
                     {% endif %}
                     {% for page in report_pagination.pages %}
                     <a href="{{ page.url }}" class="pagination-link {% if page.current %}is-current{% endif %}">{{ page.number }}</a>
                     {% endfor %}
                     {% if report_pagination.has_next %}
-                    <a href="{{ report_pagination.next_url }}" class="pagination-link">Next</a>
+                    <a href="{{ report_pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }}</a>
                     {% endif %}
                 </div>
             </div>
             {% else %}
-            <div class="empty-state">No reports match the current filter.</div>
+            <div class="empty-state">{{ t(lang, 'animal_detail.no_reports_match_filter') }}</div>
             {% endif %}
         </section>
         {% endif %}
@@ -235,8 +233,8 @@
         <section class="card">
             <div class="card-header">
                 <div>
-                    <div class="card-kicker">Clinical narrative</div>
-                    <h2 class="card-title">Clinical notes</h2>
+                    <div class="card-kicker">{{ t(lang, 'animal_detail.clinical_narrative') }}</div>
+                    <h2 class="card-title">{{ t(lang, 'animal_detail.clinical_notes') }}</h2>
                 </div>
             </div>
 
@@ -244,21 +242,21 @@
                 <input type="hidden" id="noteId">
                 <div class="grid-2">
                     <div class="field">
-                        <label for="note-title">Title</label>
-                        <input id="note-title" type="text" placeholder="Consultation, phone update, discharge note">
+                        <label for="note-title">{{ t(lang, 'animal_detail.note_title') }}</label>
+                        <input id="note-title" type="text" placeholder="{{ t(lang, 'animal_detail.note_title_placeholder') }}">
                     </div>
                     <div class="field">
-                        <label for="note-date">Note date</label>
+                        <label for="note-date">{{ t(lang, 'animal_detail.note_date') }}</label>
                         <input id="note-date" type="date" value="{{ today }}">
                     </div>
                 </div>
                 <div class="field">
-                    <label for="note-content">Content</label>
-                    <textarea id="note-content" required placeholder="Write the clinical note here"></textarea>
+                    <label for="note-content">{{ t(lang, 'animal_detail.note_content') }}</label>
+                    <textarea id="note-content" required placeholder="{{ t(lang, 'animal_detail.note_content_placeholder') }}"></textarea>
                 </div>
                 <div class="filters-actions">
-                    <button type="submit" class="btn btn-primary" id="noteSubmitBtn">Save note</button>
-                    <button type="button" class="btn btn-secondary" id="noteResetBtn">Clear</button>
+                    <button type="submit" class="btn btn-primary" id="noteSubmitBtn">{{ t(lang, 'animal_detail.save_note') }}</button>
+                    <button type="button" class="btn btn-secondary" id="noteResetBtn">{{ t(lang, 'common.clear') }}</button>
                 </div>
             </form>
 
@@ -268,18 +266,18 @@
                 <div class="card" style="margin-bottom: 0;">
                     <div class="card-header">
                         <div>
-                            <div class="table-title">{{ note.title or 'Clinical note' }}</div>
+                            <div class="table-title">{{ note.title or t(lang, 'animal_detail.clinical_note') }}</div>
                             <div class="table-meta">
                                 {{ note.note_date|format_date if note.note_date else '--' }}
-                                · {{ note.author_name or 'Unknown author' }}
+                                · {{ note.author_name or t(lang, 'animal_detail.unknown_author') }}
                                 {% if note.updated_at and note.updated_at != note.created_at and note.updated_by_name %}
-                                · edited by {{ note.updated_by_name }}
+                                · {{ t(lang, 'animal_detail.edited_by').format(user=note.updated_by_name) }}
                                 {% endif %}
                             </div>
                         </div>
                         <div class="inline-actions">
-                            <button type="button" class="btn btn-secondary" onclick="editClinicalNote({{ note.id }})">Edit</button>
-                            <button type="button" class="btn btn-danger" onclick="deleteClinicalNote({{ note.id }})">Delete</button>
+                            <button type="button" class="btn btn-secondary" onclick="editClinicalNote({{ note.id }})">{{ t(lang, 'common.edit') }}</button>
+                            <button type="button" class="btn btn-danger" onclick="deleteClinicalNote({{ note.id }})">{{ t(lang, 'common.delete') }}</button>
                         </div>
                     </div>
                     <div style="white-space: pre-wrap; color: var(--text-muted); line-height: 1.65;">{{ note.content }}</div>
@@ -287,7 +285,7 @@
                 {% endfor %}
             </div>
             {% else %}
-            <div class="empty-state">No notes have been added yet.</div>
+            <div class="empty-state">{{ t(lang, 'animal_detail.no_notes_added') }}</div>
             {% endif %}
         </section>
         {% endif %}
@@ -296,24 +294,24 @@
         <section class="card">
             <div class="card-header">
                 <div>
-                    <div class="card-kicker">Decision support</div>
-                    <h2 class="card-title">AI differential diagnosis</h2>
+                    <div class="card-kicker">{{ t(lang, 'animal_detail.decision_support') }}</div>
+                    <h2 class="card-title">{{ t(lang, 'animal_detail.ai_differential_diagnosis') }}</h2>
                 </div>
-                <button type="button" class="btn btn-primary" onclick="triggerDiagnosis()">Generate update</button>
+                <button type="button" class="btn btn-primary" onclick="triggerDiagnosis()">{{ t(lang, 'animal_detail.generate_update') }}</button>
             </div>
 
             <div class="summary-grid" style="margin-bottom: 1rem;">
                 <div class="summary-block">
-                    <div class="summary-block-label">Scope</div>
-                    <div class="summary-block-value">Aggregates reports, measurements, pathology findings, and clinical notes.</div>
+                    <div class="summary-block-label">{{ t(lang, 'animal_detail.scope') }}</div>
+                    <div class="summary-block-value">{{ t(lang, 'animal_detail.scope_description') }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">Current status</div>
+                    <div class="summary-block-label">{{ t(lang, 'animal_detail.current_status') }}</div>
                     <div class="summary-block-value">
                         {% if latest_diagnosis %}
-                        Last updated {{ latest_diagnosis.report_date|format_date if latest_diagnosis.report_date else '--' }}
+                        {{ t(lang, 'animal_detail.last_updated').format(date=latest_diagnosis.report_date|format_date if latest_diagnosis.report_date else '--') }}
                         {% else %}
-                        No diagnosis generated yet
+                        {{ t(lang, 'animal_detail.no_diagnosis_generated') }}
                         {% endif %}
                     </div>
                 </div>
@@ -321,11 +319,17 @@
 
             {% if latest_diagnosis %}
             <div class="card" style="margin-bottom: 1rem;">
-                <div class="card-kicker">Latest result</div>
-                <h3 style="margin-bottom: 0.6rem;">{{ latest_diagnosis.report_type|replace('_', ' ')|title }}</h3>
+                <div class="card-kicker">{{ t(lang, 'animal_detail.latest_result') }}</div>
+                <h3 style="margin-bottom: 0.6rem;">
+                    {% if latest_diagnosis.report_type in ['clinical_notes_only', 'comprehensive'] %}
+                    {{ t(lang, 'diagnosis.' ~ latest_diagnosis.report_type) }}
+                    {% else %}
+                    {{ latest_diagnosis.report_type|replace('_', ' ')|title }}
+                    {% endif %}
+                </h3>
                 <p class="text-muted" style="line-height: 1.6;">{{ (latest_diagnosis.executive_summary or latest_diagnosis.input_summary)|truncate(420) }}</p>
                 <div class="inline-actions" style="margin-top: 1rem;">
-                    <a href="/animal/{{ animal.id }}/diagnosis/{{ latest_diagnosis.id }}" class="btn btn-secondary">Open full report</a>
+                    <a href="/animal/{{ animal.id }}/diagnosis/{{ latest_diagnosis.id }}" class="btn btn-secondary">{{ t(lang, 'animal_detail.open_full_report') }}</a>
                 </div>
             </div>
             {% endif %}
@@ -336,19 +340,25 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>Date</th>
-                                <th>Type</th>
-                                <th>Summary</th>
-                                <th>Action</th>
+                                <th>{{ t(lang, 'common.date') }}</th>
+                                <th>{{ t(lang, 'animal_detail.type') }}</th>
+                                <th>{{ t(lang, 'common.summary') }}</th>
+                                <th>{{ t(lang, 'common.actions') }}</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for report in diagnosis_reports %}
                             <tr>
                                 <td>{{ report.report_date|format_date if report.report_date else '--' }}</td>
-                                <td>{{ report.report_type|replace('_', ' ')|title }}</td>
+                                <td>
+                                    {% if report.report_type in ['clinical_notes_only', 'comprehensive'] %}
+                                    {{ t(lang, 'diagnosis.' ~ report.report_type) }}
+                                    {% else %}
+                                    {{ report.report_type|replace('_', ' ')|title }}
+                                    {% endif %}
+                                </td>
                                 <td>{{ (report.executive_summary or report.input_summary)|truncate(180) }}</td>
-                                <td><a href="/animal/{{ animal.id }}/diagnosis/{{ report.id }}" class="btn btn-secondary">Open</a></td>
+                                <td><a href="/animal/{{ animal.id }}/diagnosis/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -356,7 +366,7 @@
                 </div>
             </div>
             {% else %}
-            <div class="empty-state">No diagnosis reports have been generated for this animal yet.</div>
+            <div class="empty-state">{{ t(lang, 'animal_detail.no_diagnosis_reports') }}</div>
             {% endif %}
         </section>
         {% endif %}
@@ -365,72 +375,72 @@
         <section class="card">
             <div class="card-header">
                 <div>
-                    <div class="card-kicker">Profile</div>
-                    <h2 class="card-title">Animal details</h2>
+                    <div class="card-kicker">{{ t(lang, 'animal_detail.profile') }}</div>
+                    <h2 class="card-title">{{ t(lang, 'animal_detail.animal_details') }}</h2>
                 </div>
             </div>
 
             <form id="profileForm" class="filters">
                 <div class="grid-2">
                     <div class="field">
-                        <label for="profile-name">Animal name</label>
+                        <label for="profile-name">{{ t(lang, 'animal_form.animal_name') }}</label>
                         <input id="profile-name" name="name" value="{{ animal.name }}" required>
                     </div>
                     <div class="field">
-                        <label for="profile-owner">Pet owner</label>
+                        <label for="profile-owner">{{ t(lang, 'common.pet_owner') }}</label>
                         <input id="profile-owner" name="owner_name" value="{{ animal.owner_name or '' }}">
                     </div>
                     <div class="field">
-                        <label for="profile-species">Species</label>
+                        <label for="profile-species">{{ t(lang, 'common.species') }}</label>
                         <input id="profile-species" name="species" value="{{ animal.species }}">
                     </div>
                     <div class="field">
-                        <label for="profile-breed">Breed</label>
+                        <label for="profile-breed">{{ t(lang, 'common.breed') }}</label>
                         <input id="profile-breed" name="breed" value="{{ animal.breed or '' }}">
                     </div>
                     <div class="field">
-                        <label for="profile-vet">Responsible vet</label>
+                        <label for="profile-vet">{{ t(lang, 'animal.responsible_vet') }}</label>
                         <input id="profile-vet" name="responsible_vet" value="{{ animal.responsible_vet or '' }}">
                     </div>
                     <div class="field">
-                        <label for="profile-assignment-reason">Vet change reason</label>
-                        <input id="profile-assignment-reason" name="assignment_reason" placeholder="Optional handover note">
+                        <label for="profile-assignment-reason">{{ t(lang, 'animal_detail.vet_change_reason') }}</label>
+                        <input id="profile-assignment-reason" name="assignment_reason" placeholder="{{ t(lang, 'animal_detail.vet_change_reason_placeholder') }}">
                     </div>
                     <div class="field">
-                        <label for="profile-microchip">Microchip</label>
+                        <label for="profile-microchip">{{ t(lang, 'animal_detail.microchip') }}</label>
                         <input id="profile-microchip" name="microchip" value="{{ animal.microchip or '' }}">
                     </div>
                     <div class="field">
-                        <label for="profile-weight">Weight (kg)</label>
+                        <label for="profile-weight">{{ t(lang, 'animal_form.weight') }}</label>
                         <input id="profile-weight" name="weight_kg" type="number" step="0.1" min="0" value="{{ animal.weight_kg or '' }}">
                     </div>
                     <div class="field">
-                        <label for="profile-age-years">Age (years)</label>
+                        <label for="profile-age-years">{{ t(lang, 'animal_form.age_years') }}</label>
                         <input id="profile-age-years" name="age_years" type="number" step="0.1" min="0" value="{{ animal.age_years or '' }}">
                     </div>
                     <div class="field">
-                        <label for="profile-age-months">Age (months)</label>
+                        <label for="profile-age-months">{{ t(lang, 'animal_form.age_months') }}</label>
                         <input id="profile-age-months" name="age_months" type="number" min="0" max="11" value="{{ animal.age_months or '' }}">
                     </div>
                     <div class="field">
-                        <label for="profile-sex">Sex</label>
+                        <label for="profile-sex">{{ t(lang, 'common.sex') }}</label>
                         <select id="profile-sex" name="sex">
-                            <option value="U" {% if animal.sex == 'U' %}selected{% endif %}>Unknown</option>
-                            <option value="M" {% if animal.sex == 'M' %}selected{% endif %}>Male</option>
-                            <option value="F" {% if animal.sex == 'F' %}selected{% endif %}>Female</option>
+                            <option value="U" {% if animal.sex == 'U' %}selected{% endif %}>{{ t(lang, 'common.unknown') }}</option>
+                            <option value="M" {% if animal.sex == 'M' %}selected{% endif %}>{{ t(lang, 'common.male') }}</option>
+                            <option value="F" {% if animal.sex == 'F' %}selected{% endif %}>{{ t(lang, 'common.female') }}</option>
                         </select>
                     </div>
                 </div>
                 <div class="field">
-                    <label for="profile-history">Medical history</label>
+                    <label for="profile-history">{{ t(lang, 'animal_form.medical_history') }}</label>
                     <textarea id="profile-history" name="medical_history">{{ animal.medical_history or '' }}</textarea>
                 </div>
                 <div class="field">
-                    <label for="profile-notes">General notes</label>
+                    <label for="profile-notes">{{ t(lang, 'animal_form.general_notes') }}</label>
                     <textarea id="profile-notes" name="notes">{{ animal.notes or '' }}</textarea>
                 </div>
                 <div class="filters-actions">
-                    <button type="submit" class="btn btn-primary">Save profile</button>
+                    <button type="submit" class="btn btn-primary">{{ t(lang, 'animal_detail.save_profile') }}</button>
                 </div>
             </form>
         </section>
@@ -438,8 +448,33 @@
         <section class="card">
             <div class="card-header">
                 <div>
-                    <div class="card-kicker">Ownership history</div>
-                    <h2 class="card-title">Responsible vet changes</h2>
+                    <h2 class="card-title">{{ t(lang, 'animal_detail.merge_duplicate_animal') }}</h2>
+                </div>
+            </div>
+            <p class="text-muted" style="margin-bottom: 1rem;">{{ t(lang, 'animal_detail.merge_description') }}</p>
+            <form id="mergeForm" class="filters">
+                <input type="hidden" id="merge-target-id" name="target_animal_id">
+                <div class="field">
+                    <label for="merge-animal-search">{{ t(lang, 'animal_detail.merge_into_existing') }}</label>
+                    <input
+                        type="search"
+                        id="merge-animal-search"
+                        placeholder="{{ t(lang, 'animal_detail.merge_search_placeholder') }}"
+                        autocomplete="off"
+                    >
+                </div>
+                <div class="list-stack" id="merge-results" style="margin-bottom: 1rem;"></div>
+                <div class="filters-actions">
+                    <button type="submit" class="btn btn-danger" id="merge-submit" disabled>{{ t(lang, 'animal_detail.merge_into_selected') }}</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-kicker">{{ t(lang, 'animal_detail.ownership_history') }}</div>
+                    <h2 class="card-title">{{ t(lang, 'animal_detail.responsible_vet_changes') }}</h2>
                 </div>
             </div>
             {% if vet_history %}
@@ -450,23 +485,23 @@
                         <div class="table-title">{{ item.vet_name }}</div>
                         <div class="table-meta">
                             {{ item.start_date|format_date if item.start_date else '--' }}
-                            {% if item.end_date %} → {{ item.end_date|format_date }}{% else %} → current{% endif %}
+                            {% if item.end_date %} → {{ item.end_date|format_date }}{% else %} → {{ t(lang, 'animal_detail.current_lower') }}{% endif %}
                         </div>
                         <div class="table-meta">
-                            {% if item.changed_by_name %}Changed by {{ item.changed_by_name }}{% else %}Change source not recorded{% endif %}
+                            {% if item.changed_by_name %}{{ t(lang, 'animal_detail.changed_by').format(user=item.changed_by_name) }}{% else %}{{ t(lang, 'animal_detail.change_source_not_recorded') }}{% endif %}
                             {% if item.change_reason %} · {{ item.change_reason }}{% endif %}
                         </div>
                     </div>
                     {% if not item.end_date %}
-                    <span class="badge badge-info">Current</span>
+                    <span class="badge badge-info">{{ t(lang, 'common.current') }}</span>
                     {% else %}
-                    <span class="badge badge-normal">Past</span>
+                    <span class="badge badge-normal">{{ t(lang, 'common.past') }}</span>
                     {% endif %}
                 </div>
                 {% endfor %}
             </div>
             {% else %}
-            <div class="empty-state">No responsible-vet history is recorded for this animal yet.</div>
+            <div class="empty-state">{{ t(lang, 'animal_detail.no_vet_history') }}</div>
             {% endif %}
         </section>
         {% endif %}
@@ -474,50 +509,48 @@
 
     <aside class="detail-sidebar">
         <section class="card">
-            <div class="card-kicker">Patient summary</div>
             <h2 class="card-title" style="margin-bottom: 1rem;">{{ animal.name }}</h2>
             <div class="summary-grid">
                 <div class="summary-block">
-                    <div class="summary-block-label">Pet owner</div>
+                    <div class="summary-block-label">{{ t(lang, 'common.pet_owner') }}</div>
                     <div class="summary-block-value">{{ animal.owner_name or '--' }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">Responsible vet</div>
+                    <div class="summary-block-label">{{ t(lang, 'animal.responsible_vet') }}</div>
                     <div class="summary-block-value">{{ animal.responsible_vet or '--' }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">Microchip</div>
+                    <div class="summary-block-label">{{ t(lang, 'animal_detail.microchip') }}</div>
                     <div class="summary-block-value">{{ animal.microchip or '--' }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">Age</div>
+                    <div class="summary-block-label">{{ t(lang, 'common.age') }}</div>
                     <div class="summary-block-value">{{ animal.age_display }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">Reports</div>
+                    <div class="summary-block-label">{{ t(lang, 'nav.reports') }}</div>
                     <div class="summary-block-value">{{ report_total }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">Clinical notes</div>
+                    <div class="summary-block-label">{{ t(lang, 'animal_detail.clinical_notes') }}</div>
                     <div class="summary-block-value">{{ clinical_notes|length }}</div>
                 </div>
             </div>
         </section>
 
         <section class="card">
-            <div class="card-kicker">Decision support</div>
-            <h2 class="card-title" style="margin-bottom: 0.8rem;">AI differential diagnosis</h2>
+            <h2 class="card-title" style="margin-bottom: 0.8rem;">{{ t(lang, 'animal_detail.ai_differential_diagnosis') }}</h2>
             {% if latest_diagnosis %}
-            <div class="table-meta" style="margin-bottom: 0.6rem;">Last updated {{ latest_diagnosis.report_date|format_date if latest_diagnosis.report_date else '--' }}</div>
+            <div class="table-meta" style="margin-bottom: 0.6rem;">{{ t(lang, 'animal_detail.last_updated').format(date=latest_diagnosis.report_date|format_date if latest_diagnosis.report_date else '--') }}</div>
             <p class="text-muted" style="line-height: 1.6;">{{ (latest_diagnosis.executive_summary or latest_diagnosis.input_summary)|truncate(260) }}</p>
             <div class="inline-actions" style="margin-top: 1rem;">
-                <a href="/animal/{{ animal.id }}/diagnosis/{{ latest_diagnosis.id }}" class="btn btn-secondary">Open latest</a>
-                <button type="button" class="btn btn-primary" onclick="triggerDiagnosis()">Refresh</button>
+                <a href="/animal/{{ animal.id }}/diagnosis/{{ latest_diagnosis.id }}" class="btn btn-secondary">{{ t(lang, 'animal_detail.open_latest') }}</a>
+                <button type="button" class="btn btn-primary" onclick="triggerDiagnosis()">{{ t(lang, 'common.refresh') }}</button>
             </div>
             {% else %}
-            <p class="text-muted" style="line-height: 1.6;">No AI differential diagnosis has been generated for this animal yet. The diagnosis engine remains visible here, but it no longer dominates the primary workflow.</p>
+            <p class="text-muted" style="line-height: 1.6;">{{ t(lang, 'animal_detail.no_ai_diagnosis_sidebar') }}</p>
             <div class="inline-actions" style="margin-top: 1rem;">
-                <button type="button" class="btn btn-primary" onclick="triggerDiagnosis()">Generate</button>
+                <button type="button" class="btn btn-primary" onclick="triggerDiagnosis()">{{ t(lang, 'common.generate') }}</button>
             </div>
             {% endif %}
         </section>
@@ -528,6 +561,36 @@
 {% block scripts %}
 <script>
     const csrfToken = "{{ csrf_token }}";
+    const animalDetailTranslations = {
+        saveNote: {{ t(lang, 'animal_detail.save_note')|tojson }},
+        updateNote: {{ t(lang, 'animal_detail.update_note')|tojson }},
+        loadNoteError: {{ t(lang, 'animal_detail.load_note_error')|tojson }},
+        deleteNoteConfirm: {{ t(lang, 'animal_detail.delete_note_confirm')|tojson }},
+        deleteNoteError: {{ t(lang, 'animal_detail.delete_note_error')|tojson }},
+        diagnosisError: {{ t(lang, 'animal_detail.diagnosis_error')|tojson }},
+        saveNoteError: {{ t(lang, 'animal_detail.save_note_error')|tojson }},
+        saveProfileError: {{ t(lang, 'animal_detail.save_profile_error')|tojson }},
+        profileUpdated: {{ t(lang, 'animal_detail.profile_updated')|tojson }},
+        mergeNoMatches: {{ t(lang, 'animal_detail.merge_no_matches')|tojson }},
+        mergeLoadError: {{ t(lang, 'animal_detail.merge_load_error')|tojson }},
+        mergeSelectError: {{ t(lang, 'animal_detail.merge_select_error')|tojson }},
+        mergeConfirm: {{ t(lang, 'animal_detail.merge_confirm')|tojson }},
+        mergeError: {{ t(lang, 'animal_detail.merge_error')|tojson }},
+        reportCountOne: {{ t(lang, 'animal_detail.report_count_one')|tojson }},
+        reportCountOther: {{ t(lang, 'animal_detail.report_count_other')|tojson }}
+    };
+
+    function escapeHtml(value) {
+        return (value || '').replace(/[&<>"']/g, function (character) {
+            return ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            })[character];
+        });
+    }
 
     function resetNoteForm() {
         document.getElementById('noteId')?.setAttribute('value', '');
@@ -535,34 +598,34 @@
         document.getElementById('note-title').value = '';
         document.getElementById('note-content').value = '';
         document.getElementById('note-date').value = "{{ today }}";
-        document.getElementById('noteSubmitBtn').textContent = 'Save note';
+        document.getElementById('noteSubmitBtn').textContent = animalDetailTranslations.saveNote;
     }
 
     async function editClinicalNote(noteId) {
         try {
             const response = await fetch(`/api/clinical-note/${noteId}`);
             const data = await response.json();
-            if (!data.success) throw new Error(data.message || 'Could not load note');
+            if (!data.success) throw new Error(data.message || animalDetailTranslations.loadNoteError);
             document.getElementById('noteId').value = data.note.id;
             document.getElementById('note-title').value = data.note.title || '';
             document.getElementById('note-content').value = data.note.content || '';
             document.getElementById('note-date').value = data.note.note_date || "{{ today }}";
-            document.getElementById('noteSubmitBtn').textContent = 'Update note';
+            document.getElementById('noteSubmitBtn').textContent = animalDetailTranslations.updateNote;
             document.getElementById('note-title').focus();
         } catch (error) {
-            showAlert(error.message || 'Could not load note', 'error');
+            showAlert(error.message || animalDetailTranslations.loadNoteError, 'error');
         }
     }
 
     async function deleteClinicalNote(noteId) {
-        if (!window.confirm('Delete this clinical note?')) return;
+        if (!window.confirm(animalDetailTranslations.deleteNoteConfirm)) return;
         try {
             const response = await fetch(`/animal/{{ animal.id }}/clinical-note/${noteId}`, { method: 'DELETE' });
             const data = await response.json();
-            if (!data.success) throw new Error(data.message || 'Could not delete note');
+            if (!data.success) throw new Error(data.message || animalDetailTranslations.deleteNoteError);
             window.location.reload();
         } catch (error) {
-            showAlert(error.message || 'Could not delete note', 'error');
+            showAlert(error.message || animalDetailTranslations.deleteNoteError, 'error');
         }
     }
 
@@ -576,10 +639,10 @@
                 body: formData
             });
             const data = await response.json();
-            if (!data.success) throw new Error(data.message || 'Could not generate diagnosis');
+            if (!data.success) throw new Error(data.message || animalDetailTranslations.diagnosisError);
             window.location.href = `/animal/{{ animal.id }}/diagnosis/${data.report_id}`;
         } catch (error) {
-            showAlert(error.message || 'Could not generate diagnosis', 'error');
+            showAlert(error.message || animalDetailTranslations.diagnosisError, 'error');
         }
     }
 
@@ -604,10 +667,10 @@
                     body: formData
                 });
                 const data = await response.json();
-                if (!data.success) throw new Error(data.message || 'Could not save note');
+                if (!data.success) throw new Error(data.message || animalDetailTranslations.saveNoteError);
                 window.location.reload();
             } catch (error) {
-                showAlert(error.message || 'Could not save note', 'error');
+                showAlert(error.message || animalDetailTranslations.saveNoteError, 'error');
             }
         });
     }
@@ -629,11 +692,117 @@
                     body: formData
                 });
                 const data = await response.json();
-                if (!data.success) throw new Error(data.message || 'Could not save profile');
-                showAlert('Animal profile updated', 'success');
+                if (!data.success) throw new Error(data.message || animalDetailTranslations.saveProfileError);
+                showAlert(animalDetailTranslations.profileUpdated, 'success');
                 window.setTimeout(() => window.location.reload(), 500);
             } catch (error) {
-                showAlert(error.message || 'Could not save profile', 'error');
+                showAlert(error.message || animalDetailTranslations.saveProfileError, 'error');
+            }
+        });
+    }
+
+    const mergeForm = document.getElementById('mergeForm');
+    const mergeSearchInput = document.getElementById('merge-animal-search');
+    const mergeResults = document.getElementById('merge-results');
+    const mergeTargetId = document.getElementById('merge-target-id');
+    const mergeSubmit = document.getElementById('merge-submit');
+
+    function resetMergeSelection() {
+        if (!mergeTargetId || !mergeSubmit) return;
+        mergeTargetId.value = '';
+        mergeSubmit.disabled = true;
+    }
+
+    function renderMergeResults(items) {
+        if (!mergeResults) return;
+        if (!items.length) {
+            mergeResults.innerHTML = `<div class="text-muted">${escapeHtml(animalDetailTranslations.mergeNoMatches)}</div>`;
+            return;
+        }
+
+        mergeResults.innerHTML = items.map(function (item) {
+            const reportCount = item.test_count || 0;
+            const owner = item.owner_name ? ` · ${item.owner_name}` : '';
+            const microchip = item.microchip ? ` · ${item.microchip}` : '';
+            const reportLabel = reportCount === 1
+                ? animalDetailTranslations.reportCountOne
+                : animalDetailTranslations.reportCountOther;
+            return `
+                <button type="button" class="list-item" style="width: 100%; text-align: left; background: var(--surface-muted);" data-target-id="${item.id}">
+                    <div>
+                        <div class="table-title">${escapeHtml(item.name)}</div>
+                        <div class="table-meta">${escapeHtml(item.species || '--')}${escapeHtml(owner)}${escapeHtml(microchip)}</div>
+                        <div class="table-meta">${reportLabel.replace('{count}', reportCount)}</div>
+                    </div>
+                </button>
+            `;
+        }).join('');
+
+        mergeResults.querySelectorAll('[data-target-id]').forEach(function (button) {
+            button.addEventListener('click', function () {
+                mergeTargetId.value = button.dataset.targetId;
+                mergeSubmit.disabled = false;
+                mergeSearchInput.value = button.querySelector('.table-title').textContent.trim();
+                mergeResults.querySelectorAll('[data-target-id]').forEach(function (otherButton) {
+                    otherButton.style.borderColor = 'var(--line)';
+                    otherButton.style.background = 'var(--surface-muted)';
+                });
+                button.style.borderColor = 'rgba(22, 84, 65, 0.45)';
+                button.style.background = 'rgba(22, 84, 65, 0.08)';
+            });
+        });
+    }
+
+    if (mergeSearchInput) {
+        let mergeTimer = null;
+        mergeSearchInput.addEventListener('input', function () {
+            const query = mergeSearchInput.value.trim();
+            resetMergeSelection();
+            if (mergeTimer) window.clearTimeout(mergeTimer);
+
+            if (query.length < 2) {
+                mergeResults.innerHTML = '';
+                return;
+            }
+
+            mergeTimer = window.setTimeout(async function () {
+                try {
+                    const response = await fetch(`/api/animal-lookup?q=${encodeURIComponent(query)}&exclude_id={{ animal.id }}`);
+                    const items = await response.json();
+                    renderMergeResults(items);
+                } catch (error) {
+                    mergeResults.innerHTML = `<div class="text-muted">${escapeHtml(animalDetailTranslations.mergeLoadError)}</div>`;
+                }
+            }, 220);
+        });
+    }
+
+    if (mergeForm) {
+        mergeForm.addEventListener('submit', async function (event) {
+            event.preventDefault();
+            if (!mergeTargetId.value) {
+                showAlert(animalDetailTranslations.mergeSelectError, 'error');
+                return;
+            }
+
+            if (!window.confirm(animalDetailTranslations.mergeConfirm)) {
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('csrf_token', csrfToken);
+            formData.append('target_animal_id', mergeTargetId.value);
+
+            try {
+                const response = await fetch('/animal/{{ animal.id }}/merge', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (!data.success) throw new Error(data.message || animalDetailTranslations.mergeError);
+                window.location.href = data.redirect_url;
+            } catch (error) {
+                showAlert(error.message || animalDetailTranslations.mergeError, 'error');
             }
         });
     }

@@ -169,36 +169,6 @@
             box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
         }
 
-        .nav-hint {
-            font-size: 0.72rem;
-            color: rgba(255,255,255,0.56);
-        }
-
-        .sidebar-meta {
-            margin-top: auto;
-            display: grid;
-            gap: 0.9rem;
-        }
-
-        .sidebar-card {
-            padding: 1rem;
-            border-radius: 16px;
-            background: rgba(255,255,255,0.08);
-            border: 1px solid rgba(255,255,255,0.08);
-        }
-
-        .sidebar-card strong {
-            display: block;
-            margin-bottom: 0.35rem;
-            font-size: 0.92rem;
-        }
-
-        .sidebar-card p {
-            color: rgba(255,255,255,0.66);
-            font-size: 0.82rem;
-            line-height: 1.5;
-        }
-
         .content-shell {
             display: flex;
             flex-direction: column;
@@ -649,6 +619,14 @@
             font-weight: 700;
         }
 
+        .text-truncate {
+            display: block;
+            max-width: 22rem;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
         .table-meta {
             margin-top: 0.2rem;
             font-size: 0.82rem;
@@ -708,6 +686,28 @@
             align-items: center;
             gap: 0.75rem;
             flex-wrap: wrap;
+        }
+
+        .filters-compact {
+            display: flex;
+            align-items: end;
+            gap: 0.85rem;
+            flex-wrap: wrap;
+            margin-bottom: 0;
+        }
+
+        .filters-compact .field {
+            min-width: 180px;
+            flex: 0 1 220px;
+        }
+
+        .filters-compact .field.search-field {
+            min-width: 260px;
+            flex: 1 1 320px;
+        }
+
+        .filters-compact .field label {
+            display: none;
         }
 
         .tabs {
@@ -840,6 +840,34 @@
             border-color: transparent;
         }
 
+        .sort-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            color: inherit;
+        }
+
+        .sort-link:hover {
+            color: var(--brand);
+        }
+
+        .sort-state {
+            font-size: 0.72rem;
+            color: var(--text-soft);
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
         .alert {
             padding: 1rem 1.1rem;
             border-radius: 16px;
@@ -965,76 +993,58 @@
                     <span class="brand-mark">▦</span>
                     <span class="brand-copy">
                         <strong>{{ t(lang, 'app.title') }}</strong>
-                        <span>Practice workspace</span>
+                        <span>{{ t(lang, 'app.workspace') }}</span>
                     </span>
                 </a>
 
                 <div>
-                    <div class="sidebar-section-label">Workspace</div>
+                    <div class="sidebar-section-label">{{ t(lang, 'app.workspace') }}</div>
                     <ul class="nav-list">
                         <li>
                             <a href="/" class="nav-link {% if request.url.path == '/' %}is-active{% endif %}">
                                 <span>{{ t(lang, 'nav.dashboard') }}</span>
-                                <span class="nav-hint">Inbox</span>
                             </a>
                         </li>
                         <li>
                             <a href="/animals" class="nav-link {% if request.url.path.startswith('/animal') or request.url.path == '/animals' or request.url.path == '/animals/new' %}is-active{% endif %}">
                                 <span>{{ t(lang, 'nav.animals') }}</span>
-                                <span class="nav-hint">Patients</span>
                             </a>
                         </li>
                         <li>
                             <a href="/reports" class="nav-link {% if request.url.path == '/reports' or request.url.path.startswith('/session/') %}is-active{% endif %}">
-                                <span>Reports</span>
-                                <span class="nav-hint">Lab history</span>
+                                <span>{{ t(lang, 'nav.reports') }}</span>
                             </a>
                         </li>
                         <li>
                             <a href="/upload" class="nav-link {% if request.url.path == '/upload' %}is-active{% endif %}">
                                 <span>{{ t(lang, 'nav.upload') }}</span>
-                                <span class="nav-hint">Manual intake</span>
                             </a>
                         </li>
                         <li>
                             <a href="/imports" class="nav-link {% if request.url.path == '/imports' %}is-active{% endif %}">
                                 <span>{{ t(lang, 'nav.imports') }}</span>
-                                <span class="nav-hint">Email audit</span>
                             </a>
                         </li>
                         <li>
                             <a href="/unassigned-reports" class="nav-link {% if request.url.path == '/unassigned-reports' %}is-active{% endif %}">
-                                <span>Unassigned</span>
-                                <span class="nav-hint">Review queue</span>
+                                <span>{{ t(lang, 'nav.unassigned') }}</span>
                             </a>
                         </li>
                         {% if current_user and current_user.is_superuser %}
                         <li>
                             <a href="/admin/users" class="nav-link {% if request.url.path.startswith('/admin') %}is-active{% endif %}">
                                 <span>{{ t(lang, 'nav.admin') }}</span>
-                                <span class="nav-hint">Users</span>
                             </a>
                         </li>
                         {% endif %}
                     </ul>
-                </div>
-
-                <div class="sidebar-meta">
-                    <div class="sidebar-card">
-                        <strong>Quick actions</strong>
-                        <p>Upload a report, review uncertain matches, or create a new animal without leaving the workspace.</p>
-                    </div>
-                    <div class="sidebar-card">
-                        <strong>Clinical rule</strong>
-                        <p>Overviews stay compact. Full measurements, findings, and notes belong in detail views.</p>
-                    </div>
                 </div>
             </div>
         </aside>
 
         <div class="content-shell">
             <header class="topbar">
-                <button class="mobile-menu-btn" id="sidebarToggle" type="button" aria-label="Toggle navigation">☰</button>
+                <button class="mobile-menu-btn" id="sidebarToggle" type="button" aria-label="{{ t(lang, 'common.toggle_navigation') }}">☰</button>
 
                 <div class="shell-search">
                     <form action="/animals" method="get" autocomplete="off">
@@ -1043,7 +1053,7 @@
                             type="search"
                             name="q"
                             id="globalSearchInput"
-                            placeholder="Search animals, owners, reports, microchips, or vets"
+                            placeholder="{{ t(lang, 'search.placeholder') }}"
                             autocomplete="off"
                         >
                         <span class="search-kbd">/</span>
@@ -1055,7 +1065,7 @@
                     <div class="user-chip desktop-hide">
                         {% if current_user %}
                         <strong>{{ current_user.display_name or current_user.email }}</strong>
-                        <span>Practice-wide access</span>
+                        <span>{{ t(lang, 'app.practice_access') }}</span>
                         {% endif %}
                     </div>
 
@@ -1076,7 +1086,7 @@
 
     <div class="modal" id="logoutModal">
         <div class="modal-content">
-            <div class="eyebrow">Session</div>
+            <div class="eyebrow">{{ t(lang, 'app.session') }}</div>
             <h2 style="margin-bottom: 0.5rem;">{{ t(lang, 'logout.title') }}</h2>
             <p class="text-muted" style="margin-bottom: 1.25rem;">{{ t(lang, 'logout.message') }}</p>
             <div class="inline-actions">
@@ -1130,6 +1140,13 @@
             const input = document.getElementById('globalSearchInput');
             const panel = document.getElementById('globalSearchResults');
             let debounceTimer = null;
+            const searchTranslations = {
+                animals: {{ t(lang, 'search.groups.animals')|tojson }},
+                reports: {{ t(lang, 'search.groups.reports')|tojson }},
+                pendingReports: {{ t(lang, 'search.groups.pending_reports')|tojson }},
+                noMatches: {{ t(lang, 'search.no_matches')|tojson }},
+                unknownPatient: {{ t(lang, 'common.unknown_patient')|tojson }}
+            };
 
             function renderGroup(title, items, formatter) {
                 if (!items.length) return '';
@@ -1168,7 +1185,7 @@
                     const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
                     const data = await response.json();
                     const html = [
-                        renderGroup('Animals', data.animals || [], function (item) {
+                        renderGroup(searchTranslations.animals, data.animals || [], function (item) {
                             return `
                                 <a href="${item.href}" class="search-result-link">
                                     <div class="search-result-title">${escapeHtml(item.name)}</div>
@@ -1176,7 +1193,7 @@
                                 </a>
                             `;
                         }),
-                        renderGroup('Reports', data.reports || [], function (item) {
+                        renderGroup(searchTranslations.reports, data.reports || [], function (item) {
                             return `
                                 <a href="${item.href}" class="search-result-link">
                                     <div class="search-result-title">${escapeHtml(item.report_number)}</div>
@@ -1184,17 +1201,17 @@
                                 </a>
                             `;
                         }),
-                        renderGroup('Pending Assignment', data.pending_reports || [], function (item) {
+                        renderGroup(searchTranslations.pendingReports, data.pending_reports || [], function (item) {
                             return `
                                 <a href="${item.href}" class="search-result-link">
                                     <div class="search-result-title">${escapeHtml(item.report_number)}</div>
-                                    <div class="search-result-meta">${escapeHtml(item.animal_name || 'Unknown patient')}</div>
+                                    <div class="search-result-meta">${escapeHtml(item.animal_name || searchTranslations.unknownPatient)}</div>
                                 </a>
                             `;
                         })
                     ].filter(Boolean).join('');
 
-                    showPanel(html || '<div class="search-group"><div class="search-group-label">No matches</div></div>');
+                    showPanel(html || `<div class="search-group"><div class="search-group-label">${escapeHtml(searchTranslations.noMatches)}</div></div>`);
                 } catch (error) {
                     showPanel('');
                 }

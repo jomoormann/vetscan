@@ -686,56 +686,103 @@ def build_pagination(request: Request, total_items: int, page: int, page_size: i
     }
 
 
-def humanize_report_type(report_type: Optional[str], panel_name: Optional[str] = None) -> str:
+def build_sort_toggle(request: Request, current_sort: str, field_key: str,
+                      default_direction: str = "asc", param_name: str = "sort",
+                      page_param: str = "page") -> Dict[str, Optional[str]]:
+    """Build toggle metadata for clickable table header sorting."""
+    asc_value = f"{field_key}_asc"
+    desc_value = f"{field_key}_desc"
+    state = None
+    if current_sort == asc_value:
+        state = "asc"
+    elif current_sort == desc_value:
+        state = "desc"
+
+    if default_direction == "desc":
+        next_value = asc_value if current_sort == desc_value else desc_value
+    else:
+        next_value = desc_value if current_sort == asc_value else asc_value
+
+    return {
+        "url": build_page_url(request, **{param_name: next_value, page_param: 1}),
+        "state": state,
+    }
+
+
+def humanize_report_type(report_type: Optional[str], panel_name: Optional[str] = None,
+                         lang: str = DEFAULT_LANGUAGE) -> str:
     """Display-friendly label for report families."""
     normalized = (report_type or "").strip().lower()
     panel = (panel_name or "").strip()
     if normalized == "dnatech_proteinogram":
-        return "Proteinogram"
+        return get_text(lang, "report_types.dnatech_proteinogram")
+    if normalized == "cvs_analyzer":
+        return get_text(lang, "report_types.cvs_analyzer")
     if normalized == "cytology":
-        return "Cytology"
+        return get_text(lang, "report_types.cytology")
     if normalized == "immunocytochemistry":
-        return "Immunocytochemistry"
+        return get_text(lang, "report_types.immunocytochemistry")
+    if normalized == "biochemistry":
+        return get_text(lang, "report_types.biochemistry")
+    if normalized == "urinalysis":
+        return get_text(lang, "report_types.urinalysis")
     if panel:
         return panel.replace("_", " ").title()
     if normalized:
         return normalized.replace("_", " ").title()
-    return "Imported report"
+    return get_text(lang, "report_types.imported_report")
 
 
-def summarize_report_overview(row: Dict[str, Any]) -> str:
+def summarize_report_overview(row: Dict[str, Any], lang: str = DEFAULT_LANGUAGE) -> str:
     """Compact summary used in tables and cards."""
     if row.get("protein_result_count"):
-        return f"{row['protein_result_count']} protein markers"
+        return get_text(lang, "report_summary.protein_markers").format(
+            count=row["protein_result_count"]
+        )
     if row.get("measurement_count"):
-        return f"{row['measurement_count']} measurements"
+        return get_text(lang, "report_summary.measurements").format(
+            count=row["measurement_count"]
+        )
     if row.get("pathology_finding_count"):
-        detail = f"{row['pathology_finding_count']} findings"
         if row.get("asset_count"):
-            detail += f" | {row['asset_count']} images"
-        return detail
+            return get_text(lang, "report_summary.findings_with_images").format(
+                findings=row["pathology_finding_count"],
+                images=row["asset_count"],
+            )
+        return get_text(lang, "report_summary.findings").format(
+            count=row["pathology_finding_count"]
+        )
     if (row.get("report_type") or "").lower() in {"biochemistry", "urinalysis"}:
-        return "Renal and urine markers"
-    return "Imported report"
+        return get_text(lang, "report_summary.renal_and_urine_markers")
+    return get_text(lang, "report_summary.imported_report")
 
 
-def describe_report_item(item: dict) -> str:
+def describe_report_item(item: dict, lang: str = DEFAULT_LANGUAGE) -> str:
     """Human-readable summary for a session row in the animal page."""
     if item["results"]:
-        return f"{len(item['results'])} protein markers"
+        return get_text(lang, "report_summary.protein_markers").format(
+            count=len(item["results"])
+        )
     if item["measurements"]:
-        return f"{len(item['measurements'])} measurements"
+        return get_text(lang, "report_summary.measurements").format(
+            count=len(item["measurements"])
+        )
     if item["pathology_findings"]:
-        detail = f"{len(item['pathology_findings'])} findings"
         if item["session_assets"]:
-            detail += f" | {len(item['session_assets'])} images"
-        return detail
+            return get_text(lang, "report_summary.findings_with_images").format(
+                findings=len(item["pathology_findings"]),
+                images=len(item["session_assets"]),
+            )
+        return get_text(lang, "report_summary.findings").format(
+            count=len(item["pathology_findings"])
+        )
     if item["biochemistry"] or item["urinalysis"]:
-        return "Renal and urine markers"
-    return "Imported report"
+        return get_text(lang, "report_summary.renal_and_urine_markers")
+    return get_text(lang, "report_summary.imported_report")
 
 
-def build_session_groups(sessions_with_results: List[dict]) -> List[dict]:
+def build_session_groups(sessions_with_results: List[dict],
+                         lang: str = DEFAULT_LANGUAGE) -> List[dict]:
     """Group animal history rows by report family for the UI."""
     grouped = {}
 
@@ -746,19 +793,19 @@ def build_session_groups(sessions_with_results: List[dict]) -> List[dict]:
 
         if report_type == "dnatech_proteinogram":
             key = "protein_reports"
-            label = "Protein Reports"
+            label = get_text(lang, "report_groups.protein_reports")
             sort_order = 1
         elif "cytology" in report_type or "immuno" in report_type or source_system == "vedis":
             key = "pathology_reports"
-            label = "Pathology Reports"
+            label = get_text(lang, "report_groups.pathology_reports")
             sort_order = 3
         elif session.panel_name or item["measurements"]:
             key = "analyzer_reports"
-            label = "Analyzer Panels"
+            label = get_text(lang, "report_groups.analyzer_reports")
             sort_order = 2
         else:
             key = "other_reports"
-            label = "Other Reports"
+            label = get_text(lang, "report_groups.other_reports")
             sort_order = 4
 
         if key not in grouped:
@@ -769,7 +816,7 @@ def build_session_groups(sessions_with_results: List[dict]) -> List[dict]:
                 "rows": [],
             }
 
-        item["report_summary"] = describe_report_item(item)
+        item["report_summary"] = describe_report_item(item, lang)
         grouped[key]["rows"].append(item)
 
     return sorted(grouped.values(), key=lambda group: group["sort_order"])
@@ -1480,6 +1527,7 @@ async def home(request: Request):
             pending_reports.append({
                 "report": report,
                 "summary": json.loads(report.parsed_summary_json or "{}"),
+                "report_type_label": humanize_report_type(report.report_type, None, lang),
             })
         recent_failures = [
             dict(row) for row in db.conn.execute("""
@@ -1515,8 +1563,10 @@ async def home(request: Request):
         ]
 
         for row in recent_reports:
-            row["display_type"] = humanize_report_type(row.get("report_type"), row.get("panel_name"))
-            row["summary"] = summarize_report_overview(row)
+            row["display_type"] = humanize_report_type(
+                row.get("report_type"), row.get("panel_name"), lang
+            )
+            row["summary"] = summarize_report_overview(row, lang)
 
         response = templates.TemplateResponse("index.html", {
             "request": request,
@@ -1582,6 +1632,13 @@ async def list_animals(request: Request):
                 "species": species or "",
                 "sort": sort,
                 "page_size": page_size,
+            },
+            "sort_links": {
+                "animal": build_sort_toggle(request, sort, "name", "asc"),
+                "owner": build_sort_toggle(request, sort, "owner", "asc"),
+                "vet": build_sort_toggle(request, sort, "vet", "asc"),
+                "last_report": build_sort_toggle(request, sort, "last_report", "desc"),
+                "reports": build_sort_toggle(request, sort, "reports", "desc"),
             },
             "responsible_vets": service.db.list_responsible_vets(),
             "species_options": species_options,
@@ -1714,28 +1771,33 @@ async def list_reports(request: Request):
         source_system = (request.query_params.get("source_system") or "").strip() or None
         report_type = (request.query_params.get("report_type") or "").strip() or None
         responsible_vet = (request.query_params.get("responsible_vet") or "").strip() or None
+        sort = (request.query_params.get("sort") or "date_desc").strip()
 
         rows, total = service.db.list_reports_paginated(
             search=search,
             source_system=source_system,
             report_type=report_type,
             responsible_vet=responsible_vet,
+            sort=sort,
             page=page,
             page_size=page_size,
         )
         for row in rows:
-            row["display_type"] = humanize_report_type(row.get("report_type"), row.get("panel_name"))
-            row["summary"] = summarize_report_overview(row)
+            row["display_type"] = humanize_report_type(
+                row.get("report_type"), row.get("panel_name"), lang
+            )
+            row["summary"] = summarize_report_overview(row, lang)
 
         pagination = build_pagination(request, total, page, page_size)
-        report_types = [
-            row["report_type"] for row in service.db.conn.execute("""
+        report_types = [{
+            "value": row["report_type"],
+            "label": humanize_report_type(row["report_type"], None, lang),
+        } for row in service.db.conn.execute("""
                 SELECT DISTINCT report_type
                 FROM test_sessions
                 WHERE report_type IS NOT NULL AND TRIM(report_type) != ''
                 ORDER BY report_type
-            """).fetchall()
-        ]
+            """).fetchall()]
         source_systems = [
             row["source_system"] for row in service.db.conn.execute("""
                 SELECT DISTINCT source_system
@@ -1759,7 +1821,15 @@ async def list_reports(request: Request):
                 "source_system": source_system or "",
                 "report_type": report_type or "",
                 "responsible_vet": responsible_vet or "",
+                "sort": sort,
                 "page_size": page_size,
+            },
+            "sort_links": {
+                "date": build_sort_toggle(request, sort, "date", "desc"),
+                "report": build_sort_toggle(request, sort, "report", "asc"),
+                "animal": build_sort_toggle(request, sort, "animal", "asc"),
+                "vet": build_sort_toggle(request, sort, "vet", "asc"),
+                "source": build_sort_toggle(request, sort, "source", "asc"),
             },
             "source_systems": source_systems,
             "report_types": report_types,
@@ -1794,16 +1864,20 @@ async def view_animal(request: Request, animal_id: int):
         report_page = parse_positive_int(request.query_params.get("report_page"), default=1)
         report_page_size = 10
         report_type_filter = (request.query_params.get("report_type") or "").strip() or None
+        report_sort = (request.query_params.get("report_sort") or "date_desc").strip()
 
         report_rows, report_total = db.list_reports_paginated(
             animal_id=animal_id,
             report_type=report_type_filter,
+            sort=report_sort,
             page=report_page,
             page_size=report_page_size,
         )
         for row in report_rows:
-            row["display_type"] = humanize_report_type(row.get("report_type"), row.get("panel_name"))
-            row["summary"] = summarize_report_overview(row)
+            row["display_type"] = humanize_report_type(
+                row.get("report_type"), row.get("panel_name"), lang
+            )
+            row["summary"] = summarize_report_overview(row, lang)
 
         overview_reports, _ = db.list_reports_paginated(
             animal_id=animal_id,
@@ -1811,8 +1885,10 @@ async def view_animal(request: Request, animal_id: int):
             page_size=5,
         )
         for row in overview_reports:
-            row["display_type"] = humanize_report_type(row.get("report_type"), row.get("panel_name"))
-            row["summary"] = summarize_report_overview(row)
+            row["display_type"] = humanize_report_type(
+                row.get("report_type"), row.get("panel_name"), lang
+            )
+            row["summary"] = summarize_report_overview(row, lang)
 
         clinical_notes = db.get_clinical_notes_for_animal(animal_id)
         diagnosis_reports = db.get_diagnosis_reports_for_animal(animal_id)
@@ -1831,7 +1907,7 @@ async def view_animal(request: Request, animal_id: int):
                 continue
             report_type_options.append({
                 "value": value,
-                "label": humanize_report_type(row["report_type"], row["panel_name"]),
+                "label": humanize_report_type(row["report_type"], row["panel_name"], lang),
             })
 
         # Generate CSRF token
@@ -1850,6 +1926,12 @@ async def view_animal(request: Request, animal_id: int):
             ),
             "report_total": report_total,
             "report_type_filter": report_type_filter or "",
+            "report_sort": report_sort,
+            "report_sort_links": {
+                "date": build_sort_toggle(request, report_sort, "date", "desc", param_name="report_sort", page_param="report_page"),
+                "report": build_sort_toggle(request, report_sort, "report", "asc", param_name="report_sort", page_param="report_page"),
+                "source": build_sort_toggle(request, report_sort, "source", "asc", param_name="report_sort", page_param="report_page"),
+            },
             "report_type_options": report_type_options,
             "symptoms": symptoms,
             "observations": observations,
@@ -1860,7 +1942,8 @@ async def view_animal(request: Request, animal_id: int):
             "diagnosis_available": DIAGNOSIS_AVAILABLE,
             "current_user": current_user,
             "csrf_token": signed_csrf,
-            "today": date.today().isoformat()
+            "today": date.today().isoformat(),
+            "merge_notice": request.query_params.get("merged_from"),
         })
         response.set_cookie(
             key=CSRF_COOKIE_NAME,
@@ -1966,6 +2049,42 @@ async def update_animal(
         service.close()
 
 
+@app.post("/animal/{animal_id}/merge")
+async def merge_animal(
+    request: Request,
+    animal_id: int,
+    target_animal_id: int = Form(...),
+    csrf_token: str = Form(None),
+):
+    """Merge a duplicate animal into an existing animal record."""
+    if not validate_csrf(request, csrf_token):
+        return JSONResponse({"success": False, "message": "Invalid request"}, status_code=403)
+
+    service = get_service()
+    try:
+        if animal_id == target_animal_id:
+            return JSONResponse({"success": False, "message": "Choose a different target animal."}, status_code=400)
+
+        if not service.db.get_animal(animal_id):
+            return JSONResponse({"success": False, "message": "Source animal not found."}, status_code=404)
+        if not service.db.get_animal(target_animal_id):
+            return JSONResponse({"success": False, "message": "Target animal not found."}, status_code=404)
+
+        success = service.db.merge_animals(animal_id, target_animal_id)
+        if not success:
+            return JSONResponse({"success": False, "message": "Could not merge the selected animals."}, status_code=400)
+
+        return JSONResponse({
+            "success": True,
+            "redirect_url": f"/animal/{target_animal_id}?tab=profile&merged_from={animal_id}",
+        })
+    except Exception as e:
+        logger.exception("Error merging animals")
+        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+    finally:
+        service.close()
+
+
 @app.get("/session/{session_id}", response_class=HTMLResponse)
 async def view_session(request: Request, session_id: int):
     """View detailed test session results"""
@@ -2016,7 +2135,7 @@ async def view_session(request: Request, session_id: int):
             "comparison": comparison,
             "current_user": current_user,
             "pdf_url": build_upload_url(session.pdf_path),
-            "report_type_label": humanize_report_type(session.report_type, session.panel_name),
+            "report_type_label": humanize_report_type(session.report_type, session.panel_name, lang),
         })
         return set_lang_cookie(response, lang)
     except HTTPException:
@@ -2164,6 +2283,7 @@ async def view_unassigned_reports(request: Request, error: Optional[str] = None)
                 "summary": summary,
                 "candidates": candidates,
                 "pdf_url": build_upload_url(report.pdf_path),
+                "report_type_label": humanize_report_type(report.report_type, None, lang),
             })
 
         csrf_raw = request.cookies.get(CSRF_COOKIE_NAME) or generate_csrf_token()
@@ -2877,11 +2997,15 @@ async def api_list_animals(q: Optional[str] = None, limit: int = 50):
 
 
 @app.get("/api/animal-lookup")
-async def api_animal_lookup(q: str, limit: int = 8):
+async def api_animal_lookup(q: str, limit: int = 8, exclude_id: Optional[int] = None):
     """API: Lightweight animal search for assignment workflows."""
     service = get_service()
     try:
-        rows = service.db.search_animals(q, limit=min(max(limit, 1), 12))
+        rows = service.db.search_animals(
+            q,
+            limit=min(max(limit, 1), 12),
+            exclude_id=exclude_id,
+        )
         return [{
             "id": row["id"],
             "name": row["name"],
@@ -2897,12 +3021,13 @@ async def api_animal_lookup(q: str, limit: int = 8):
 
 
 @app.get("/api/search")
-async def api_global_search(q: str):
+async def api_global_search(request: Request, q: str):
     """API: Header search across animals, imported reports, and pending reports."""
     search = (q or "").strip()
     if len(search) < 2:
         return {"animals": [], "reports": [], "pending_reports": []}
 
+    lang = get_lang(request)
     service = get_service()
     try:
         animals = service.db.search_animals(search, limit=6)
@@ -2924,9 +3049,13 @@ async def api_global_search(q: str):
             } for row in animals],
             "reports": [{
                 "id": row["id"],
-                "report_number": row.get("report_number") or row.get("external_report_id") or f"Report {row['id']}",
+                "report_number": (
+                    row.get("report_number")
+                    or row.get("external_report_id")
+                    or f"{get_text(lang, 'common.report')} {row['id']}"
+                ),
                 "animal_name": row.get("animal_name"),
-                "report_type": humanize_report_type(row.get("report_type")),
+                "report_type": humanize_report_type(row.get("report_type"), row.get("panel_name"), lang),
                 "test_date": row.get("test_date"),
                 "href": f"/session/{row['id']}",
             } for row in reports],
@@ -2934,7 +3063,7 @@ async def api_global_search(q: str):
                 "id": report.id,
                 "report_number": report.report_number or report.external_report_id or report.filename,
                 "animal_name": report.animal_name,
-                "report_type": report.report_type,
+                "report_type": humanize_report_type(report.report_type, None, lang),
                 "href": "/unassigned-reports",
             } for report in pending_reports],
         }

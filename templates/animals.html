@@ -1,66 +1,56 @@
 {% extends "base.html" %}
 
-{% block title %}Animals - {{ t(lang, 'app.title') }}{% endblock %}
+{% block title %}{{ t(lang, 'animals.title') }} - {{ t(lang, 'app.title') }}{% endblock %}
 
 {% block content %}
 <div class="page-header">
     <div>
-        <div class="eyebrow">Patient registry</div>
-        <h1>Animals</h1>
-        <p class="page-subtitle">Search, filter, and open the animals that matter without loading the full record list at once.</p>
+        <div class="eyebrow">{{ t(lang, 'animals.registry') }}</div>
+        <h1>{{ t(lang, 'animals.title') }}</h1>
+        <p class="page-subtitle">{{ t(lang, 'animals.subtitle') }}</p>
     </div>
     <div class="inline-actions">
-        <a href="/animals/new" class="btn btn-primary">New animal</a>
-        <a href="/upload" class="btn btn-secondary">Upload report</a>
+        <a href="/animals/new" class="btn btn-primary">{{ t(lang, 'animals.new_animal') }}</a>
+        <a href="/upload" class="btn btn-secondary">{{ t(lang, 'dashboard.upload_report') }}</a>
     </div>
 </div>
 
 <section class="card">
-    <form method="get" action="/animals" class="filters">
-        <div class="filters-inline">
-            <div class="field">
-                <label for="animal-search">Search</label>
-                <input id="animal-search" type="search" name="q" value="{{ filters.q }}" placeholder="Animal, owner, microchip, breed, or vet">
-            </div>
-            <div class="field">
-                <label for="animal-vet">Responsible vet</label>
-                <select id="animal-vet" name="responsible_vet">
-                    <option value="">All vets</option>
-                    {% for vet in responsible_vets %}
-                    <option value="{{ vet }}" {% if filters.responsible_vet == vet %}selected{% endif %}>{{ vet }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="field">
-                <label for="animal-species">Species</label>
-                <select id="animal-species" name="species">
-                    <option value="">All species</option>
-                    {% for option in species_options %}
-                    <option value="{{ option }}" {% if filters.species == option %}selected{% endif %}>{{ option }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="field">
-                <label for="animal-sort">Sort</label>
-                <select id="animal-sort" name="sort">
-                    <option value="updated_desc" {% if filters.sort == 'updated_desc' %}selected{% endif %}>Recent activity</option>
-                    <option value="reports_desc" {% if filters.sort == 'reports_desc' %}selected{% endif %}>Most reports</option>
-                    <option value="name_asc" {% if filters.sort == 'name_asc' %}selected{% endif %}>Name A-Z</option>
-                    <option value="name_desc" {% if filters.sort == 'name_desc' %}selected{% endif %}>Name Z-A</option>
-                </select>
-            </div>
-            <div class="field">
-                <label for="animal-page-size">Rows</label>
-                <select id="animal-page-size" name="page_size">
-                    {% for size in [10, 25, 50, 100] %}
-                    <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
-                    {% endfor %}
-                </select>
-            </div>
+    <form method="get" action="/animals" class="filters filters-compact">
+        <input type="hidden" name="sort" value="{{ filters.sort }}">
+        <div class="field search-field">
+            <label for="animal-search" class="sr-only">{{ t(lang, 'animals.search_label') }}</label>
+            <input id="animal-search" type="search" name="q" value="{{ filters.q }}" placeholder="{{ t(lang, 'animals.search_placeholder') }}">
         </div>
-        <div class="filters-actions">
-            <button type="submit" class="btn btn-primary">Apply filters</button>
-            <a href="/animals" class="btn btn-secondary">Reset</a>
+        <div class="field">
+            <label for="animal-vet" class="sr-only">{{ t(lang, 'animal.responsible_vet') }}</label>
+            <select id="animal-vet" name="responsible_vet" onchange="this.form.submit()">
+                <option value="">{{ t(lang, 'animals.all_vets') }}</option>
+                {% for vet in responsible_vets %}
+                <option value="{{ vet }}" {% if filters.responsible_vet == vet %}selected{% endif %}>{{ vet }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label for="animal-species" class="sr-only">{{ t(lang, 'common.species') }}</label>
+            <select id="animal-species" name="species" onchange="this.form.submit()">
+                <option value="">{{ t(lang, 'animals.all_species') }}</option>
+                {% for option in species_options %}
+                <option value="{{ option }}" {% if filters.species == option %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label for="animal-page-size" class="sr-only">{{ t(lang, 'animals.rows_per_page') }}</label>
+            <select id="animal-page-size" name="page_size" onchange="this.form.submit()">
+                {% for size in [10, 25, 50, 100] %}
+                <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ t(lang, 'animals.rows_count').format(count=size) }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="inline-actions">
+            <button type="submit" class="btn btn-primary">{{ t(lang, 'common.search') }}</button>
+            <a href="/animals" class="btn btn-secondary">{{ t(lang, 'common.clear') }}</a>
         </div>
     </form>
 </section>
@@ -68,15 +58,8 @@
 <section class="card">
     <div class="card-header">
         <div>
-            <div class="card-kicker">Overview</div>
-            <h2 class="card-title">Animal list</h2>
-        </div>
-        <div class="pagination-meta">
-            {% if pagination.total_items %}
-            Showing {{ pagination.range_start }}-{{ pagination.range_end }} of {{ pagination.total_items }}
-            {% else %}
-            No animals found
-            {% endif %}
+            <div class="card-kicker">{{ t(lang, 'animals.overview') }}</div>
+            <h2 class="card-title">{{ t(lang, 'animals.list_title') }}</h2>
         </div>
     </div>
 
@@ -86,12 +69,12 @@
             <table>
                 <thead>
                     <tr>
-                        <th>Animal</th>
-                        <th>Pet owner</th>
-                        <th>Responsible vet</th>
-                        <th>Last report</th>
-                        <th>Reports</th>
-                        <th>Action</th>
+                        <th><a class="sort-link" href="{{ sort_links.animal.url }}">{{ t(lang, 'common.animal') }}{% if sort_links.animal.state %}<span class="sort-state">{{ '^' if sort_links.animal.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
+                        <th><a class="sort-link" href="{{ sort_links.owner.url }}">{{ t(lang, 'common.pet_owner') }}{% if sort_links.owner.state %}<span class="sort-state">{{ '^' if sort_links.owner.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
+                        <th><a class="sort-link" href="{{ sort_links.vet.url }}">{{ t(lang, 'animal.responsible_vet') }}{% if sort_links.vet.state %}<span class="sort-state">{{ '^' if sort_links.vet.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
+                        <th><a class="sort-link" href="{{ sort_links.last_report.url }}">{{ t(lang, 'animals.last_report') }}{% if sort_links.last_report.state %}<span class="sort-state">{{ '^' if sort_links.last_report.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
+                        <th><a class="sort-link" href="{{ sort_links.reports.url }}">{{ t(lang, 'nav.reports') }}{% if sort_links.reports.state %}<span class="sort-state">{{ '^' if sort_links.reports.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
+                        <th>{{ t(lang, 'common.actions') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -110,16 +93,16 @@
                             {% if item.last_test %}
                             {{ item.last_test|format_date }}
                             {% else %}
-                            <span class="text-muted">No reports yet</span>
+                            <span class="text-muted">{{ t(lang, 'animals.no_reports_yet') }}</span>
                             {% endif %}
                         </td>
                         <td>
                             <span class="badge badge-info">{{ item.test_count }}</span>
                             {% if item.last_note_at %}
-                            <div class="table-meta">Last note {{ item.last_note_at|format_date }}</div>
+                            <div class="table-meta">{{ t(lang, 'animals.last_note').format(date=item.last_note_at|format_date) }}</div>
                             {% endif %}
                         </td>
-                        <td><a href="/animal/{{ item.animal.id }}" class="btn btn-secondary">Open</a></td>
+                        <td><a href="/animal/{{ item.animal.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -129,30 +112,30 @@
 
     <div class="pagination">
         <div class="pagination-meta">
-            {% if filters.q or filters.responsible_vet or filters.species %}
-            Filters are active.
+            {% if pagination.total_items %}
+            {{ t(lang, 'common.showing_range').format(start=pagination.range_start, end=pagination.range_end, total=pagination.total_items) }}
             {% else %}
-            Practice-wide view.
+            {{ t(lang, 'animals.no_animals_found') }}
             {% endif %}
         </div>
         <div class="pagination-links">
             {% if pagination.has_prev %}
-            <a href="{{ pagination.prev_url }}" class="pagination-link">Previous</a>
+            <a href="{{ pagination.prev_url }}" class="pagination-link">{{ t(lang, 'common.previous') }}</a>
             {% endif %}
             {% for page in pagination.pages %}
             <a href="{{ page.url }}" class="pagination-link {% if page.current %}is-current{% endif %}">{{ page.number }}</a>
             {% endfor %}
             {% if pagination.has_next %}
-            <a href="{{ pagination.next_url }}" class="pagination-link">Next</a>
+            <a href="{{ pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }}</a>
             {% endif %}
         </div>
     </div>
     {% else %}
     <div class="empty-state">
-        <p>No animals matched the current filters.</p>
+        <p>{{ t(lang, 'animals.no_matches') }}</p>
         <div class="inline-actions" style="justify-content: center; margin-top: 1rem;">
-            <a href="/animals/new" class="btn btn-primary">Create animal</a>
-            <a href="/animals" class="btn btn-secondary">Clear filters</a>
+            <a href="/animals/new" class="btn btn-primary">{{ t(lang, 'animals.create_animal') }}</a>
+            <a href="/animals" class="btn btn-secondary">{{ t(lang, 'animals.clear_filters') }}</a>
         </div>
     </div>
     {% endif %}

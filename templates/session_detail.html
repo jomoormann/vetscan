@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}{{ session.report_number or ('Report ' ~ session.id) }} - {{ t(lang, 'app.title') }}{% endblock %}
+{% block title %}{{ session.report_number or (t(lang, 'common.report') ~ ' ' ~ session.id) }} - {{ t(lang, 'app.title') }}{% endblock %}
 
 {% block content %}
 <div class="page-header">
     <div>
-        <a href="/animal/{{ animal.id }}" class="text-muted">← Back to {{ animal.name }}</a>
-        <div class="eyebrow" style="margin-top: 0.5rem;">Report detail</div>
-        <h1>{{ session.report_number or session.external_report_id or ('Report ' ~ session.id) }}</h1>
+        <a href="/animal/{{ animal.id }}" class="text-muted">← {{ t(lang, 'session_detail.back_to_animal').format(name=animal.name) }}</a>
+        <div class="eyebrow" style="margin-top: 0.5rem;">{{ t(lang, 'session_detail.detail') }}</div>
+        <h1>{{ session.report_number or session.external_report_id or (t(lang, 'common.report') ~ ' ' ~ session.id) }}</h1>
         <p class="page-subtitle">
             {{ report_type_label }}
             {% if session.test_date %} · {{ session.test_date|format_date }}{% endif %}
@@ -15,9 +15,9 @@
         </p>
     </div>
     <div class="inline-actions">
-        <a href="/animal/{{ animal.id }}" class="btn btn-secondary">Open animal</a>
+        <a href="/animal/{{ animal.id }}" class="btn btn-secondary">{{ t(lang, 'session_detail.open_animal') }}</a>
         {% if pdf_url %}
-        <a href="{{ pdf_url }}" class="btn btn-primary" target="_blank" rel="noopener">Open PDF</a>
+        <a href="{{ pdf_url }}" class="btn btn-primary" target="_blank" rel="noopener">{{ t(lang, 'session_detail.open_pdf') }}</a>
         {% endif %}
     </div>
 </div>
@@ -28,8 +28,8 @@
         <section class="card">
             <div class="card-header">
                 <div>
-                    <div class="card-kicker">Structured data</div>
-                    <h2 class="card-title">{{ session.panel_name or 'Measurements' }}</h2>
+                    <div class="card-kicker">{{ t(lang, 'session_detail.structured_data') }}</div>
+                    <h2 class="card-title">{{ session.panel_name or t(lang, 'session_detail.measurements') }}</h2>
                 </div>
             </div>
             <div class="table-shell">
@@ -37,10 +37,10 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>Code</th>
-                                <th>Value</th>
-                                <th>Reference</th>
-                                <th>Status</th>
+                                <th>{{ t(lang, 'session_detail.code') }}</th>
+                                <th>{{ t(lang, 'session_detail.value') }}</th>
+                                <th>{{ t(lang, 'session_detail.reference') }}</th>
+                                <th>{{ t(lang, 'session_detail.status') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -72,11 +72,11 @@
                                 </td>
                                 <td>
                                     {% if measurement.flag == 'high' %}
-                                    <span class="badge badge-high">High</span>
+                                    <span class="badge badge-high">{{ t(lang, 'common.high') }}</span>
                                     {% elif measurement.flag == 'low' %}
-                                    <span class="badge badge-low">Low</span>
+                                    <span class="badge badge-low">{{ t(lang, 'common.low') }}</span>
                                     {% else %}
-                                    <span class="badge badge-normal">Normal</span>
+                                    <span class="badge badge-normal">{{ t(lang, 'common.normal') }}</span>
                                     {% endif %}
                                 </td>
                             </tr>
@@ -92,8 +92,8 @@
         <section class="card">
             <div class="card-header">
                 <div>
-                    <div class="card-kicker">Proteinogram</div>
-                    <h2 class="card-title">Protein fractions</h2>
+                    <div class="card-kicker">{{ t(lang, 'session_detail.proteinogram_short') }}</div>
+                    <h2 class="card-title">{{ t(lang, 'session_detail.protein_fractions') }}</h2>
                 </div>
             </div>
             <div class="table-shell">
@@ -101,11 +101,11 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>Marker</th>
+                                <th>{{ t(lang, 'session_detail.marker') }}</th>
                                 <th>%</th>
                                 <th>g/dL</th>
-                                <th>Reference</th>
-                                <th>Status</th>
+                                <th>{{ t(lang, 'session_detail.reference') }}</th>
+                                <th>{{ t(lang, 'session_detail.status') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -123,11 +123,11 @@
                                 </td>
                                 <td>
                                     {% if result.flag == 'high' %}
-                                    <span class="badge badge-high">High</span>
+                                    <span class="badge badge-high">{{ t(lang, 'common.high') }}</span>
                                     {% elif result.flag == 'low' %}
-                                    <span class="badge badge-low">Low</span>
+                                    <span class="badge badge-low">{{ t(lang, 'common.low') }}</span>
                                     {% else %}
-                                    <span class="badge badge-normal">Normal</span>
+                                    <span class="badge badge-normal">{{ t(lang, 'common.normal') }}</span>
                                     {% endif %}
                                 </td>
                             </tr>
@@ -143,8 +143,8 @@
         <section class="card">
             <div class="card-header">
                 <div>
-                    <div class="card-kicker">Narrative report</div>
-                    <h2 class="card-title">Pathology findings</h2>
+                    <div class="card-kicker">{{ t(lang, 'session_detail.narrative_report') }}</div>
+                    <h2 class="card-title">{{ t(lang, 'session_detail.pathology_findings') }}</h2>
                 </div>
             </div>
             <div class="list-stack">
@@ -160,19 +160,19 @@
                         </div>
                     </div>
                     {% if finding.clinical_history %}
-                    <p style="margin-bottom: 0.85rem;"><strong>Clinical history:</strong> {{ finding.clinical_history }}</p>
+                    <p style="margin-bottom: 0.85rem;"><strong>{{ t(lang, 'session_detail.clinical_history') }}:</strong> {{ finding.clinical_history }}</p>
                     {% endif %}
                     {% if finding.sample_method %}
-                    <p style="margin-bottom: 0.85rem;"><strong>Sample:</strong> {{ finding.sample_method }}</p>
+                    <p style="margin-bottom: 0.85rem;"><strong>{{ t(lang, 'session_detail.sample') }}:</strong> {{ finding.sample_method }}</p>
                     {% endif %}
                     {% if finding.diagnosis %}
-                    <p style="margin-bottom: 0.85rem;"><strong>Diagnosis:</strong> {{ finding.diagnosis }}</p>
+                    <p style="margin-bottom: 0.85rem;"><strong>{{ t(lang, 'session_detail.diagnosis') }}:</strong> {{ finding.diagnosis }}</p>
                     {% endif %}
                     {% if finding.microscopic_description %}
-                    <p style="margin-bottom: 0.85rem;"><strong>Microscopic description:</strong> {{ finding.microscopic_description }}</p>
+                    <p style="margin-bottom: 0.85rem;"><strong>{{ t(lang, 'session_detail.microscopic_description') }}:</strong> {{ finding.microscopic_description }}</p>
                     {% endif %}
                     {% if finding.comment %}
-                    <p><strong>Comment:</strong> {{ finding.comment }}</p>
+                    <p><strong>{{ t(lang, 'session_detail.comment') }}:</strong> {{ finding.comment }}</p>
                     {% endif %}
                 </div>
                 {% endfor %}
@@ -184,15 +184,15 @@
         <section class="card">
             <div class="card-header">
                 <div>
-                    <div class="card-kicker">Extracted media</div>
-                    <h2 class="card-title">Images</h2>
+                    <div class="card-kicker">{{ t(lang, 'session_detail.extracted_media') }}</div>
+                    <h2 class="card-title">{{ t(lang, 'session_detail.images') }}</h2>
                 </div>
             </div>
             <div class="grid-2">
                 {% for asset in session_assets %}
                 <div class="card" style="margin-bottom: 0; padding: 0.85rem;">
                     <div class="table-meta" style="margin-bottom: 0.65rem;">
-                        {{ asset.label or asset.asset_type }}{% if asset.page_number %} · page {{ asset.page_number }}{% endif %}
+                        {{ asset.label or asset.asset_type }}{% if asset.page_number %} · {{ t(lang, 'session_detail.page').format(page=asset.page_number) }}{% endif %}
                     </div>
                     <img src="/uploads/{{ asset.file_path.split('/uploads/', 1)[1] if '/uploads/' in asset.file_path else asset.file_path }}" alt="{{ asset.label or asset.asset_type }}" style="width: 100%; border-radius: 14px; border: 1px solid var(--line);">
                 </div>
@@ -205,25 +205,25 @@
         <section class="card">
             <div class="card-header">
                 <div>
-                    <div class="card-kicker">Renal markers</div>
-                    <h2 class="card-title">Biochemistry</h2>
+                    <div class="card-kicker">{{ t(lang, 'session_detail.renal_markers') }}</div>
+                    <h2 class="card-title">{{ t(lang, 'session_detail.biochemistry_short') }}</h2>
                 </div>
             </div>
             <div class="summary-grid">
                 <div class="summary-block">
-                    <div class="summary-block-label">UPC ratio</div>
+                    <div class="summary-block-label">{{ t(lang, 'session_detail.upc_ratio') }}</div>
                     <div class="summary-block-value">{{ biochemistry.upc_ratio or '--' }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">Status</div>
+                    <div class="summary-block-label">{{ t(lang, 'session_detail.status') }}</div>
                     <div class="summary-block-value">{{ biochemistry.upc_status or '--' }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">Urine total protein</div>
+                    <div class="summary-block-label">{{ t(lang, 'session_detail.urine_total_protein') }}</div>
                     <div class="summary-block-value">{{ biochemistry.urine_total_protein or '--' }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">Urine creatinine</div>
+                    <div class="summary-block-label">{{ t(lang, 'session_detail.urine_creatinine') }}</div>
                     <div class="summary-block-value">{{ biochemistry.urine_creatinine or '--' }}</div>
                 </div>
             </div>
@@ -234,25 +234,25 @@
         <section class="card">
             <div class="card-header">
                 <div>
-                    <div class="card-kicker">Urinalysis</div>
-                    <h2 class="card-title">Urine markers</h2>
+                    <div class="card-kicker">{{ t(lang, 'session_detail.urinalysis_short') }}</div>
+                    <h2 class="card-title">{{ t(lang, 'session_detail.urine_markers') }}</h2>
                 </div>
             </div>
             <div class="summary-grid">
                 <div class="summary-block">
-                    <div class="summary-block-label">Color</div>
+                    <div class="summary-block-label">{{ t(lang, 'session_detail.color') }}</div>
                     <div class="summary-block-value">{{ urinalysis.color or '--' }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">Appearance</div>
+                    <div class="summary-block-label">{{ t(lang, 'session_detail.appearance') }}</div>
                     <div class="summary-block-value">{{ urinalysis.appearance or '--' }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">Specific gravity</div>
+                    <div class="summary-block-label">{{ t(lang, 'session_detail.specific_gravity') }}</div>
                     <div class="summary-block-value">{{ urinalysis.specific_gravity or '--' }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">pH</div>
+                    <div class="summary-block-label">{{ t(lang, 'session_detail.ph') }}</div>
                     <div class="summary-block-value">{{ urinalysis.ph or '--' }}</div>
                 </div>
             </div>
@@ -262,63 +262,63 @@
 
     <aside class="detail-sidebar">
         <section class="card">
-            <div class="card-kicker">Linked patient</div>
+            <div class="card-kicker">{{ t(lang, 'session_detail.linked_patient') }}</div>
             <h2 class="card-title" style="margin-bottom: 0.85rem;"><a href="/animal/{{ animal.id }}">{{ animal.name }}</a></h2>
             <div class="summary-grid">
                 <div class="summary-block">
-                    <div class="summary-block-label">Species</div>
+                    <div class="summary-block-label">{{ t(lang, 'common.species') }}</div>
                     <div class="summary-block-value">{{ animal.species or '--' }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">Breed</div>
+                    <div class="summary-block-label">{{ t(lang, 'common.breed') }}</div>
                     <div class="summary-block-value">{{ animal.breed or '--' }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">Pet owner</div>
+                    <div class="summary-block-label">{{ t(lang, 'common.pet_owner') }}</div>
                     <div class="summary-block-value">{{ animal.owner_name or '--' }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">Responsible vet</div>
+                    <div class="summary-block-label">{{ t(lang, 'animal.responsible_vet') }}</div>
                     <div class="summary-block-value">{{ animal.responsible_vet or '--' }}</div>
                 </div>
             </div>
         </section>
 
         <section class="card">
-            <div class="card-kicker">Report metadata</div>
-            <h2 class="card-title" style="margin-bottom: 0.85rem;">Reference</h2>
+            <div class="card-kicker">{{ t(lang, 'session_detail.report_metadata') }}</div>
+            <h2 class="card-title" style="margin-bottom: 0.85rem;">{{ t(lang, 'session_detail.reference_title') }}</h2>
             <div class="summary-grid">
                 <div class="summary-block">
-                    <div class="summary-block-label">Report type</div>
+                    <div class="summary-block-label">{{ t(lang, 'session_detail.report_type') }}</div>
                     <div class="summary-block-value">{{ report_type_label }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">Sample</div>
+                    <div class="summary-block-label">{{ t(lang, 'session_detail.sample') }}</div>
                     <div class="summary-block-value">{{ session.sample_type or '--' }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">Lab</div>
+                    <div class="summary-block-label">{{ t(lang, 'session_detail.lab') }}</div>
                     <div class="summary-block-value">{{ session.lab_name or '--' }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">Clinic</div>
+                    <div class="summary-block-label">{{ t(lang, 'session_detail.clinic') }}</div>
                     <div class="summary-block-value">{{ session.clinic_name or '--' }}</div>
                 </div>
             </div>
             <div style="margin-top: 1rem;">
-                <div class="summary-block-label">Source reference</div>
+                <div class="summary-block-label">{{ t(lang, 'session_detail.source_reference') }}</div>
                 <div class="table-meta" style="word-break: break-word;">{{ session.report_source or '--' }}</div>
             </div>
         </section>
 
         {% if previous_session %}
         <section class="card">
-            <div class="card-kicker">Context</div>
-            <h2 class="card-title" style="margin-bottom: 0.85rem;">Previous report</h2>
-            <div class="table-title">{{ previous_session.report_number or previous_session.external_report_id or ('Report ' ~ previous_session.id) }}</div>
+            <div class="card-kicker">{{ t(lang, 'session_detail.context') }}</div>
+            <h2 class="card-title" style="margin-bottom: 0.85rem;">{{ t(lang, 'session_detail.previous_report') }}</h2>
+            <div class="table-title">{{ previous_session.report_number or previous_session.external_report_id or (t(lang, 'common.report') ~ ' ' ~ previous_session.id) }}</div>
             <div class="table-meta">{{ previous_session.test_date|format_date if previous_session.test_date else '--' }}</div>
             <div class="inline-actions" style="margin-top: 1rem;">
-                <a href="/session/{{ previous_session.id }}" class="btn btn-secondary">Open previous</a>
+                <a href="/session/{{ previous_session.id }}" class="btn btn-secondary">{{ t(lang, 'session_detail.open_previous') }}</a>
             </div>
         </section>
         {% endif %}
