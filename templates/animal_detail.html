@@ -21,9 +21,11 @@
         {% if report_total >= 2 %}
         <a href="/compare/{{ animal.id }}" class="btn btn-secondary">{{ t(lang, 'animal_detail.compare_reports') }}</a>
         {% endif %}
-        <button type="button" class="btn btn-primary" onclick="triggerDiagnosis()">{{ t(lang, 'animal_detail.update_differential_diagnosis') }}</button>
+        <button type="button" class="btn btn-primary" data-diagnosis-trigger onclick="triggerDiagnosis()">{{ t(lang, 'animal_detail.update_differential_diagnosis') }}</button>
     </div>
 </div>
+
+<div id="diagnosisJobNotice" class="alert alert-info" style="display: none;"></div>
 
 <div class="detail-layout">
     <section>
@@ -297,7 +299,7 @@
                     <div class="card-kicker">{{ t(lang, 'animal_detail.decision_support') }}</div>
                     <h2 class="card-title">{{ t(lang, 'animal_detail.ai_differential_diagnosis') }}</h2>
                 </div>
-                <button type="button" class="btn btn-primary" onclick="triggerDiagnosis()">{{ t(lang, 'animal_detail.generate_update') }}</button>
+                <button type="button" class="btn btn-primary" data-diagnosis-trigger onclick="triggerDiagnosis()">{{ t(lang, 'animal_detail.generate_update') }}</button>
             </div>
 
             <div class="summary-grid" style="margin-bottom: 1rem;">
@@ -308,7 +310,9 @@
                 <div class="summary-block">
                     <div class="summary-block-label">{{ t(lang, 'animal_detail.current_status') }}</div>
                     <div class="summary-block-value">
-                        {% if latest_diagnosis %}
+                        {% if active_diagnosis_job and active_diagnosis_job.is_active %}
+                        {{ t(lang, 'animal_detail.diagnosis_running') }}
+                        {% elif latest_diagnosis %}
                         {{ t(lang, 'animal_detail.last_updated').format(date=latest_diagnosis.report_date|format_date if latest_diagnosis.report_date else '--') }}
                         {% else %}
                         {{ t(lang, 'animal_detail.no_diagnosis_generated') }}
@@ -545,12 +549,12 @@
             <p class="text-muted" style="line-height: 1.6;">{{ (latest_diagnosis.executive_summary or latest_diagnosis.input_summary)|truncate(260) }}</p>
             <div class="inline-actions" style="margin-top: 1rem;">
                 <a href="/animal/{{ animal.id }}/diagnosis/{{ latest_diagnosis.id }}" class="btn btn-secondary">{{ t(lang, 'animal_detail.open_latest') }}</a>
-                <button type="button" class="btn btn-primary" onclick="triggerDiagnosis()">{{ t(lang, 'common.refresh') }}</button>
+                <button type="button" class="btn btn-primary" data-diagnosis-trigger onclick="triggerDiagnosis()">{{ t(lang, 'common.refresh') }}</button>
             </div>
             {% else %}
             <p class="text-muted" style="line-height: 1.6;">{{ t(lang, 'animal_detail.no_ai_diagnosis_sidebar') }}</p>
             <div class="inline-actions" style="margin-top: 1rem;">
-                <button type="button" class="btn btn-primary" onclick="triggerDiagnosis()">{{ t(lang, 'common.generate') }}</button>
+                <button type="button" class="btn btn-primary" data-diagnosis-trigger onclick="triggerDiagnosis()">{{ t(lang, 'common.generate') }}</button>
             </div>
             {% endif %}
         </section>
@@ -561,6 +565,8 @@
 {% block scripts %}
 <script>
     const csrfToken = "{{ csrf_token }}";
+    let activeDiagnosisJob = {{ active_diagnosis_job|tojson }};
+    let diagnosisPollTimer = null;
     const animalDetailTranslations = {
         saveNote: {{ t(lang, 'animal_detail.save_note')|tojson }},
         updateNote: {{ t(lang, 'animal_detail.update_note')|tojson }},
@@ -568,6 +574,11 @@
         deleteNoteConfirm: {{ t(lang, 'animal_detail.delete_note_confirm')|tojson }},
         deleteNoteError: {{ t(lang, 'animal_detail.delete_note_error')|tojson }},
         diagnosisError: {{ t(lang, 'animal_detail.diagnosis_error')|tojson }},
+        diagnosisQueued: {{ t(lang, 'animal_detail.diagnosis_queued')|tojson }},
+        diagnosisRunning: {{ t(lang, 'animal_detail.diagnosis_running')|tojson }},
+        diagnosisAlreadyRunning: {{ t(lang, 'animal_detail.diagnosis_already_running')|tojson }},
+        diagnosisReady: {{ t(lang, 'animal_detail.diagnosis_ready')|tojson }},
+        diagnosisGenerating: {{ t(lang, 'animal_detail.diagnosis_generating_button')|tojson }},
         saveNoteError: {{ t(lang, 'animal_detail.save_note_error')|tojson }},
         saveProfileError: {{ t(lang, 'animal_detail.save_profile_error')|tojson }},
         profileUpdated: {{ t(lang, 'animal_detail.profile_updated')|tojson }},
@@ -590,6 +601,97 @@
                 "'": '&#39;'
             })[character];
         });
+    }
+
+    function getDiagnosisButtons() {
+        return Array.from(document.querySelectorAll('[data-diagnosis-trigger]'));
+    }
+
+    function setDiagnosisButtonsBusy(isBusy) {
+        getDiagnosisButtons().forEach((button) => {
+            if (!button.dataset.defaultLabel) {
+                button.dataset.defaultLabel = button.textContent.trim();
+            }
+            button.disabled = isBusy;
+            button.textContent = isBusy
+                ? animalDetailTranslations.diagnosisGenerating
+                : button.dataset.defaultLabel;
+        });
+    }
+
+    function renderDiagnosisNotice(message, type) {
+        const notice = document.getElementById('diagnosisJobNotice');
+        if (!notice) return;
+
+        if (!message) {
+            notice.style.display = 'none';
+            notice.textContent = '';
+            notice.className = 'alert alert-info';
+            return;
+        }
+
+        notice.textContent = message;
+        notice.className = `alert alert-${type || 'info'}`;
+        notice.style.display = 'block';
+    }
+
+    function getDiagnosisStatusMessage(job) {
+        if (!job) return '';
+        if (job.status === 'running') return animalDetailTranslations.diagnosisRunning;
+        if (job.status === 'pending') return animalDetailTranslations.diagnosisQueued;
+        return '';
+    }
+
+    async function pollDiagnosisJob(jobId) {
+        try {
+            const response = await fetch(`/api/diagnosis-jobs/${jobId}`);
+            const data = await response.json();
+            if (!data.success) throw new Error(data.message || animalDetailTranslations.diagnosisError);
+
+            activeDiagnosisJob = data.job;
+
+            if (activeDiagnosisJob.status === 'completed' && activeDiagnosisJob.redirect_url) {
+                renderDiagnosisNotice(animalDetailTranslations.diagnosisReady, 'success');
+                setDiagnosisButtonsBusy(false);
+                if (diagnosisPollTimer) {
+                    window.clearInterval(diagnosisPollTimer);
+                    diagnosisPollTimer = null;
+                }
+                window.location.href = activeDiagnosisJob.redirect_url;
+                return;
+            }
+
+            if (activeDiagnosisJob.status === 'failed') {
+                renderDiagnosisNotice(activeDiagnosisJob.error_message || animalDetailTranslations.diagnosisError, 'error');
+                setDiagnosisButtonsBusy(false);
+                if (diagnosisPollTimer) {
+                    window.clearInterval(diagnosisPollTimer);
+                    diagnosisPollTimer = null;
+                }
+                return;
+            }
+
+            setDiagnosisButtonsBusy(true);
+            renderDiagnosisNotice(getDiagnosisStatusMessage(activeDiagnosisJob), 'info');
+        } catch (error) {
+            renderDiagnosisNotice(error.message || animalDetailTranslations.diagnosisError, 'error');
+            setDiagnosisButtonsBusy(false);
+            if (diagnosisPollTimer) {
+                window.clearInterval(diagnosisPollTimer);
+                diagnosisPollTimer = null;
+            }
+        }
+    }
+
+    function startDiagnosisPolling(jobId, message) {
+        if (!jobId) return;
+        if (diagnosisPollTimer) {
+            window.clearInterval(diagnosisPollTimer);
+        }
+        setDiagnosisButtonsBusy(true);
+        renderDiagnosisNotice(message || animalDetailTranslations.diagnosisQueued, 'info');
+        pollDiagnosisJob(jobId);
+        diagnosisPollTimer = window.setInterval(() => pollDiagnosisJob(jobId), 3000);
     }
 
     function resetNoteForm() {
@@ -620,7 +722,10 @@
     async function deleteClinicalNote(noteId) {
         if (!window.confirm(animalDetailTranslations.deleteNoteConfirm)) return;
         try {
-            const response = await fetch(`/animal/{{ animal.id }}/clinical-note/${noteId}`, { method: 'DELETE' });
+            const response = await fetch(`/animal/{{ animal.id }}/clinical-note/${noteId}`, {
+                method: 'DELETE',
+                headers: { 'X-CSRF-Token': csrfToken }
+            });
             const data = await response.json();
             if (!data.success) throw new Error(data.message || animalDetailTranslations.deleteNoteError);
             window.location.reload();
@@ -630,20 +735,43 @@
     }
 
     async function triggerDiagnosis() {
+        if (activeDiagnosisJob && activeDiagnosisJob.is_active) {
+            startDiagnosisPolling(
+                activeDiagnosisJob.id,
+                animalDetailTranslations.diagnosisAlreadyRunning
+            );
+            return;
+        }
+
         try {
+            setDiagnosisButtonsBusy(true);
+            renderDiagnosisNotice(animalDetailTranslations.diagnosisQueued, 'info');
             const formData = new FormData();
             formData.append('csrf_token', csrfToken);
             formData.append('report_type', 'comprehensive');
             const response = await fetch('/animal/{{ animal.id }}/diagnosis', {
                 method: 'POST',
+                headers: { 'X-CSRF-Token': csrfToken },
                 body: formData
             });
             const data = await response.json();
             if (!data.success) throw new Error(data.message || animalDetailTranslations.diagnosisError);
-            window.location.href = `/animal/{{ animal.id }}/diagnosis/${data.report_id}`;
+            activeDiagnosisJob = data.job || null;
+            startDiagnosisPolling(
+                activeDiagnosisJob && activeDiagnosisJob.id,
+                data.already_running
+                    ? animalDetailTranslations.diagnosisAlreadyRunning
+                    : animalDetailTranslations.diagnosisQueued
+            );
         } catch (error) {
+            setDiagnosisButtonsBusy(false);
+            renderDiagnosisNotice(error.message || animalDetailTranslations.diagnosisError, 'error');
             showAlert(error.message || animalDetailTranslations.diagnosisError, 'error');
         }
+    }
+
+    if (activeDiagnosisJob && activeDiagnosisJob.is_active) {
+        startDiagnosisPolling(activeDiagnosisJob.id, getDiagnosisStatusMessage(activeDiagnosisJob));
     }
 
     const noteForm = document.getElementById('noteForm');
@@ -664,6 +792,7 @@
             try {
                 const response = await fetch(url, {
                     method: 'POST',
+                    headers: { 'X-CSRF-Token': csrfToken },
                     body: formData
                 });
                 const data = await response.json();
@@ -689,6 +818,7 @@
             try {
                 const response = await fetch('/animal/{{ animal.id }}/update', {
                     method: 'POST',
+                    headers: { 'X-CSRF-Token': csrfToken },
                     body: formData
                 });
                 const data = await response.json();
@@ -796,6 +926,7 @@
             try {
                 const response = await fetch('/animal/{{ animal.id }}/merge', {
                     method: 'POST',
+                    headers: { 'X-CSRF-Token': csrfToken },
                     body: formData
                 });
                 const data = await response.json();

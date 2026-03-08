@@ -32,7 +32,7 @@ from models.domain import (
     ClinicalNote, DiagnosisReport, BiochemistryResult, UrinalysisResult,
     AnimalIdentifier, AnimalMatchDecision, SessionMeasurement,
     PathologyFinding, SessionAsset, UnassignedReport, AnimalVetAssignment,
-    User, PasswordResetToken
+    User, UserSession, AuthEvent, PasswordResetToken
 )
 
 
@@ -356,6 +356,27 @@ class Database(BaseDatabase):
         """Delete a diagnosis report."""
         return self._diagnosis_repo.delete(report_id)
 
+    def create_diagnosis_job(self, animal_id: int, report_type: str,
+                             requested_by_user_id: Optional[int] = None) -> int:
+        """Create a background diagnosis job."""
+        return self._diagnosis_repo.create_job(animal_id, report_type, requested_by_user_id)
+
+    def get_diagnosis_job(self, job_id: int) -> Optional[Dict]:
+        """Get a diagnosis background job."""
+        return self._diagnosis_repo.get_job(job_id)
+
+    def get_active_diagnosis_job_for_animal(self, animal_id: int) -> Optional[Dict]:
+        """Get the newest pending/running diagnosis job for an animal."""
+        return self._diagnosis_repo.get_active_job_for_animal(animal_id)
+
+    def update_diagnosis_job(self, job_id: int, **fields) -> bool:
+        """Update diagnosis job state."""
+        return self._diagnosis_repo.update_job(job_id, **fields)
+
+    def mark_stale_diagnosis_jobs_failed(self, max_age_minutes: int = 30) -> int:
+        """Fail pending/running diagnosis jobs that were abandoned."""
+        return self._diagnosis_repo.mark_stale_jobs_failed(max_age_minutes)
+
     # =========================================================================
     # USER OPERATIONS
     # =========================================================================
@@ -424,6 +445,69 @@ class Database(BaseDatabase):
     def cleanup_expired_tokens(self) -> int:
         """Remove expired password reset tokens."""
         return self._user_repo.cleanup_expired_tokens()
+
+    # =========================================================================
+    # SESSION & AUTH EVENT OPERATIONS
+    # =========================================================================
+
+    def create_user_session(self, user_id: Optional[int], session_token_hash: str,
+                            expires_at: datetime, created_ip: Optional[str] = None,
+                            last_seen_ip: Optional[str] = None,
+                            user_agent_hash: Optional[str] = None) -> int:
+        """Create a server-side session row."""
+        return self._user_repo.create_session(
+            user_id,
+            session_token_hash,
+            expires_at,
+            created_ip,
+            last_seen_ip,
+            user_agent_hash,
+        )
+
+    def get_user_session_by_hash(self, session_token_hash: str) -> Optional[UserSession]:
+        """Fetch a user session by its token hash."""
+        return self._user_repo.get_session_by_hash(session_token_hash)
+
+    def touch_user_session(self, session_id: int, last_seen_ip: Optional[str] = None) -> bool:
+        """Refresh last-seen metadata for a session."""
+        return self._user_repo.touch_session(session_id, last_seen_ip)
+
+    def revoke_user_session(self, session_id: int) -> bool:
+        """Revoke a single session."""
+        return self._user_repo.revoke_session(session_id)
+
+    def revoke_user_session_by_hash(self, session_token_hash: str) -> bool:
+        """Revoke a session using its token hash."""
+        return self._user_repo.revoke_session_by_hash(session_token_hash)
+
+    def revoke_all_user_sessions(self, user_id: int) -> int:
+        """Revoke every active session for a user."""
+        return self._user_repo.revoke_user_sessions(user_id)
+
+    def cleanup_expired_user_sessions(self, idle_timeout_hours: int = 24) -> int:
+        """Revoke expired or idle sessions."""
+        return self._user_repo.cleanup_expired_sessions(idle_timeout_hours)
+
+    def create_auth_event(self, event: AuthEvent) -> int:
+        """Insert an auth audit event."""
+        return self._user_repo.create_auth_event(event)
+
+    def count_auth_events(self, event_type: str, since: datetime,
+                          success: Optional[bool] = None,
+                          email_normalized: Optional[str] = None,
+                          ip_address: Optional[str] = None) -> int:
+        """Count auth events matching the supplied filters."""
+        return self._user_repo.count_auth_events(
+            event_type,
+            since,
+            success,
+            email_normalized,
+            ip_address,
+        )
+
+    def cleanup_old_auth_events(self, retention_days: int = 90) -> int:
+        """Delete expired auth audit rows."""
+        return self._user_repo.cleanup_old_auth_events(retention_days)
 
 
 __all__ = [

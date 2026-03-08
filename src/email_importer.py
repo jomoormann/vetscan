@@ -8,6 +8,8 @@ supported lab reports using the existing import pipeline.
 import email
 import imaplib
 import os
+import re
+import sqlite3
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -54,33 +56,46 @@ class BatchResult:
 
 
 class RateLimiter:
-    """Simple rate limiter for import operations."""
+    """Database-backed rate limiter for import operations."""
 
-    def __init__(self, max_per_hour: int):
+    def __init__(self, max_per_hour: int, db_path: str):
         self.max_per_hour = max_per_hour
-        self.timestamps: List[datetime] = []
+        self.db_path = db_path
+
+    def _recent_import_count(self) -> int:
+        """Count successful imports in the rolling one-hour window."""
+        cutoff = (datetime.utcnow() - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            conn = sqlite3.connect(self.db_path)
+            try:
+                row = conn.execute("""
+                    SELECT COUNT(*)
+                    FROM email_import_log
+                    WHERE datetime(import_timestamp) >= datetime(?)
+                      AND (
+                            import_success = 1
+                            OR validation_result = 'queued_manual_assignment'
+                      )
+                      AND COALESCE(validation_result, '') NOT IN ('duplicate', 'rate_limited')
+                """, (cutoff,)).fetchone()
+                return row[0] if row else 0
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            return 0
 
     def can_proceed(self) -> bool:
         """Check if we can proceed with another import."""
-        now = datetime.now()
-        cutoff = now - timedelta(hours=1)
-
-        # Remove old timestamps
-        self.timestamps = [ts for ts in self.timestamps if ts > cutoff]
-
-        return len(self.timestamps) < self.max_per_hour
+        return self._recent_import_count() < self.max_per_hour
 
     def record_import(self):
-        """Record that an import was performed."""
-        self.timestamps.append(datetime.now())
+        """Compatibility no-op; imports are counted from persisted audit rows."""
+        return None
 
     @property
     def remaining(self) -> int:
         """Number of imports remaining in the current hour."""
-        now = datetime.now()
-        cutoff = now - timedelta(hours=1)
-        self.timestamps = [ts for ts in self.timestamps if ts > cutoff]
-        return max(0, self.max_per_hour - len(self.timestamps))
+        return max(0, self.max_per_hour - self._recent_import_count())
 
 
 class EmailImporter:
@@ -112,9 +127,27 @@ class EmailImporter:
         self.db_path = db_path
         self.uploads_dir = uploads_dir
         self.validator = PDFValidator()
-        self.rate_limiter = RateLimiter(self.config.import_rate_limit)
+        self.rate_limiter = RateLimiter(self.config.import_rate_limit, self.db_path)
         self.imap: Optional[imaplib.IMAP4_SSL] = None
         self._log_func = print  # Default to print, can be replaced with logger
+
+    def _sanitize_filename(self, filename: str) -> str:
+        """Return a safe PDF filename for uploads storage."""
+        safe_name = re.sub(r"[^\w\-.]", "_", os.path.basename(filename or "report.pdf"))
+        if not safe_name.lower().endswith(".pdf"):
+            safe_name = f"{safe_name}.pdf"
+        return safe_name or "report.pdf"
+
+    def _allocate_upload_path(self, filename: str) -> str:
+        """Create a unique uploads path for an imported attachment."""
+        safe_name = self._sanitize_filename(filename)
+        upload_path = os.path.join(self.uploads_dir, safe_name)
+        base, ext = os.path.splitext(safe_name)
+        counter = 1
+        while os.path.exists(upload_path):
+            upload_path = os.path.join(self.uploads_dir, f"{base}_{counter}{ext or '.pdf'}")
+            counter += 1
+        return upload_path
 
     def set_logger(self, log_func):
         """Set custom logging function."""
@@ -326,21 +359,10 @@ class EmailImporter:
                 db_path=self.db_path,
                 uploads_dir=self.uploads_dir
             ) as service:
+                upload_path = None
+                keep_upload = False
                 try:
-                    # Copy temp file to uploads with original filename
-                    upload_path = os.path.join(self.uploads_dir, filename)
-
-                    # Handle duplicate filenames
-                    base, ext = os.path.splitext(filename)
-                    counter = 1
-                    while os.path.exists(upload_path):
-                        upload_path = os.path.join(
-                            self.uploads_dir,
-                            f"{base}_{counter}{ext}"
-                        )
-                        counter += 1
-
-                    # Copy to final location
+                    upload_path = self._allocate_upload_path(filename)
                     with open(upload_path, 'wb') as f:
                         f.write(content)
 
@@ -351,6 +373,7 @@ class EmailImporter:
                         report_source=f"email uid {email_uid} | from {email_from} | attachment {filename}",
                     )
 
+                    keep_upload = True
                     self.rate_limiter.record_import()
 
                     if outcome.status == "pending_review":
@@ -380,6 +403,8 @@ class EmailImporter:
                 except ValueError as e:
                     # Duplicate report
                     error_msg = str(e)
+                    if upload_path and os.path.exists(upload_path) and not keep_upload:
+                        os.unlink(upload_path)
                     if "already exists" in error_msg:
                         return ImportResult(
                             success=False,
@@ -391,6 +416,10 @@ class EmailImporter:
                             error_message=error_msg,
                             report_number=validation.report_number
                         )
+                    raise
+                except Exception:
+                    if upload_path and os.path.exists(upload_path) and not keep_upload:
+                        os.unlink(upload_path)
                     raise
 
         except Exception as e:

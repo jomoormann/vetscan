@@ -37,12 +37,12 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def validate_password(password: str) -> Tuple[bool, str]:
+def validate_password(password: str, min_length: int = 8) -> Tuple[bool, str]:
     """
     Validate password meets security requirements.
 
     Requirements:
-    - Minimum 8 characters
+    - Minimum configured length
     - At least 1 uppercase letter
     - At least 1 lowercase letter
     - At least 1 number
@@ -50,8 +50,8 @@ def validate_password(password: str) -> Tuple[bool, str]:
     Returns:
         Tuple of (is_valid, error_message)
     """
-    if len(password) < 8:
-        return False, "Password must be at least 8 characters"
+    if len(password) < min_length:
+        return False, f"Password must be at least {min_length} characters"
     if not re.search(r'[A-Z]', password):
         return False, "Password must contain at least 1 uppercase letter"
     if not re.search(r'[a-z]', password):
@@ -123,7 +123,7 @@ class AuthService:
             return None, error
 
         # Validate password
-        is_valid, error = validate_password(password)
+        is_valid, error = validate_password(password, min_length=12)
         if not is_valid:
             return None, error
 
@@ -209,7 +209,7 @@ class AuthService:
             Tuple of (success, error_message)
         """
         # Validate new password
-        is_valid, error = validate_password(new_password)
+        is_valid, error = validate_password(new_password, min_length=12)
         if not is_valid:
             return False, error
 
@@ -240,6 +240,7 @@ class AuthService:
 
         self.db.update_user(user.id, password_hash=hash_password(new_password))
         self.db.mark_token_used(reset_token.id)
+        self.db.revoke_all_user_sessions(user.id)
 
         # Cleanup old tokens
         self.db.cleanup_expired_tokens()
@@ -261,11 +262,12 @@ class AuthService:
         if not verify_password(current_password, user.password_hash):
             return False, "Current password is incorrect"
 
-        is_valid, error = validate_password(new_password)
+        is_valid, error = validate_password(new_password, min_length=12)
         if not is_valid:
             return False, error
 
         self.db.update_user(user_id, password_hash=hash_password(new_password))
+        self.db.revoke_all_user_sessions(user_id)
         return True, ""
 
     def create_superuser(self, email: str, password: str,
@@ -280,7 +282,7 @@ class AuthService:
         if not is_valid:
             return None, error
 
-        is_valid, error = validate_password(password)
+        is_valid, error = validate_password(password, min_length=12)
         if not is_valid:
             return None, error
 

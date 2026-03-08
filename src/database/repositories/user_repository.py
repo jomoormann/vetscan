@@ -1,13 +1,19 @@
 """
 User Repository for VetScan
 
-Handles database operations for User and PasswordResetToken entities.
+Handles database operations for users, password reset tokens,
+server-side sessions, and auth-event logging.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 
-from models.domain import User, PasswordResetToken
+from models.domain import User, PasswordResetToken, UserSession, AuthEvent
+
+
+def _sqlite_timestamp(value: datetime) -> str:
+    """Format datetimes consistently for SQLite comparisons."""
+    return value.strftime("%Y-%m-%d %H:%M:%S")
 
 
 class UserRepository:
@@ -157,7 +163,7 @@ class UserRepository:
         cursor = self.db.conn.execute("""
             INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
             VALUES (?, ?, ?)
-        """, (user_id, token_hash, expires_at.isoformat()))
+        """, (user_id, token_hash, _sqlite_timestamp(expires_at)))
         self.db.conn.commit()
         return cursor.lastrowid
 
@@ -184,7 +190,161 @@ class UserRepository:
         """Remove expired or used password reset tokens."""
         cursor = self.db.conn.execute("""
             DELETE FROM password_reset_tokens
-            WHERE expires_at < CURRENT_TIMESTAMP OR used_at IS NOT NULL
+            WHERE datetime(expires_at) < datetime('now') OR used_at IS NOT NULL
         """)
+        self.db.conn.commit()
+        return cursor.rowcount
+
+    # -------------------------------------------------------------------------
+    # Server-side Sessions
+    # -------------------------------------------------------------------------
+
+    def create_session(self, user_id: Optional[int], session_token_hash: str,
+                       expires_at: datetime, created_ip: Optional[str] = None,
+                       last_seen_ip: Optional[str] = None,
+                       user_agent_hash: Optional[str] = None) -> int:
+        """Create a server-side session."""
+        cursor = self.db.conn.execute("""
+            INSERT INTO user_sessions (
+                user_id, session_token_hash, created_ip, last_seen_ip,
+                user_agent_hash, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            user_id,
+            session_token_hash,
+            created_ip,
+            last_seen_ip,
+            user_agent_hash,
+            _sqlite_timestamp(expires_at),
+        ))
+        self.db.conn.commit()
+        return cursor.lastrowid
+
+    def get_session_by_hash(self, session_token_hash: str) -> Optional[UserSession]:
+        """Fetch a session by its hashed token."""
+        cursor = self.db.conn.execute(
+            "SELECT * FROM user_sessions WHERE session_token_hash = ?",
+            (session_token_hash,),
+        )
+        row = cursor.fetchone()
+        if row:
+            return UserSession(**dict(row))
+        return None
+
+    def touch_session(self, session_id: int, last_seen_ip: Optional[str] = None) -> bool:
+        """Update last-seen metadata for an active session."""
+        cursor = self.db.conn.execute("""
+            UPDATE user_sessions
+            SET last_seen_at = CURRENT_TIMESTAMP,
+                last_seen_ip = COALESCE(?, last_seen_ip)
+            WHERE id = ? AND revoked_at IS NULL
+        """, (last_seen_ip, session_id))
+        self.db.conn.commit()
+        return cursor.rowcount > 0
+
+    def revoke_session(self, session_id: int) -> bool:
+        """Revoke a single session."""
+        cursor = self.db.conn.execute("""
+            UPDATE user_sessions
+            SET revoked_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND revoked_at IS NULL
+        """, (session_id,))
+        self.db.conn.commit()
+        return cursor.rowcount > 0
+
+    def revoke_session_by_hash(self, session_token_hash: str) -> bool:
+        """Revoke a session by its hashed token."""
+        cursor = self.db.conn.execute("""
+            UPDATE user_sessions
+            SET revoked_at = CURRENT_TIMESTAMP
+            WHERE session_token_hash = ? AND revoked_at IS NULL
+        """, (session_token_hash,))
+        self.db.conn.commit()
+        return cursor.rowcount > 0
+
+    def revoke_user_sessions(self, user_id: int) -> int:
+        """Revoke all active sessions for a user."""
+        cursor = self.db.conn.execute("""
+            UPDATE user_sessions
+            SET revoked_at = CURRENT_TIMESTAMP
+            WHERE user_id = ? AND revoked_at IS NULL
+        """, (user_id,))
+        self.db.conn.commit()
+        return cursor.rowcount
+
+    def cleanup_expired_sessions(self, idle_timeout_hours: int = 24) -> int:
+        """Revoke sessions that are expired or idle for too long."""
+        idle_cutoff = _sqlite_timestamp(
+            datetime.utcnow() - timedelta(hours=idle_timeout_hours)
+        )
+        cursor = self.db.conn.execute("""
+            UPDATE user_sessions
+            SET revoked_at = CURRENT_TIMESTAMP
+            WHERE revoked_at IS NULL
+              AND (
+                    datetime(expires_at) <= datetime('now')
+                    OR datetime(COALESCE(last_seen_at, created_at)) <= datetime(?)
+              )
+        """, (idle_cutoff,))
+        self.db.conn.commit()
+        return cursor.rowcount
+
+    # -------------------------------------------------------------------------
+    # Auth Events
+    # -------------------------------------------------------------------------
+
+    def create_auth_event(self, event: AuthEvent) -> int:
+        """Insert an authentication event for audit and rate limiting."""
+        cursor = self.db.conn.execute("""
+            INSERT INTO auth_events (
+                event_type, email_normalized, ip_address, user_id, success, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            event.event_type,
+            event.email_normalized,
+            event.ip_address,
+            event.user_id,
+            1 if event.success else 0,
+            event.metadata_json,
+        ))
+        self.db.conn.commit()
+        return cursor.lastrowid
+
+    def count_auth_events(self, event_type: str, since: datetime,
+                          success: Optional[bool] = None,
+                          email_normalized: Optional[str] = None,
+                          ip_address: Optional[str] = None) -> int:
+        """Count auth events matching the supplied filters."""
+        clauses = ["event_type = ?", "created_at >= ?"]
+        params = [event_type, _sqlite_timestamp(since)]
+
+        if success is not None:
+            clauses.append("success = ?")
+            params.append(1 if success else 0)
+        if email_normalized is not None:
+            clauses.append("email_normalized = ?")
+            params.append(email_normalized)
+        if ip_address is not None:
+            clauses.append("ip_address = ?")
+            params.append(ip_address)
+
+        normalized_clauses = [
+            f"datetime({clause.split(' >= ')[0]}) >= datetime(?)"
+            if clause == "created_at >= ?" else clause
+            for clause in clauses
+        ]
+        cursor = self.db.conn.execute(
+            f"SELECT COUNT(*) FROM auth_events WHERE {' AND '.join(normalized_clauses)}",
+            tuple(params),
+        )
+        return cursor.fetchone()[0]
+
+    def cleanup_old_auth_events(self, retention_days: int = 90) -> int:
+        """Delete old auth audit rows outside the retention window."""
+        cutoff = _sqlite_timestamp(datetime.utcnow() - timedelta(days=retention_days))
+        cursor = self.db.conn.execute(
+            "DELETE FROM auth_events WHERE datetime(created_at) < datetime(?)",
+            (cutoff,),
+        )
         self.db.conn.commit()
         return cursor.rowcount

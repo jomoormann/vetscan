@@ -276,6 +276,11 @@
         "delete_note_confirm": "Eliminar esta nota clínica?",
         "delete_note_error": "Não foi possível eliminar a nota",
         "diagnosis_error": "Não foi possível gerar o diagnóstico",
+        "diagnosis_queued": "A geração do diagnóstico foi colocada em fila.",
+        "diagnosis_running": "O diagnóstico por IA está a ser gerado.",
+        "diagnosis_already_running": "A geração do diagnóstico já está em curso para este animal.",
+        "diagnosis_ready": "O relatório de diagnóstico está pronto. A abrir relatório...",
+        "diagnosis_generating_button": "A gerar...",
         "save_note_error": "Não foi possível guardar a nota",
         "save_profile_error": "Não foi possível guardar o perfil",
         "merge_no_matches": "Nenhum outro animal corresponde a esta pesquisa.",
@@ -565,6 +570,9 @@
         "no_history": "Ainda não existe histórico de importação."
     },
     "auth": {
+        "common": {
+            "rate_limit": "Demasiadas tentativas. Por favor tente novamente em {minutes} minuto(s)."
+        },
         "login": {
             "email": "Email",
             "email_placeholder": "Introduza o seu email",
@@ -584,7 +592,7 @@
             "display_name_hint": "Este nome será mostrado na aplicação",
             "password": "Palavra-passe",
             "password_placeholder": "Crie uma palavra-passe",
-            "password_hint": "Mín 8 caract., 1 maiúscula, 1 minúscula, 1 número",
+            "password_hint": "Mín 12 caract., 1 maiúscula, 1 minúscula, 1 número",
             "password_confirm": "Confirmar Palavra-passe",
             "password_confirm_placeholder": "Repita a palavra-passe",
             "submit": "Criar Conta",
@@ -615,7 +623,7 @@
             "subtitle": "Introduza a sua nova palavra-passe abaixo.",
             "password": "Nova Palavra-passe",
             "password_placeholder": "Introduza nova palavra-passe",
-            "password_hint": "Mín 8 caract., 1 maiúscula, 1 minúscula, 1 número",
+            "password_hint": "Mín 12 caract., 1 maiúscula, 1 minúscula, 1 número",
             "password_confirm": "Confirmar Palavra-passe",
             "password_confirm_placeholder": "Repita a nova palavra-passe",
             "submit": "Repor Palavra-passe",

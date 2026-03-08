@@ -256,7 +256,7 @@
                 </button>
             </form>
 
-            {% if multi_user_enabled %}
+            {% if multi_user_enabled and allow_self_registration %}
             <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--gray-200); font-size: 0.875rem; color: var(--gray-500);">
                 {{ t(lang, 'auth.login.no_account') }}
                 <a href="/register" style="color: var(--primary); font-weight: 600; text-decoration: none;">{{ t(lang, 'auth.login.register_link') }}</a>

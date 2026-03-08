@@ -1,10 +1,10 @@
 """
 Diagnosis Repository for VetScan
 
-Handles database operations for DiagnosisReport entities.
+Handles database operations for DiagnosisReport entities and background jobs.
 """
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from models.domain import DiagnosisReport
 
@@ -50,6 +50,16 @@ class DiagnosisRepository:
         self.db.conn.commit()
         return cursor.lastrowid
 
+    @staticmethod
+    def _row_to_report(row) -> DiagnosisReport:
+        """Map a sqlite row into a DiagnosisReport dataclass."""
+        data = dict(row)
+        if 'literature_references' in data:
+            data['references'] = data.pop('literature_references')
+        if 'openai_literature_references' in data:
+            data['openai_references'] = data.pop('openai_literature_references')
+        return DiagnosisReport(**data)
+
     def get(self, report_id: int) -> Optional[DiagnosisReport]:
         """
         Get a diagnosis report by ID.
@@ -64,13 +74,7 @@ class DiagnosisRepository:
             "SELECT * FROM diagnosis_reports WHERE id = ?", (report_id,))
         row = cursor.fetchone()
         if row:
-            data = dict(row)
-            # Map column names to dataclass fields
-            if 'literature_references' in data:
-                data['references'] = data.pop('literature_references')
-            if 'openai_literature_references' in data:
-                data['openai_references'] = data.pop('openai_literature_references')
-            return DiagnosisReport(**data)
+            return self._row_to_report(row)
         return None
 
     def get_for_animal(self, animal_id: int) -> List[DiagnosisReport]:
@@ -90,13 +94,7 @@ class DiagnosisRepository:
 
         reports = []
         for row in cursor.fetchall():
-            data = dict(row)
-            # Map column names to dataclass fields
-            if 'literature_references' in data:
-                data['references'] = data.pop('literature_references')
-            if 'openai_literature_references' in data:
-                data['openai_references'] = data.pop('openai_literature_references')
-            reports.append(DiagnosisReport(**data))
+            reports.append(self._row_to_report(row))
         return reports
 
     def delete(self, report_id: int) -> bool:
@@ -132,12 +130,7 @@ class DiagnosisRepository:
         """, (animal_id,))
         row = cursor.fetchone()
         if row:
-            data = dict(row)
-            if 'literature_references' in data:
-                data['references'] = data.pop('literature_references')
-            if 'openai_literature_references' in data:
-                data['openai_references'] = data.pop('openai_literature_references')
-            return DiagnosisReport(**data)
+            return self._row_to_report(row)
         return None
 
     def count_for_animal(self, animal_id: int) -> int:
@@ -146,3 +139,81 @@ class DiagnosisRepository:
             "SELECT COUNT(*) FROM diagnosis_reports WHERE animal_id = ?",
             (animal_id,))
         return cursor.fetchone()[0]
+
+    def create_job(self, animal_id: int, report_type: str,
+                   requested_by_user_id: Optional[int] = None) -> int:
+        """Create a background diagnosis job and return its ID."""
+        cursor = self.db.conn.execute("""
+            INSERT INTO diagnosis_jobs (
+                animal_id, requested_by_user_id, report_type, status
+            ) VALUES (?, ?, ?, 'pending')
+        """, (animal_id, requested_by_user_id, report_type))
+        self.db.conn.commit()
+        return cursor.lastrowid
+
+    def get_job(self, job_id: int) -> Optional[Dict[str, Any]]:
+        """Fetch a diagnosis background job by ID."""
+        cursor = self.db.conn.execute(
+            "SELECT * FROM diagnosis_jobs WHERE id = ?",
+            (job_id,),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def get_active_job_for_animal(self, animal_id: int) -> Optional[Dict[str, Any]]:
+        """Fetch the newest pending or running job for an animal."""
+        cursor = self.db.conn.execute("""
+            SELECT *
+            FROM diagnosis_jobs
+            WHERE animal_id = ?
+              AND status IN ('pending', 'running')
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+        """, (animal_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def update_job(self, job_id: int, **fields) -> bool:
+        """Update mutable diagnosis job fields."""
+        allowed_fields = {
+            "status",
+            "report_id",
+            "error_message",
+            "started_at",
+            "completed_at",
+        }
+        assignments = []
+        params = []
+        for key, value in fields.items():
+            if key not in allowed_fields:
+                continue
+            assignments.append(f"{key} = ?")
+            params.append(value)
+
+        if not assignments:
+            return False
+
+        params.append(job_id)
+        cursor = self.db.conn.execute(
+            f"UPDATE diagnosis_jobs SET {', '.join(assignments)} WHERE id = ?",
+            tuple(params),
+        )
+        self.db.conn.commit()
+        return cursor.rowcount > 0
+
+    def mark_stale_jobs_failed(self, max_age_minutes: int = 30) -> int:
+        """Mark abandoned pending/running jobs as failed."""
+        threshold = f"-{max_age_minutes} minutes"
+        cursor = self.db.conn.execute("""
+            UPDATE diagnosis_jobs
+            SET status = 'failed',
+                error_message = COALESCE(
+                    error_message,
+                    'Diagnosis generation timed out before completion.'
+                ),
+                completed_at = CURRENT_TIMESTAMP
+            WHERE status IN ('pending', 'running')
+              AND datetime(COALESCE(started_at, created_at)) <= datetime('now', ?)
+        """, (threshold,))
+        self.db.conn.commit()
+        return cursor.rowcount

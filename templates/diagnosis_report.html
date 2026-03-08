@@ -329,6 +329,8 @@
 
 {% block scripts %}
 <script>
+    const diagnosisReportCsrfToken = "{{ csrf_token if csrf_token is defined else csrf_token_for_request(request) }}";
+
     async function deleteDiagnosisReport() {
         if (!confirm("{{ t(lang, 'errors.confirm_delete') }}")) {
             return;
@@ -336,7 +338,8 @@
 
         try {
             const response = await fetch(`/animal/{{ animal.id }}/diagnosis/{{ report.id }}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers: { 'X-CSRF-Token': diagnosisReportCsrfToken }
             });
             const data = await response.json();
 

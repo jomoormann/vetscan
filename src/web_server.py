@@ -15,10 +15,12 @@ import secrets
 import base64
 import hmac
 import hashlib
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Optional, List
 from pathlib import Path
-from urllib.parse import quote_plus, urlencode
+from urllib.parse import quote_plus, urlencode, urlparse
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Form, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -35,7 +37,10 @@ load_dotenv()
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from models import Database, Animal, Symptom, Observation, TestSession, ClinicalNote, DiagnosisReport, User
+from models import (
+    Database, Animal, Symptom, Observation, TestSession,
+    ClinicalNote, DiagnosisReport, User, AuthEvent
+)
 from app import VetProteinService
 from i18n import get_text, get_language_from_request, SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE
 from auth import AuthService, hash_password, verify_password, validate_password, validate_email
@@ -65,20 +70,27 @@ BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data"
 UPLOADS_DIR = BASE_DIR / "uploads"
 TEMPLATES_DIR = BASE_DIR / "templates"
+TEMP_UPLOADS_DIR = DATA_DIR / ".upload_tmp"
 
 # Ensure directories exist
 DATA_DIR.mkdir(exist_ok=True)
 UPLOADS_DIR.mkdir(exist_ok=True)
 TEMPLATES_DIR.mkdir(exist_ok=True)
+TEMP_UPLOADS_DIR.mkdir(exist_ok=True)
 
 # Database path
 DB_PATH = DATA_DIR / "vet_proteins.db"
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production").lower()
+IS_PRODUCTION = ENVIRONMENT == "production"
 
 # Initialize FastAPI
 app = FastAPI(
     title="Vet Protein Analysis",
     description="Veterinary blood test analysis application",
-    version="0.2.0"
+    version="0.2.0",
+    docs_url=None if IS_PRODUCTION else "/docs",
+    redoc_url=None if IS_PRODUCTION else "/redoc",
+    openapi_url=None if IS_PRODUCTION else "/openapi.json",
 )
 
 
@@ -88,8 +100,14 @@ app = FastAPI(
 
 # Get credentials from environment variables
 AUTH_USERNAME = os.getenv("AUTH_USERNAME", "admin")
-AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "")  # Empty = no auth required
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", secrets.token_hex(32))  # For signing cookies
+AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "")  # Legacy fallback when DB auth is not enabled
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "")
+ALLOW_SELF_REGISTRATION = os.getenv("ALLOW_SELF_REGISTRATION", "false").lower() == "true"
+if IS_PRODUCTION and not AUTH_SECRET_KEY:
+    raise RuntimeError("AUTH_SECRET_KEY must be configured in production")
+if not AUTH_SECRET_KEY:
+    AUTH_SECRET_KEY = secrets.token_hex(32)
+    logger.warning("AUTH_SECRET_KEY not configured; using an ephemeral development secret")
 
 # Session cookie name
 AUTH_COOKIE_NAME = "vetscan_session"
@@ -98,104 +116,101 @@ CSRF_COOKIE_NAME = "vetscan_csrf"
 # Allowed hosts for password reset links (prevents host header injection)
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,vetscan.net").split(",")
 
-# Rate limiting for login attempts
-LOGIN_RATE_LIMIT_ATTEMPTS = 5  # Max attempts before lockout
-LOGIN_RATE_LIMIT_WINDOW = 300  # Time window in seconds (5 minutes)
-LOGIN_RATE_LIMIT_LOCKOUT = 900  # Lockout duration in seconds (15 minutes)
+# Auth/session policy
+LOGIN_EMAIL_WINDOW_LIMIT = 5
+LOGIN_EMAIL_WINDOW = timedelta(minutes=15)
+LOGIN_IP_WINDOW_LIMIT = 20
+LOGIN_IP_WINDOW = timedelta(hours=1)
+AUTH_LOCKOUT_MINUTES = 15
+SESSION_IDLE_TIMEOUT = timedelta(hours=24)
+SESSION_ABSOLUTE_TIMEOUT = timedelta(days=7)
 
 
-class LoginRateLimiter:
-    """Simple in-memory rate limiter for login attempts"""
-
-    def __init__(self):
-        self._attempts = {}  # {ip: [(timestamp, success), ...]}
-        self._lockouts = {}  # {ip: lockout_expires_at}
-
-    def _cleanup_old_attempts(self, ip: str):
-        """Remove attempts older than the time window"""
-        if ip in self._attempts:
-            cutoff = datetime.now() - timedelta(seconds=LOGIN_RATE_LIMIT_WINDOW)
-            self._attempts[ip] = [
-                (ts, success) for ts, success in self._attempts[ip]
-                if ts > cutoff
-            ]
-
-    def is_locked_out(self, ip: str) -> bool:
-        """Check if an IP is currently locked out"""
-        if ip in self._lockouts:
-            if datetime.now() < self._lockouts[ip]:
-                return True
-            else:
-                del self._lockouts[ip]
-        return False
-
-    def record_attempt(self, ip: str, success: bool):
-        """Record a login attempt"""
-        self._cleanup_old_attempts(ip)
-        if ip not in self._attempts:
-            self._attempts[ip] = []
-        self._attempts[ip].append((datetime.now(), success))
-
-        # Check if we need to lock out
-        if not success:
-            failed_attempts = sum(1 for _, s in self._attempts[ip] if not s)
-            if failed_attempts >= LOGIN_RATE_LIMIT_ATTEMPTS:
-                self._lockouts[ip] = datetime.now() + timedelta(seconds=LOGIN_RATE_LIMIT_LOCKOUT)
-
-    def get_remaining_lockout_seconds(self, ip: str) -> int:
-        """Get remaining lockout time in seconds"""
-        if ip in self._lockouts:
-            remaining = (self._lockouts[ip] - datetime.now()).total_seconds()
-            return max(0, int(remaining))
-        return 0
+def normalize_email(value: Optional[str]) -> Optional[str]:
+    """Normalize an email address for auth lookup/rate limiting."""
+    if not value:
+        return None
+    normalized = value.strip().lower()
+    return normalized or None
 
 
-# Global rate limiter instance
-login_rate_limiter = LoginRateLimiter()
+def hash_value(value: str) -> str:
+    """Hash a secret or identifier for persistent storage."""
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def create_auth_token(identifier: str) -> str:
-    """
-    Create a signed authentication token.
+def create_session_token() -> str:
+    """Create an opaque session token."""
+    return secrets.token_urlsafe(48)
 
-    Args:
-        identifier: Either a user ID (for multi-user) or username (for legacy)
-    """
-    message = f"{identifier}:{AUTH_SECRET_KEY[:16]}"
-    signature = hmac.new(
-        AUTH_SECRET_KEY.encode(),
-        message.encode(),
-        hashlib.sha256
-    ).hexdigest()
-    token = base64.b64encode(f"{identifier}:{signature}".encode()).decode()
+
+def hash_user_agent(user_agent: Optional[str]) -> Optional[str]:
+    """Hash the current user agent for session metadata."""
+    if not user_agent:
+        return None
+    return hash_value(user_agent[:512])
+
+
+def get_client_ip(request: Request) -> str:
+    """Resolve the originating client IP from a trusted reverse proxy."""
+    client_host = request.client.host if request.client else ""
+    if client_host in {"127.0.0.1", "::1", "localhost"}:
+        real_ip = request.headers.get("X-Real-IP", "").strip()
+        if real_ip:
+            return real_ip
+    return client_host or "unknown"
+
+
+def create_auth_session(service: VetProteinService, request: Request,
+                        user_id: Optional[int]) -> str:
+    """Persist a server-side auth session and return its opaque token."""
+    token = create_session_token()
+    hashed_token = hash_value(token)
+    client_ip = get_client_ip(request)
+    service.db.create_user_session(
+        user_id=user_id,
+        session_token_hash=hashed_token,
+        expires_at=datetime.utcnow() + SESSION_ABSOLUTE_TIMEOUT,
+        created_ip=client_ip,
+        last_seen_ip=client_ip,
+        user_agent_hash=hash_user_agent(request.headers.get("user-agent")),
+    )
     return token
 
 
-def verify_auth_token(token: str) -> Optional[str]:
-    """
-    Verify an authentication token and return the identifier if valid.
+def set_auth_cookie(response: Response, request: Request, token: str):
+    """Set the auth session cookie on a response."""
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value=token,
+        max_age=int(SESSION_ABSOLUTE_TIMEOUT.total_seconds()),
+        httponly=True,
+        samesite="lax",
+        secure=request.url.scheme == "https" or IS_PRODUCTION,
+    )
 
-    Returns:
-        The identifier (user ID or username) if valid, None otherwise
-    """
-    try:
-        decoded = base64.b64decode(token).decode()
-        identifier, signature = decoded.rsplit(":", 1)
 
-        # Recreate expected signature
-        message = f"{identifier}:{AUTH_SECRET_KEY[:16]}"
-        expected_signature = hmac.new(
-            AUTH_SECRET_KEY.encode(),
-            message.encode(),
-            hashlib.sha256
-        ).hexdigest()
+def clear_auth_cookie(response: Response):
+    """Clear the auth session cookie."""
+    response.delete_cookie(key=AUTH_COOKIE_NAME)
 
-        # Timing-safe comparison
-        if hmac.compare_digest(signature, expected_signature):
-            return identifier
-    except Exception:
-        pass
-    return None
+
+def get_safe_redirect_target(request: Request, fallback: str = "/") -> str:
+    """Return a same-origin relative redirect target."""
+    referer = request.headers.get("referer", "")
+    if not referer:
+        return fallback
+
+    parsed = urlparse(referer)
+    if parsed.scheme and parsed.hostname and parsed.hostname != request.url.hostname:
+        return fallback
+
+    path = parsed.path or "/"
+    if not path.startswith("/"):
+        return fallback
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+    return path
 
 
 def generate_csrf_token() -> str:
@@ -240,6 +255,145 @@ def get_safe_host(request: Request) -> str:
     return host
 
 
+def record_auth_event(service: VetProteinService, event_type: str, request: Request,
+                      success: bool, email_normalized: Optional[str] = None,
+                      user_id: Optional[int] = None,
+                      metadata: Optional[Dict[str, Any]] = None) -> None:
+    """Persist an auth event for audit and rate limiting."""
+    service.db.create_auth_event(AuthEvent(
+        event_type=event_type,
+        email_normalized=email_normalized,
+        ip_address=get_client_ip(request),
+        user_id=user_id,
+        success=success,
+        metadata_json=json.dumps(metadata, ensure_ascii=False) if metadata else None,
+    ))
+
+
+def auth_action_is_limited(service: VetProteinService, event_type: str, request: Request,
+                           email_normalized: Optional[str] = None,
+                           failures_only: bool = True) -> bool:
+    """Check persistent auth-event thresholds for abuse control."""
+    success_filter = False if failures_only else None
+    now = datetime.utcnow()
+    client_ip = get_client_ip(request)
+
+    if email_normalized:
+        recent_email_ip_failures = service.db.count_auth_events(
+            event_type,
+            now - LOGIN_EMAIL_WINDOW,
+            success=success_filter,
+            email_normalized=email_normalized,
+            ip_address=client_ip,
+        )
+        if recent_email_ip_failures >= LOGIN_EMAIL_WINDOW_LIMIT:
+            return True
+
+    recent_ip_failures = service.db.count_auth_events(
+        event_type,
+        now - LOGIN_IP_WINDOW,
+        success=success_filter,
+        ip_address=client_ip,
+    )
+    return recent_ip_failures >= LOGIN_IP_WINDOW_LIMIT
+
+
+def csrf_token_for_request(request: Request) -> str:
+    """Return the current signed CSRF token for templates."""
+    token = getattr(request.state, "csrf_raw", None) or request.cookies.get(CSRF_COOKIE_NAME)
+    if not token:
+        token = generate_csrf_token()
+    return create_csrf_signed_token(token)
+
+
+def build_api_auth_response(status_code: int, detail: str) -> JSONResponse:
+    """JSON auth failure response for API routes."""
+    return JSONResponse({"detail": detail}, status_code=status_code)
+
+
+def internal_error_detail() -> str:
+    """Generic user-facing error detail for unexpected failures."""
+    return "An internal error occurred. Please try again later."
+
+
+def internal_error_json() -> JSONResponse:
+    """Standard JSON payload for unexpected failures."""
+    return JSONResponse({
+        "success": False,
+        "message": internal_error_detail(),
+    }, status_code=500)
+
+
+def secure_cookie_enabled(request: Request) -> bool:
+    """Determine whether cookies should be marked secure."""
+    return request.url.scheme == "https" or IS_PRODUCTION
+
+
+def add_csrf_cookie(response: Response, request: Request, csrf_raw: Optional[str] = None) -> str:
+    """Attach the CSRF cookie to a response and return the raw token."""
+    token = csrf_raw or getattr(request.state, "csrf_raw", None) or request.cookies.get(CSRF_COOKIE_NAME)
+    if not token:
+        token = generate_csrf_token()
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=token,
+        max_age=3600,
+        httponly=True,
+        samesite="strict",
+        secure=secure_cookie_enabled(request),
+    )
+    return token
+
+
+def render_template_with_csrf(template_name: str, request: Request,
+                              context: Dict[str, Any],
+                              status_code: int = 200) -> Response:
+    """Render a template response and ensure a signed CSRF token is present."""
+    response = templates.TemplateResponse(request, template_name, context, status_code=status_code)
+    add_csrf_cookie(response, request)
+    return response
+
+
+def current_session_is_expired(session) -> bool:
+    """Check absolute and idle session expiry."""
+    now = datetime.utcnow()
+
+    expires_at = session.expires_at
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at and expires_at <= now:
+        return True
+
+    last_seen_at = session.last_seen_at or session.created_at
+    if isinstance(last_seen_at, str):
+        last_seen_at = datetime.fromisoformat(last_seen_at)
+    if last_seen_at and (now - last_seen_at) > SESSION_IDLE_TIMEOUT:
+        return True
+
+    return False
+
+
+class CSRFCookieMiddleware(BaseHTTPMiddleware):
+    """Ensure every request has a CSRF cookie/token pair available."""
+
+    async def dispatch(self, request: Request, call_next):
+        csrf_raw = request.cookies.get(CSRF_COOKIE_NAME) or generate_csrf_token()
+        request.state.csrf_raw = csrf_raw
+        request.state.csrf_token = create_csrf_signed_token(csrf_raw)
+
+        response = await call_next(request)
+        if request.cookies.get(CSRF_COOKIE_NAME) != csrf_raw:
+            response.set_cookie(
+                key=CSRF_COOKIE_NAME,
+                value=csrf_raw,
+                max_age=3600,
+                httponly=True,
+                samesite="strict",
+                secure=secure_cookie_enabled(request),
+            )
+        return response
+
+
 class CookieAuthMiddleware(BaseHTTPMiddleware):
     """
     Cookie-based authentication middleware.
@@ -254,64 +408,82 @@ class CookieAuthMiddleware(BaseHTTPMiddleware):
     ]
 
     async def dispatch(self, request: Request, call_next):
-        # Skip authentication if no password is set (dev mode)
-        if not AUTH_PASSWORD:
-            request.state.user = None
-            return await call_next(request)
-
-        # Allow access to public pages and static assets
         path = request.url.path
-        if any(path.startswith(p) for p in self.PUBLIC_PATHS) or path.startswith("/static"):
-            request.state.user = None
+        request.state.user = None
+        request.state.session = None
+        request.state.session_token = None
+
+        service = get_service()
+        try:
+            user_count = service.db.user_count()
+
+            # Skip authentication only for local bootstrap/dev mode.
+            if not AUTH_PASSWORD and user_count == 0:
+                return await call_next(request)
+
+            # Allow access to public pages and static assets
+            if any(path.startswith(p) for p in self.PUBLIC_PATHS) or path.startswith("/static"):
+                return await call_next(request)
+
+            auth_cookie = request.cookies.get(AUTH_COOKIE_NAME)
+            if not auth_cookie:
+                return self._reject(request)
+
+            session = service.db.get_user_session_by_hash(hash_value(auth_cookie))
+            if not session or session.revoked_at or current_session_is_expired(session):
+                if session and not session.revoked_at:
+                    service.db.revoke_user_session(session.id)
+                return self._reject(request, clear_cookie=True)
+
+            if session.user_id is None:
+                if user_count != 0:
+                    service.db.revoke_user_session(session.id)
+                    return self._reject(request, clear_cookie=True)
+                request.state.session = session
+                request.state.session_token = auth_cookie
+                service.db.touch_user_session(session.id, get_client_ip(request))
+                return await call_next(request)
+
+            user = service.db.get_user(session.user_id)
+            if not user:
+                service.db.revoke_user_session(session.id)
+                return self._reject(request, clear_cookie=True)
+            if not user.is_active:
+                service.db.revoke_all_user_sessions(user.id)
+                return self._reject(request, clear_cookie=True, detail="Account disabled")
+
+            request.state.user = user
+            request.state.session = session
+            request.state.session_token = auth_cookie
+            service.db.touch_user_session(session.id, get_client_ip(request))
+
+            if not user.is_approved:
+                if path == "/pending-approval":
+                    return await call_next(request)
+                if path.startswith("/api/"):
+                    return self._reject(
+                        request,
+                        status_code=403,
+                        detail="Account pending approval",
+                        clear_cookie=False,
+                    )
+                return RedirectResponse(url="/pending-approval", status_code=302)
+
             return await call_next(request)
+        finally:
+            service.close()
 
-        # Check for auth cookie
-        auth_cookie = request.cookies.get(AUTH_COOKIE_NAME)
-
-        if auth_cookie:
-            # Try to validate the token
-            token_data = verify_auth_token(auth_cookie)
-
-            if token_data:
-                # Check if it's a user ID (multi-user) or username (legacy)
-                if token_data.isdigit():
-                    # Multi-user mode: load user from database
-                    service = get_service()
-                    try:
-                        user = service.db.get_user(int(token_data))
-                        if user:
-                            if not user.is_active:
-                                # User disabled - invalidate session immediately
-                                logger.info(f"Session invalidated for disabled user: {user.email}")
-                                response = RedirectResponse(url="/login?error=disabled", status_code=302)
-                                # Clear the auth cookie to fully invalidate the session
-                                response.delete_cookie(key=AUTH_COOKIE_NAME)
-                                return response
-                            if not user.is_approved:
-                                # User pending approval
-                                request.state.user = user
-                                if path != "/pending-approval":
-                                    return RedirectResponse(url="/pending-approval", status_code=302)
-                                return await call_next(request)
-                            # Valid, active, approved user
-                            request.state.user = user
-                            return await call_next(request)
-                    finally:
-                        service.close()
-                else:
-                    # Legacy mode: username-based auth
-                    # Check if multi-user is enabled (users exist in DB)
-                    service = get_service()
-                    try:
-                        if service.db.user_count() == 0:
-                            # Legacy mode active
-                            request.state.user = None
-                            return await call_next(request)
-                    finally:
-                        service.close()
-
-        # Redirect to login page
-        return RedirectResponse(url="/login", status_code=302)
+    def _reject(self, request: Request, status_code: int = 401,
+                detail: str = "Authentication required",
+                clear_cookie: bool = False):
+        """Return an auth failure response suitable for the route type."""
+        if request.url.path.startswith("/api/"):
+            response = build_api_auth_response(status_code, detail)
+        else:
+            response = RedirectResponse(url="/login", status_code=302)
+        if clear_cookie:
+            clear_auth_cookie(response)
+        return response
 
 
 class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
@@ -338,7 +510,8 @@ class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-# Add middleware (order matters: HTTPS redirect first, then auth)
+# Add middleware (outermost added last)
+app.add_middleware(CSRFCookieMiddleware)
 app.add_middleware(CookieAuthMiddleware)
 app.add_middleware(HTTPSRedirectMiddleware)
 
@@ -509,28 +682,30 @@ templates.env.filters["sanitize_html"] = sanitize_html_filter
 
 # Register translation function as Jinja2 global
 templates.env.globals["t"] = get_text
+templates.env.globals["csrf_token_for_request"] = csrf_token_for_request
 
 
 def add_csrf_to_response(response: Response, request: Request) -> str:
     """Add CSRF cookie and return token for template"""
-    csrf_token = request.cookies.get(CSRF_COOKIE_NAME)
+    csrf_token = getattr(request.state, "csrf_raw", None) or request.cookies.get(CSRF_COOKIE_NAME)
     if not csrf_token:
         csrf_token = generate_csrf_token()
         response.set_cookie(
             key=CSRF_COOKIE_NAME,
             value=csrf_token,
-            max_age=3600,  # 1 hour
+            max_age=3600,
             httponly=True,
             samesite="strict",
-            secure=request.url.scheme == "https"
+            secure=request.url.scheme == "https" or IS_PRODUCTION
         )
     return csrf_token
 
 
-def validate_csrf(request: Request, form_token: str) -> bool:
+def validate_csrf(request: Request, form_token: Optional[str] = None) -> bool:
     """Validate CSRF token from form against cookie"""
-    cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
-    return verify_csrf_token(form_token, cookie_token)
+    cookie_token = getattr(request.state, "csrf_raw", None) or request.cookies.get(CSRF_COOKIE_NAME)
+    provided_token = form_token or request.headers.get("X-CSRF-Token")
+    return verify_csrf_token(provided_token, cookie_token)
 
 
 # =============================================================================
@@ -539,6 +714,7 @@ def validate_csrf(request: Request, form_token: str) -> bool:
 
 # Global service instance - initialized once at startup, reused for all requests
 _global_service: Optional[VetProteinService] = None
+DIAGNOSIS_JOB_EXECUTOR = ThreadPoolExecutor(max_workers=2)
 
 
 class ServiceProxy:
@@ -568,6 +744,15 @@ def _init_global_service():
             uploads_dir=str(UPLOADS_DIR)
         )
         _global_service.initialize()
+        expired_sessions = _global_service.db.cleanup_expired_user_sessions()
+        old_auth_events = _global_service.db.cleanup_old_auth_events()
+        stale_jobs = _global_service.db.mark_stale_diagnosis_jobs_failed()
+        if expired_sessions:
+            logger.warning(f"Revoked {expired_sessions} expired sessions during startup")
+        if old_auth_events:
+            logger.info(f"Pruned {old_auth_events} old auth events during startup")
+        if stale_jobs:
+            logger.warning(f"Marked {stale_jobs} stale diagnosis jobs as failed during startup")
         logger.info("Global database service initialized")
 
 
@@ -586,6 +771,82 @@ def get_service() -> VetProteinService:
 async def startup_event():
     """Initialize database on app startup."""
     _init_global_service()
+
+
+def serialize_diagnosis_job(job: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Prepare a diagnosis job dict for JSON responses and templates."""
+    if not job:
+        return None
+
+    payload = dict(job)
+    for field in ("created_at", "started_at", "completed_at"):
+        value = payload.get(field)
+        if isinstance(value, (date, datetime)):
+            payload[field] = value.isoformat()
+        elif value is not None:
+            payload[field] = str(value)
+
+    payload["is_active"] = payload.get("status") in {"pending", "running"}
+    report_id = payload.get("report_id")
+    animal_id = payload.get("animal_id")
+    payload["redirect_url"] = (
+        f"/animal/{animal_id}/diagnosis/{report_id}"
+        if animal_id and report_id else None
+    )
+    return payload
+
+
+def run_diagnosis_job(job_id: int, animal_id: int, report_type: str,
+                      anthropic_api_key: str,
+                      openai_api_key: Optional[str]) -> None:
+    """Run diagnosis generation in a worker thread with its own DB connection."""
+    service = VetProteinService(db_path=str(DB_PATH), uploads_dir=str(UPLOADS_DIR))
+    started_at = datetime.utcnow().isoformat(timespec="seconds")
+    completed_at = None
+
+    try:
+        service.initialize()
+        service.db.update_diagnosis_job(
+            job_id,
+            status="running",
+            started_at=started_at,
+            error_message=None,
+        )
+
+        report = create_diagnosis_report(
+            db=service.db,
+            animal_id=animal_id,
+            report_type=report_type,
+            anthropic_api_key=anthropic_api_key,
+            openai_api_key=openai_api_key,
+        )
+
+        completed_at = datetime.utcnow().isoformat(timespec="seconds")
+        service.db.update_diagnosis_job(
+            job_id,
+            status="completed",
+            report_id=report.id,
+            error_message=None,
+            completed_at=completed_at,
+        )
+        logger.info(
+            f"Completed diagnosis job {job_id} for animal {animal_id} with report {report.id}"
+        )
+    except Exception as exc:
+        completed_at = datetime.utcnow().isoformat(timespec="seconds")
+        logger.exception(f"Diagnosis job {job_id} failed for animal {animal_id}")
+        try:
+            if service.db.conn:
+                service.db.update_diagnosis_job(
+                    job_id,
+                    status="failed",
+                    error_message=str(exc),
+                    completed_at=completed_at,
+                )
+        except Exception:
+            logger.exception(f"Failed to persist diagnosis job failure state for job {job_id}")
+    finally:
+        service.close()
 
 
 def format_date(d) -> str:
@@ -615,6 +876,29 @@ def json_serial(obj):
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
     raise TypeError(f"Type {type(obj)} not serializable")
+
+
+def sanitize_pdf_filename(filename: Optional[str]) -> str:
+    """Return a filesystem-safe PDF filename."""
+    import re
+
+    candidate = re.sub(r"[^\w\-.]", "_", os.path.basename(filename or "report.pdf"))
+    if not candidate.lower().endswith(".pdf"):
+        candidate = f"{candidate}.pdf"
+    return candidate or "report.pdf"
+
+
+def allocate_upload_path(filename: Optional[str]) -> Path:
+    """Create a unique final uploads path for a validated PDF."""
+    safe_filename = sanitize_pdf_filename(filename)
+    destination = UPLOADS_DIR / safe_filename
+    stem = destination.stem
+    suffix = destination.suffix or ".pdf"
+    counter = 1
+    while destination.exists():
+        destination = UPLOADS_DIR / f"{stem}_{counter}{suffix}"
+        counter += 1
+    return destination
 
 
 def build_upload_url(file_path: Optional[str]) -> Optional[str]:
@@ -846,6 +1130,34 @@ def set_lang_cookie(response, lang: str):
 # AUTHENTICATION ROUTES
 # =============================================================================
 
+def is_multi_user_enabled(service: VetProteinService) -> bool:
+    """Return whether database-backed multi-user auth is active."""
+    return service.db.user_count() > 0
+
+
+def render_login_template(request: Request, lang: str,
+                          error: Optional[str] = None,
+                          username: Optional[str] = None,
+                          status_code: int = 200) -> Response:
+    """Render the login screen with the current auth mode."""
+    service = get_service()
+    try:
+        multi_user_enabled = is_multi_user_enabled(service)
+    finally:
+        service.close()
+
+    response = render_template_with_csrf("login.html", request, {
+        "request": request,
+        "lang": lang,
+        "error": error,
+        "username": username or "",
+        "multi_user_enabled": multi_user_enabled,
+        "allow_self_registration": ALLOW_SELF_REGISTRATION,
+        "csrf_token": csrf_token_for_request(request),
+    }, status_code=status_code)
+    return set_lang_cookie(response, lang)
+
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, lang: Optional[str] = None, error: Optional[str] = None):
     """Display login page"""
@@ -855,40 +1167,13 @@ async def login_page(request: Request, lang: Optional[str] = None, error: Option
     else:
         current_lang = get_lang(request)
 
-    # Check if multi-user mode is enabled
-    service = get_service()
-    try:
-        multi_user_enabled = service.db.user_count() > 0
-    finally:
-        service.close()
-
     # Map error codes to messages
     error_message = None
     if error == "disabled":
         error_message = get_text(current_lang, "auth.login.error_disabled")
     elif error == "invalid":
         error_message = get_text(current_lang, "login.error")
-
-    # Generate CSRF token
-    csrf_token = request.cookies.get(CSRF_COOKIE_NAME) or generate_csrf_token()
-    signed_csrf = create_csrf_signed_token(csrf_token)
-
-    response = templates.TemplateResponse("login.html", {
-        "request": request,
-        "lang": current_lang,
-        "error": error_message,
-        "multi_user_enabled": multi_user_enabled,
-        "csrf_token": signed_csrf
-    })
-    response.set_cookie(
-        key=CSRF_COOKIE_NAME,
-        value=csrf_token,
-        max_age=3600,
-        httponly=True,
-        samesite="strict",
-        secure=request.url.scheme == "https"
-    )
-    return set_lang_cookie(response, current_lang)
+    return render_login_template(request, current_lang, error=error_message)
 
 
 @app.post("/login", response_class=HTMLResponse)
@@ -906,129 +1191,142 @@ async def login_submit(
     if not validate_csrf(request, csrf_token):
         return RedirectResponse(url="/login?error=invalid", status_code=302)
 
-    # Get client IP for rate limiting
-    client_ip = request.client.host if request.client else "unknown"
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        client_ip = forwarded_for.split(",")[0].strip()
-
-    # Check rate limiting
-    if login_rate_limiter.is_locked_out(client_ip):
-        remaining = login_rate_limiter.get_remaining_lockout_seconds(client_ip)
-        error_msg = get_text(lang, "auth.login.error_rate_limit").format(minutes=remaining // 60 + 1)
-        service = get_service()
-        try:
-            multi_user_enabled = service.db.user_count() > 0
-        finally:
-            service.close()
-        response = templates.TemplateResponse("login.html", {
-            "request": request,
-            "lang": lang,
-            "error": error_msg,
-            "multi_user_enabled": multi_user_enabled
-        })
-        return set_lang_cookie(response, lang)
-
     # Use email field if provided, otherwise use username (for backwards compatibility)
-    login_identifier = email or username
-
-    # Check if multi-user mode is enabled
+    login_identifier = (email or username or "").strip()
+    email_normalized = normalize_email(login_identifier)
     service = get_service()
     try:
         user_count = service.db.user_count()
-    finally:
-        service.close()
 
-    if user_count > 0:
-        # Multi-user mode: authenticate against database
-        service = get_service()
-        try:
+        if auth_action_is_limited(service, "login", request, email_normalized):
+            error_msg = get_text(lang, "auth.login.error_rate_limit").format(
+                minutes=AUTH_LOCKOUT_MINUTES
+            )
+            return render_login_template(
+                request,
+                lang,
+                error=error_msg,
+                username=login_identifier,
+                status_code=429,
+            )
+
+        if user_count > 0:
+            # Multi-user mode: authenticate against database
             auth_service = AuthService(service.db)
             user, error_code = auth_service.authenticate(login_identifier, password)
 
             if user:
-                # Successful authentication - record success and clear lockout
-                login_rate_limiter.record_attempt(client_ip, success=True)
-                token = create_auth_token(str(user.id))
+                record_auth_event(
+                    service,
+                    "login",
+                    request,
+                    success=True,
+                    email_normalized=user.email_normalized,
+                    user_id=user.id,
+                )
+                token = create_auth_session(service, request, user.id)
                 if user.is_approved:
                     response = RedirectResponse(url="/", status_code=302)
                 else:
                     response = RedirectResponse(url="/pending-approval", status_code=302)
-                response.set_cookie(
-                    key=AUTH_COOKIE_NAME,
-                    value=token,
-                    max_age=7 * 24 * 60 * 60,  # 7 days
-                    httponly=True,
-                    samesite="lax",
-                    secure=True
-                )
+                set_auth_cookie(response, request, token)
                 return response
 
             # Handle specific errors
             if error_code == "disabled":
+                user = service.db.get_user_by_email(login_identifier)
+                record_auth_event(
+                    service,
+                    "login",
+                    request,
+                    success=False,
+                    email_normalized=user.email_normalized if user else email_normalized,
+                    user_id=user.id if user else None,
+                    metadata={"error_code": error_code},
+                )
                 return RedirectResponse(url="/login?error=disabled", status_code=302)
             elif error_code == "pending_approval":
                 # User exists but not approved - create session anyway
                 user = service.db.get_user_by_email(login_identifier)
                 if user:
-                    token = create_auth_token(str(user.id))
-                    response = RedirectResponse(url="/pending-approval", status_code=302)
-                    response.set_cookie(
-                        key=AUTH_COOKIE_NAME,
-                        value=token,
-                        max_age=7 * 24 * 60 * 60,  # 7 days
-                        httponly=True,
-                        samesite="lax",
-                        secure=True
+                    record_auth_event(
+                        service,
+                        "login",
+                        request,
+                        success=True,
+                        email_normalized=user.email_normalized,
+                        user_id=user.id,
+                        metadata={"pending_approval": True},
                     )
+                    token = create_auth_session(service, request, user.id)
+                    response = RedirectResponse(url="/pending-approval", status_code=302)
+                    set_auth_cookie(response, request, token)
                     return response
-        finally:
-            service.close()
-    else:
-        # Legacy mode: authenticate against env vars
-        username_correct = secrets.compare_digest(login_identifier, AUTH_USERNAME)
-        password_correct = secrets.compare_digest(password, AUTH_PASSWORD)
 
-        if username_correct and password_correct:
-            # Successful authentication - record success
-            login_rate_limiter.record_attempt(client_ip, success=True)
-            # Create auth token and redirect to home
-            token = create_auth_token(login_identifier)
-            response = RedirectResponse(url="/", status_code=302)
-            response.set_cookie(
-                key=AUTH_COOKIE_NAME,
-                value=token,
-                max_age=7 * 24 * 60 * 60,  # 7 days
-                httponly=True,
-                samesite="lax",
-                secure=True
+            record_auth_event(
+                service,
+                "login",
+                request,
+                success=False,
+                email_normalized=email_normalized,
+                metadata={"error_code": error_code or "invalid_credentials"},
             )
-            return response
+        else:
+            # Legacy mode: authenticate against env vars
+            username_correct = AUTH_PASSWORD and secrets.compare_digest(login_identifier, AUTH_USERNAME)
+            password_correct = AUTH_PASSWORD and secrets.compare_digest(password, AUTH_PASSWORD)
 
-    # Invalid credentials - record failed attempt
-    login_rate_limiter.record_attempt(client_ip, success=False)
+            if username_correct and password_correct:
+                record_auth_event(
+                    service,
+                    "login",
+                    request,
+                    success=True,
+                    email_normalized=email_normalized,
+                    metadata={"legacy_mode": True},
+                )
+                token = create_auth_session(service, request, None)
+                response = RedirectResponse(url="/", status_code=302)
+                set_auth_cookie(response, request, token)
+                return response
 
-    service = get_service()
-    try:
-        multi_user_enabled = service.db.user_count() > 0
+            record_auth_event(
+                service,
+                "login",
+                request,
+                success=False,
+                email_normalized=email_normalized,
+                metadata={"legacy_mode": True, "error_code": "invalid_credentials"},
+            )
+
+        return render_login_template(
+            request,
+            lang,
+            error=get_text(lang, "login.error"),
+            username=login_identifier,
+            status_code=401,
+        )
     finally:
         service.close()
 
-    response = templates.TemplateResponse("login.html", {
-        "request": request,
-        "lang": lang,
-        "error": get_text(lang, "login.error"),
-        "username": login_identifier,
-        "multi_user_enabled": multi_user_enabled
-    })
-    return set_lang_cookie(response, lang)
 
+@app.post("/logout")
+async def logout(request: Request, csrf_token: str = Form(None)):
+    """Log out user by revoking the current server-side session."""
+    if not validate_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="Invalid request")
 
-@app.get("/logout")
-async def logout():
-    """Log out user by clearing the auth cookie"""
+    service = get_service()
+    try:
+        auth_cookie = request.cookies.get(AUTH_COOKIE_NAME)
+        if auth_cookie:
+            service.db.revoke_user_session_by_hash(hash_value(auth_cookie))
+    finally:
+        service.close()
+
     response = RedirectResponse(url="/login", status_code=302)
-    response.delete_cookie(key=AUTH_COOKIE_NAME)
+    clear_auth_cookie(response)
+    response.delete_cookie(key=CSRF_COOKIE_NAME)
     return response
 
 
@@ -1039,29 +1337,20 @@ async def logout():
 @app.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request, lang: Optional[str] = None):
     """Display registration page"""
+    if not ALLOW_SELF_REGISTRATION:
+        raise HTTPException(status_code=404, detail="Not found")
+
     if lang and lang in SUPPORTED_LANGUAGES:
         current_lang = lang
     else:
         current_lang = get_lang(request)
 
-    # Generate CSRF token
-    csrf_token = request.cookies.get(CSRF_COOKIE_NAME) or generate_csrf_token()
-    signed_csrf = create_csrf_signed_token(csrf_token)
-
-    response = templates.TemplateResponse("auth/register.html", {
+    response = render_template_with_csrf("auth/register.html", request, {
         "request": request,
         "lang": current_lang,
         "error": None,
-        "csrf_token": signed_csrf
+        "csrf_token": csrf_token_for_request(request),
     })
-    response.set_cookie(
-        key=CSRF_COOKIE_NAME,
-        value=csrf_token,
-        max_age=3600,
-        httponly=True,
-        samesite="strict",
-        secure=request.url.scheme == "https"
-    )
     return set_lang_cookie(response, current_lang)
 
 
@@ -1075,6 +1364,9 @@ async def register_submit(
     csrf_token: str = Form(None)
 ):
     """Handle registration form submission"""
+    if not ALLOW_SELF_REGISTRATION:
+        raise HTTPException(status_code=404, detail="Not found")
+
     lang = get_lang(request)
 
     # Validate CSRF token
@@ -1083,28 +1375,62 @@ async def register_submit(
 
     # Validate passwords match
     if password != password_confirm:
-        response = templates.TemplateResponse("auth/register.html", {
+        response = render_template_with_csrf("auth/register.html", request, {
             "request": request,
             "lang": lang,
             "error": get_text(lang, "auth.register.error_password_mismatch"),
             "email": email,
-            "display_name": display_name
-        })
+            "display_name": display_name,
+            "csrf_token": csrf_token_for_request(request),
+        }, status_code=400)
         return set_lang_cookie(response, lang)
 
     service = get_service()
     try:
+        email_normalized = normalize_email(email)
+        if auth_action_is_limited(
+            service, "register", request, email_normalized, failures_only=False
+        ):
+            record_auth_event(
+                service,
+                "register",
+                request,
+                success=False,
+                email_normalized=email_normalized,
+                metadata={"limited": True},
+            )
+            response = render_template_with_csrf("auth/register.html", request, {
+                "request": request,
+                "lang": lang,
+                "error": get_text(lang, "auth.common.rate_limit").format(
+                    minutes=AUTH_LOCKOUT_MINUTES
+                ),
+                "email": email,
+                "display_name": display_name,
+                "csrf_token": csrf_token_for_request(request),
+            }, status_code=429)
+            return set_lang_cookie(response, lang)
+
         auth_service = AuthService(service.db)
         user, error = auth_service.register_user(email, password, display_name)
 
         if error:
-            response = templates.TemplateResponse("auth/register.html", {
+            record_auth_event(
+                service,
+                "register",
+                request,
+                success=False,
+                email_normalized=email_normalized,
+                metadata={"error": error},
+            )
+            response = render_template_with_csrf("auth/register.html", request, {
                 "request": request,
                 "lang": lang,
                 "error": error,
                 "email": email,
-                "display_name": display_name
-            })
+                "display_name": display_name,
+                "csrf_token": csrf_token_for_request(request),
+            }, status_code=400)
             return set_lang_cookie(response, lang)
 
         # Send confirmation email to user
@@ -1123,16 +1449,17 @@ async def register_submit(
             )
 
         # Create session and redirect to pending approval
-        token = create_auth_token(str(user.id))
-        response = RedirectResponse(url="/pending-approval", status_code=302)
-        response.set_cookie(
-            key=AUTH_COOKIE_NAME,
-            value=token,
-            max_age=7 * 24 * 60 * 60,  # 7 days
-            httponly=True,
-            samesite="lax",
-            secure=True
+        record_auth_event(
+            service,
+            "register",
+            request,
+            success=True,
+            email_normalized=user.email_normalized,
+            user_id=user.id,
         )
+        token = create_auth_session(service, request, user.id)
+        response = RedirectResponse(url="/pending-approval", status_code=302)
+        set_auth_cookie(response, request, token)
         return response
     finally:
         service.close()
@@ -1148,10 +1475,11 @@ async def pending_approval_page(request: Request, lang: Optional[str] = None):
 
     user = getattr(request.state, 'user', None)
 
-    response = templates.TemplateResponse("auth/pending_approval.html", {
+    response = render_template_with_csrf("auth/pending_approval.html", request, {
         "request": request,
         "lang": current_lang,
-        "email": user.email if user else None
+        "email": user.email if user else None,
+        "csrf_token": csrf_token_for_request(request),
     })
     return set_lang_cookie(response, current_lang)
 
@@ -1164,25 +1492,13 @@ async def forgot_password_page(request: Request, lang: Optional[str] = None):
     else:
         current_lang = get_lang(request)
 
-    # Generate CSRF token
-    csrf_token = request.cookies.get(CSRF_COOKIE_NAME) or generate_csrf_token()
-    signed_csrf = create_csrf_signed_token(csrf_token)
-
-    response = templates.TemplateResponse("auth/forgot_password.html", {
+    response = render_template_with_csrf("auth/forgot_password.html", request, {
         "request": request,
         "lang": current_lang,
         "error": None,
         "success": False,
-        "csrf_token": signed_csrf
+        "csrf_token": csrf_token_for_request(request),
     })
-    response.set_cookie(
-        key=CSRF_COOKIE_NAME,
-        value=csrf_token,
-        max_age=3600,
-        httponly=True,
-        samesite="strict",
-        secure=request.url.scheme == "https"
-    )
     return set_lang_cookie(response, current_lang)
 
 
@@ -1201,8 +1517,38 @@ async def forgot_password_submit(
 
     service = get_service()
     try:
+        email_normalized = normalize_email(email)
+        if auth_action_is_limited(
+            service, "forgot_password", request, email_normalized, failures_only=False
+        ):
+            record_auth_event(
+                service,
+                "forgot_password",
+                request,
+                success=False,
+                email_normalized=email_normalized,
+                metadata={"limited": True},
+            )
+            response = templates.TemplateResponse(request, "auth/forgot_password.html", {
+                "request": request,
+                "lang": lang,
+                "error": None,
+                "success": True,
+            })
+            return set_lang_cookie(response, lang)
+
         auth_service = AuthService(service.db)
         token, _ = auth_service.create_password_reset_token(email)
+        user = service.db.get_user_by_email(email)
+
+        record_auth_event(
+            service,
+            "forgot_password",
+            request,
+            success=True,
+            email_normalized=email_normalized,
+            user_id=user.id if user else None,
+        )
 
         if token and email_service.is_configured():
             # Send password reset email - use validated host to prevent header injection
@@ -1210,7 +1556,6 @@ async def forgot_password_submit(
             scheme = "https" if request.headers.get("x-forwarded-proto") == "https" else "http"
             reset_url = f"{scheme}://{host}/reset-password?token={token}"
 
-            user = service.db.get_user_by_email(email)
             email_service.send_password_reset(
                 email, reset_url,
                 user.display_name if user else None,
@@ -1220,7 +1565,7 @@ async def forgot_password_submit(
         service.close()
 
     # Always show success message (don't reveal if email exists)
-    response = templates.TemplateResponse("auth/forgot_password.html", {
+    response = templates.TemplateResponse(request, "auth/forgot_password.html", {
         "request": request,
         "lang": lang,
         "error": None,
@@ -1249,7 +1594,7 @@ async def reset_password_page(
         reset_token = service.db.get_password_reset_token(token_hash)
 
         if not reset_token or reset_token.used_at:
-            response = templates.TemplateResponse("auth/reset_password.html", {
+            response = templates.TemplateResponse(request, "auth/reset_password.html", {
                 "request": request,
                 "lang": current_lang,
                 "invalid_token": True,
@@ -1265,7 +1610,7 @@ async def reset_password_page(
             expires_at = reset_token.expires_at
 
         if expires_at < datetime.now():
-            response = templates.TemplateResponse("auth/reset_password.html", {
+            response = templates.TemplateResponse(request, "auth/reset_password.html", {
                 "request": request,
                 "lang": current_lang,
                 "invalid_token": True,
@@ -1275,26 +1620,14 @@ async def reset_password_page(
     finally:
         service.close()
 
-    # Generate CSRF token
-    csrf_raw = request.cookies.get(CSRF_COOKIE_NAME) or generate_csrf_token()
-    signed_csrf = create_csrf_signed_token(csrf_raw)
-
-    response = templates.TemplateResponse("auth/reset_password.html", {
+    response = render_template_with_csrf("auth/reset_password.html", request, {
         "request": request,
         "lang": current_lang,
         "token": token,
         "error": None,
         "success": False,
-        "csrf_token": signed_csrf
+        "csrf_token": csrf_token_for_request(request),
     })
-    response.set_cookie(
-        key=CSRF_COOKIE_NAME,
-        value=csrf_raw,
-        max_age=3600,
-        httponly=True,
-        samesite="strict",
-        secure=request.url.scheme == "https"
-    )
     return set_lang_cookie(response, current_lang)
 
 
@@ -1315,34 +1648,77 @@ async def reset_password_submit(
 
     # Validate passwords match
     if password != password_confirm:
-        response = templates.TemplateResponse("auth/reset_password.html", {
+        response = render_template_with_csrf("auth/reset_password.html", request, {
             "request": request,
             "lang": lang,
             "token": token,
             "error": get_text(lang, "auth.reset.error_password_mismatch"),
-            "success": False
-        })
+            "success": False,
+            "csrf_token": csrf_token_for_request(request),
+        }, status_code=400)
         return set_lang_cookie(response, lang)
 
     service = get_service()
     try:
+        from auth import hash_token
+
+        token_hash = hash_token(token)
+        reset_token = service.db.get_password_reset_token(token_hash)
+        reset_user = service.db.get_user(reset_token.user_id) if reset_token else None
+        email_normalized = reset_user.email_normalized if reset_user else None
+
+        if auth_action_is_limited(
+            service, "reset_password", request, email_normalized, failures_only=False
+        ):
+            record_auth_event(
+                service,
+                "reset_password",
+                request,
+                success=False,
+                email_normalized=email_normalized,
+                user_id=reset_user.id if reset_user else None,
+                metadata={"limited": True},
+            )
+            response = render_template_with_csrf("auth/reset_password.html", request, {
+                "request": request,
+                "lang": lang,
+                "token": token,
+                "error": get_text(lang, "auth.common.rate_limit").format(
+                    minutes=AUTH_LOCKOUT_MINUTES
+                ),
+                "success": False,
+                "csrf_token": csrf_token_for_request(request),
+            }, status_code=429)
+            return set_lang_cookie(response, lang)
+
         auth_service = AuthService(service.db)
         success, error = auth_service.reset_password(token, password)
 
+        record_auth_event(
+            service,
+            "reset_password",
+            request,
+            success=success,
+            email_normalized=email_normalized,
+            user_id=reset_user.id if reset_user else None,
+            metadata={"error": error} if error else None,
+        )
+
         if not success:
-            response = templates.TemplateResponse("auth/reset_password.html", {
+            response = render_template_with_csrf("auth/reset_password.html", request, {
                 "request": request,
                 "lang": lang,
                 "token": token,
                 "error": error,
-                "success": False
-            })
+                "success": False,
+                "csrf_token": csrf_token_for_request(request),
+            }, status_code=400)
             return set_lang_cookie(response, lang)
     finally:
         service.close()
 
     # Success
-    response = templates.TemplateResponse("auth/reset_password.html", {
+    response = templates.TemplateResponse(request, "auth/reset_password.html", {
         "request": request,
         "lang": lang,
         "token": token,
@@ -1387,7 +1763,7 @@ async def admin_users_page(request: Request):
         csrf_raw = request.cookies.get(CSRF_COOKIE_NAME) or generate_csrf_token()
         signed_csrf = create_csrf_signed_token(csrf_raw)
 
-        response = templates.TemplateResponse("admin/users.html", {
+        response = templates.TemplateResponse(request, "admin/users.html", {
             "request": request,
             "lang": lang,
             "users": users,
@@ -1402,7 +1778,7 @@ async def admin_users_page(request: Request):
             max_age=3600,
             httponly=True,
             samesite="strict",
-            secure=request.url.scheme == "https"
+            secure=secure_cookie_enabled(request)
         )
         return set_lang_cookie(response, lang)
     finally:
@@ -1461,11 +1837,10 @@ async def admin_disable_user(request: Request, user_id: int, csrf_token: str = F
         user_to_disable = service.db.get_user(user_id)
         if user_to_disable:
             service.db.disable_user(user_id)
+            service.db.revoke_all_user_sessions(user_id)
             logger.info(
                 f"User {user_to_disable.email} (ID: {user_id}) disabled by admin {current_user.email}"
             )
-            # Note: The user's session will be invalidated on their next request
-            # because CookieAuthMiddleware checks is_active on every request
         else:
             logger.warning(f"Attempted to disable non-existent user ID: {user_id}")
     finally:
@@ -1568,7 +1943,7 @@ async def home(request: Request):
             )
             row["summary"] = summarize_report_overview(row, lang)
 
-        response = templates.TemplateResponse("index.html", {
+        response = templates.TemplateResponse(request, "index.html", {
             "request": request,
             "lang": lang,
             "current_user": current_user,
@@ -1580,11 +1955,9 @@ async def home(request: Request):
             "recent_handovers": recent_handovers,
         })
         return set_lang_cookie(response, lang)
-    except Exception as e:
-        print(f"Error in home: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error in home")
+        raise HTTPException(status_code=500, detail=internal_error_detail())
     finally:
         service.close()
 
@@ -1621,7 +1994,7 @@ async def list_animals(request: Request):
             """).fetchall()
         ]
 
-        response = templates.TemplateResponse("animals.html", {
+        response = templates.TemplateResponse(request, "animals.html", {
             "request": request,
             "lang": lang,
             "animals": animals,
@@ -1645,11 +2018,9 @@ async def list_animals(request: Request):
             "current_user": current_user,
         })
         return set_lang_cookie(response, lang)
-    except Exception as e:
-        print(f"Error in list_animals: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error in list_animals")
+        raise HTTPException(status_code=500, detail=internal_error_detail())
     finally:
         service.close()
 
@@ -1662,7 +2033,7 @@ async def new_animal_page(request: Request):
     csrf_raw = request.cookies.get(CSRF_COOKIE_NAME) or generate_csrf_token()
     signed_csrf = create_csrf_signed_token(csrf_raw)
 
-    response = templates.TemplateResponse("animal_form.html", {
+    response = templates.TemplateResponse(request, "animal_form.html", {
         "request": request,
         "lang": lang,
         "current_user": current_user,
@@ -1676,7 +2047,7 @@ async def new_animal_page(request: Request):
         max_age=3600,
         httponly=True,
         samesite="strict",
-        secure=request.url.scheme == "https"
+        secure=secure_cookie_enabled(request)
     )
     return set_lang_cookie(response, lang)
 
@@ -1724,7 +2095,7 @@ async def create_animal_page(
     except Exception as e:
         csrf_raw = request.cookies.get(CSRF_COOKIE_NAME) or generate_csrf_token()
         signed_csrf = create_csrf_signed_token(csrf_raw)
-        response = templates.TemplateResponse("animal_form.html", {
+        response = templates.TemplateResponse(request, "animal_form.html", {
             "request": request,
             "lang": lang,
             "current_user": current_user,
@@ -1751,7 +2122,7 @@ async def create_animal_page(
             max_age=3600,
             httponly=True,
             samesite="strict",
-            secure=request.url.scheme == "https"
+            secure=secure_cookie_enabled(request)
         )
         return set_lang_cookie(response, lang)
     finally:
@@ -1810,7 +2181,7 @@ async def list_reports(request: Request):
             "SELECT COUNT(*) AS total FROM unassigned_reports WHERE status = 'pending'"
         ).fetchone()
 
-        response = templates.TemplateResponse("reports.html", {
+        response = templates.TemplateResponse(request, "reports.html", {
             "request": request,
             "lang": lang,
             "current_user": current_user,
@@ -1838,9 +2209,9 @@ async def list_reports(request: Request):
             "total_reports": total,
         })
         return set_lang_cookie(response, lang)
-    except Exception as e:
+    except Exception:
         logger.exception("Error in list_reports")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=internal_error_detail())
     finally:
         service.close()
 
@@ -1892,6 +2263,7 @@ async def view_animal(request: Request, animal_id: int):
 
         clinical_notes = db.get_clinical_notes_for_animal(animal_id)
         diagnosis_reports = db.get_diagnosis_reports_for_animal(animal_id)
+        active_diagnosis_job = db.get_active_diagnosis_job_for_animal(animal_id)
         vet_history = db.get_vet_assignment_history(animal_id)
         symptoms = db.get_symptoms_for_animal(animal_id, active_only=True)
         observations = db.get_observations_for_animal(animal_id)
@@ -1914,7 +2286,7 @@ async def view_animal(request: Request, animal_id: int):
         csrf_raw = request.cookies.get(CSRF_COOKIE_NAME) or generate_csrf_token()
         signed_csrf = create_csrf_signed_token(csrf_raw)
 
-        response = templates.TemplateResponse("animal_detail.html", {
+        response = templates.TemplateResponse(request, "animal_detail.html", {
             "request": request,
             "lang": lang,
             "animal": animal,
@@ -1938,6 +2310,7 @@ async def view_animal(request: Request, animal_id: int):
             "clinical_notes": clinical_notes,
             "diagnosis_reports": diagnosis_reports,
             "latest_diagnosis": diagnosis_reports[0] if diagnosis_reports else None,
+            "active_diagnosis_job": serialize_diagnosis_job(active_diagnosis_job),
             "vet_history": vet_history,
             "diagnosis_available": DIAGNOSIS_AVAILABLE,
             "current_user": current_user,
@@ -1951,16 +2324,14 @@ async def view_animal(request: Request, animal_id: int):
             max_age=3600,
             httponly=True,
             samesite="strict",
-            secure=request.url.scheme == "https"
+            secure=secure_cookie_enabled(request)
         )
         return set_lang_cookie(response, lang)
     except HTTPException:
         raise
-    except Exception as e:
-        print(f"Error in view_animal: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception(f"Error in view_animal for animal {animal_id}")
+        raise HTTPException(status_code=500, detail=internal_error_detail())
     finally:
         service.close()
 
@@ -2041,10 +2412,7 @@ async def update_animal(
         })
     except Exception as e:
         logger.exception(f"Error updating animal {animal_id}")
-        return JSONResponse({
-            "success": False,
-            "message": str(e)
-        }, status_code=500)
+        return internal_error_json()
     finally:
         service.close()
 
@@ -2080,7 +2448,7 @@ async def merge_animal(
         })
     except Exception as e:
         logger.exception("Error merging animals")
-        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+        return internal_error_json()
     finally:
         service.close()
 
@@ -2120,7 +2488,7 @@ async def view_session(request: Request, session_id: int):
                     comparison = None
                 break
 
-        response = templates.TemplateResponse("session_detail.html", {
+        response = templates.TemplateResponse(request, "session_detail.html", {
             "request": request,
             "lang": lang,
             "animal": animal,
@@ -2140,11 +2508,9 @@ async def view_session(request: Request, session_id: int):
         return set_lang_cookie(response, lang)
     except HTTPException:
         raise
-    except Exception as e:
-        print(f"Error in view_session: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception(f"Error in view_session for session {session_id}")
+        raise HTTPException(status_code=500, detail=internal_error_detail())
     finally:
         service.close()
 
@@ -2159,7 +2525,7 @@ async def upload_page(request: Request):
     csrf_raw = request.cookies.get(CSRF_COOKIE_NAME) or generate_csrf_token()
     signed_csrf = create_csrf_signed_token(csrf_raw)
 
-    response = templates.TemplateResponse("upload.html", {
+    response = templates.TemplateResponse(request, "upload.html", {
         "request": request,
         "lang": lang,
         "current_user": current_user,
@@ -2171,7 +2537,7 @@ async def upload_page(request: Request):
         max_age=3600,
         httponly=True,
         samesite="strict",
-        secure=request.url.scheme == "https"
+        secure=secure_cookie_enabled(request)
     )
     return set_lang_cookie(response, lang)
 
@@ -2240,7 +2606,7 @@ async def view_imports(request: Request):
             'skipped': sum(1 for i in imports if i.get('validation_result') in ('duplicate', 'rate_limited'))
         }
 
-        response = templates.TemplateResponse("imports.html", {
+        response = templates.TemplateResponse(request, "imports.html", {
             "request": request,
             "lang": lang,
             "email_address": email_address,
@@ -2249,11 +2615,9 @@ async def view_imports(request: Request):
             "current_user": current_user
         })
         return set_lang_cookie(response, lang)
-    except Exception as e:
-        print(f"Error in view_imports: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error in view_imports")
+        raise HTTPException(status_code=500, detail=internal_error_detail())
     finally:
         service.close()
 
@@ -2289,7 +2653,7 @@ async def view_unassigned_reports(request: Request, error: Optional[str] = None)
         csrf_raw = request.cookies.get(CSRF_COOKIE_NAME) or generate_csrf_token()
         signed_csrf = create_csrf_signed_token(csrf_raw)
 
-        response = templates.TemplateResponse("unassigned_reports.html", {
+        response = templates.TemplateResponse(request, "unassigned_reports.html", {
             "request": request,
             "lang": lang,
             "current_user": current_user,
@@ -2308,12 +2672,12 @@ async def view_unassigned_reports(request: Request, error: Optional[str] = None)
             max_age=3600,
             httponly=True,
             samesite="strict",
-            secure=request.url.scheme == "https"
+            secure=secure_cookie_enabled(request)
         )
         return set_lang_cookie(response, lang)
-    except Exception as e:
+    except Exception:
         logger.exception("Error in view_unassigned_reports")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=internal_error_detail())
     finally:
         service.close()
 
@@ -2336,7 +2700,7 @@ async def assign_unassigned_report_existing(
     except Exception as e:
         logger.exception(f"Error assigning queued report {report_id} to animal {animal_id}")
         return RedirectResponse(
-            url=f"/unassigned-reports?error={quote_plus(str(e))}",
+            url=f"/unassigned-reports?error={quote_plus(internal_error_detail())}",
             status_code=302
         )
     finally:
@@ -2360,7 +2724,7 @@ async def assign_unassigned_report_new_animal(
     except Exception as e:
         logger.exception(f"Error creating animal from queued report {report_id}")
         return RedirectResponse(
-            url=f"/unassigned-reports?error={quote_plus(str(e))}",
+            url=f"/unassigned-reports?error={quote_plus(internal_error_detail())}",
             status_code=302
         )
     finally:
@@ -2370,29 +2734,28 @@ async def assign_unassigned_report_new_animal(
 @app.post("/upload")
 async def upload_pdf(request: Request, file: UploadFile = File(...), csrf_token: str = Form(None)):
     """Handle PDF upload with security validation"""
-    import re
-
     # Validate CSRF token
     if not validate_csrf(request, csrf_token):
         logger.warning("PDF upload failed: invalid CSRF token")
         return JSONResponse({"success": False, "message": "Invalid request"}, status_code=403)
 
     # Basic filename check
-    if not file.filename.lower().endswith('.pdf'):
+    if not file.filename or not file.filename.lower().endswith('.pdf'):
         logger.warning(f"PDF upload rejected: invalid extension for {file.filename}")
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
-    # Sanitize filename to prevent path traversal attacks
-    safe_filename = re.sub(r'[^\w\-_\.]', '_', os.path.basename(file.filename))
-    if not safe_filename.lower().endswith('.pdf'):
-        safe_filename = f"{safe_filename}.pdf"
-
-    # Save uploaded file temporarily for validation
-    temp_path = UPLOADS_DIR / safe_filename
+    temp_path = None
+    final_path = None
+    keep_uploaded_file = False
     try:
         content = await file.read()
-        with open(temp_path, "wb") as f:
-            f.write(content)
+        with tempfile.NamedTemporaryFile(
+            dir=str(TEMP_UPLOADS_DIR),
+            suffix=".pdf",
+            delete=False,
+        ) as tmp_file:
+            tmp_file.write(content)
+            temp_path = Path(tmp_file.name)
 
         # Validate PDF content using PDFValidator (magic bytes, malicious content, structure)
         validator = PDFValidator()
@@ -2428,14 +2791,19 @@ async def upload_pdf(request: Request, file: UploadFile = File(...), csrf_token:
 
         logger.info(f"PDF validated successfully: {file.filename}")
 
+        final_path = allocate_upload_path(file.filename)
+        os.replace(temp_path, final_path)
+        temp_path = None
+
         # Import the validated PDF
         service = get_service()
         try:
             outcome = service.import_pdf(
-                str(temp_path),
+                str(final_path),
                 copy_to_uploads=False,
                 report_source=f"manual upload | filename {file.filename}",
             )
+            keep_uploaded_file = True
 
             parsed = outcome.parsed
 
@@ -2470,6 +2838,8 @@ async def upload_pdf(request: Request, file: UploadFile = File(...), csrf_token:
             })
         except ValueError as e:
             logger.warning(f"PDF import failed: {e}")
+            if final_path and final_path.exists():
+                final_path.unlink()
             return JSONResponse({
                 "success": False,
                 "message": str(e)
@@ -2477,12 +2847,13 @@ async def upload_pdf(request: Request, file: UploadFile = File(...), csrf_token:
         finally:
             service.close()
 
-    except Exception as e:
+    except Exception:
         logger.exception(f"Upload error for {file.filename}")
-        # Clean up temp file on error
-        if temp_path.exists():
+        if temp_path and temp_path.exists():
             temp_path.unlink()
-        raise HTTPException(status_code=500, detail=str(e))
+        if final_path and final_path.exists() and not keep_uploaded_file:
+            final_path.unlink()
+        raise HTTPException(status_code=500, detail=internal_error_detail())
 
 
 @app.post("/animal/{animal_id}/symptom")
@@ -2501,6 +2872,9 @@ async def add_symptom(
 
     service = get_service()
     try:
+        animal = service.db.get_animal(animal_id)
+        if not animal:
+            return JSONResponse({"success": False, "message": "Animal not found"}, status_code=404)
         symptom_id = service.add_symptom(
             animal_id, description, severity, category
         )
@@ -2508,12 +2882,9 @@ async def add_symptom(
             "success": True,
             "symptom_id": symptom_id
         })
-    except Exception as e:
-        print(f"Error adding symptom: {e}")
-        return JSONResponse({
-            "success": False,
-            "message": str(e)
-        }, status_code=500)
+    except Exception:
+        logger.exception(f"Error adding symptom for animal {animal_id}")
+        return internal_error_json()
     finally:
         service.close()
 
@@ -2535,6 +2906,9 @@ async def add_observation(
 
     service = get_service()
     try:
+        animal = service.db.get_animal(animal_id)
+        if not animal:
+            return JSONResponse({"success": False, "message": "Animal not found"}, status_code=404)
         obs_id = service.add_observation(
             animal_id, obs_type, details, value, unit
         )
@@ -2542,12 +2916,9 @@ async def add_observation(
             "success": True,
             "observation_id": obs_id
         })
-    except Exception as e:
-        print(f"Error adding observation: {e}")
-        return JSONResponse({
-            "success": False,
-            "message": str(e)
-        }, status_code=500)
+    except Exception:
+        logger.exception(f"Error adding observation for animal {animal_id}")
+        return internal_error_json()
     finally:
         service.close()
 
@@ -2569,6 +2940,9 @@ async def add_clinical_note(
 
     service = get_service()
     try:
+        animal = service.db.get_animal(animal_id)
+        if not animal:
+            return JSONResponse({"success": False, "message": "Animal not found"}, status_code=404)
         # Parse date if provided
         parsed_date = None
         if note_date:
@@ -2592,12 +2966,9 @@ async def add_clinical_note(
             "success": True,
             "note_id": note_id
         })
-    except Exception as e:
-        print(f"Error adding clinical note: {e}")
-        return JSONResponse({
-            "success": False,
-            "message": str(e)
-        }, status_code=500)
+    except Exception:
+        logger.exception(f"Error adding clinical note for animal {animal_id}")
+        return internal_error_json()
     finally:
         service.close()
 
@@ -2620,6 +2991,10 @@ async def update_clinical_note(
 
     service = get_service()
     try:
+        note = service.db.get_clinical_note(note_id)
+        if not note or note.animal_id != animal_id:
+            return JSONResponse({"success": False, "message": "Note not found"}, status_code=404)
+
         # Parse date if provided
         parsed_date = None
         if note_date:
@@ -2638,31 +3013,32 @@ async def update_clinical_note(
         return JSONResponse({
             "success": success
         })
-    except Exception as e:
-        print(f"Error updating clinical note: {e}")
-        return JSONResponse({
-            "success": False,
-            "message": str(e)
-        }, status_code=500)
+    except Exception:
+        logger.exception(f"Error updating clinical note {note_id} for animal {animal_id}")
+        return internal_error_json()
     finally:
         service.close()
 
 
 @app.delete("/animal/{animal_id}/clinical-note/{note_id}")
-async def delete_clinical_note(animal_id: int, note_id: int):
+async def delete_clinical_note(request: Request, animal_id: int, note_id: int):
     """Delete a clinical note"""
+    if not validate_csrf(request):
+        return JSONResponse({"success": False, "message": "Invalid request"}, status_code=403)
+
     service = get_service()
     try:
+        note = service.db.get_clinical_note(note_id)
+        if not note or note.animal_id != animal_id:
+            return JSONResponse({"success": False, "message": "Note not found"}, status_code=404)
+
         success = service.db.delete_clinical_note(note_id)
         return JSONResponse({
             "success": success
         })
-    except Exception as e:
-        print(f"Error deleting clinical note: {e}")
-        return JSONResponse({
-            "success": False,
-            "message": str(e)
-        }, status_code=500)
+    except Exception:
+        logger.exception(f"Error deleting clinical note {note_id} for animal {animal_id}")
+        return internal_error_json()
     finally:
         service.close()
 
@@ -2687,12 +3063,9 @@ async def get_clinical_note(note_id: int):
         })
     except HTTPException:
         raise
-    except Exception as e:
-        print(f"Error getting clinical note: {e}")
-        return JSONResponse({
-            "success": False,
-            "message": str(e)
-        }, status_code=500)
+    except Exception:
+        logger.exception(f"Error getting clinical note {note_id}")
+        return internal_error_json()
     finally:
         service.close()
 
@@ -2708,7 +3081,7 @@ async def generate_diagnosis(
     report_type: str = Form("clinical_notes_only"),
     csrf_token: str = Form(None)
 ):
-    """Generate a new AI diagnosis report for an animal using both Claude and OpenAI"""
+    """Queue a new AI diagnosis report for background generation."""
     # Validate CSRF token
     if not validate_csrf(request, csrf_token):
         return JSONResponse({"success": False, "message": "Invalid request"}, status_code=403)
@@ -2721,6 +3094,13 @@ async def generate_diagnosis(
 
     service = get_service()
     try:
+        animal = service.db.get_animal(animal_id)
+        if not animal:
+            return JSONResponse({
+                "success": False,
+                "message": "Animal not found"
+            }, status_code=404)
+
         # Check for API keys
         anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
         openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -2735,33 +3115,63 @@ async def generate_diagnosis(
         if report_type not in ["clinical_notes_only", "comprehensive"]:
             report_type = "clinical_notes_only"
 
-        # Generate diagnosis with both AI services
-        report = create_diagnosis_report(
-            db=service.db,
+        service.db.mark_stale_diagnosis_jobs_failed()
+        active_job = service.db.get_active_diagnosis_job_for_animal(animal_id)
+        if active_job:
+            job_payload = serialize_diagnosis_job(active_job)
+            return JSONResponse({
+                "success": True,
+                "queued": True,
+                "already_running": True,
+                "job": job_payload,
+                "message": "Diagnosis generation is already in progress"
+            }, status_code=202)
+
+        current_user = getattr(request.state, "user", None)
+        job_id = service.db.create_diagnosis_job(
             animal_id=animal_id,
             report_type=report_type,
-            anthropic_api_key=anthropic_api_key,
-            openai_api_key=openai_api_key
+            requested_by_user_id=current_user.id if current_user else None,
+        )
+        DIAGNOSIS_JOB_EXECUTOR.submit(
+            run_diagnosis_job,
+            job_id,
+            animal_id,
+            report_type,
+            anthropic_api_key,
+            openai_api_key,
         )
 
         return JSONResponse({
             "success": True,
-            "report_id": report.id,
-            "message": "Diagnosis report generated successfully"
+            "queued": True,
+            "job": serialize_diagnosis_job(service.db.get_diagnosis_job(job_id)),
+            "message": "Diagnosis generation started"
+        }, status_code=202)
+    except Exception:
+        logger.exception(f"Error generating diagnosis for animal {animal_id}")
+        return internal_error_json()
+    finally:
+        service.close()
+
+
+@app.get("/api/diagnosis-jobs/{job_id}")
+async def get_diagnosis_job_status(job_id: int):
+    """Return the latest status for a diagnosis background job."""
+    service = get_service()
+    try:
+        service.db.mark_stale_diagnosis_jobs_failed()
+        job = service.db.get_diagnosis_job(job_id)
+        if not job:
+            return JSONResponse({
+                "success": False,
+                "message": "Diagnosis job not found"
+            }, status_code=404)
+
+        return JSONResponse({
+            "success": True,
+            "job": serialize_diagnosis_job(job),
         })
-    except ValueError as e:
-        return JSONResponse({
-            "success": False,
-            "message": str(e)
-        }, status_code=400)
-    except Exception as e:
-        print(f"Error generating diagnosis: {e}")
-        import traceback
-        traceback.print_exc()
-        return JSONResponse({
-            "success": False,
-            "message": f"Error generating diagnosis: {str(e)}"
-        }, status_code=500)
     finally:
         service.close()
 
@@ -2781,7 +3191,7 @@ async def view_diagnosis_report(request: Request, animal_id: int, report_id: int
         if not report or report.animal_id != animal_id:
             raise HTTPException(status_code=404, detail="Report not found")
 
-        response = templates.TemplateResponse("diagnosis_report.html", {
+        response = templates.TemplateResponse(request, "diagnosis_report.html", {
             "request": request,
             "lang": lang,
             "animal": animal,
@@ -2791,18 +3201,19 @@ async def view_diagnosis_report(request: Request, animal_id: int, report_id: int
         return set_lang_cookie(response, lang)
     except HTTPException:
         raise
-    except Exception as e:
-        print(f"Error viewing diagnosis report: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception(f"Error viewing diagnosis report {report_id} for animal {animal_id}")
+        raise HTTPException(status_code=500, detail=internal_error_detail())
     finally:
         service.close()
 
 
 @app.delete("/animal/{animal_id}/diagnosis/{report_id}")
-async def delete_diagnosis_report(animal_id: int, report_id: int):
+async def delete_diagnosis_report(request: Request, animal_id: int, report_id: int):
     """Delete a diagnosis report"""
+    if not validate_csrf(request):
+        return JSONResponse({"success": False, "message": "Invalid request"}, status_code=403)
+
     service = get_service()
     try:
         # Verify report belongs to animal
@@ -2817,12 +3228,9 @@ async def delete_diagnosis_report(animal_id: int, report_id: int):
         return JSONResponse({
             "success": success
         })
-    except Exception as e:
-        print(f"Error deleting diagnosis report: {e}")
-        return JSONResponse({
-            "success": False,
-            "message": str(e)
-        }, status_code=500)
+    except Exception:
+        logger.exception(f"Error deleting diagnosis report {report_id} for animal {animal_id}")
+        return internal_error_json()
     finally:
         service.close()
 
@@ -2853,12 +3261,9 @@ async def api_get_diagnosis_report(report_id: int):
         })
     except HTTPException:
         raise
-    except Exception as e:
-        print(f"Error getting diagnosis report: {e}")
-        return JSONResponse({
-            "success": False,
-            "message": str(e)
-        }, status_code=500)
+    except Exception:
+        logger.exception(f"Error getting diagnosis report {report_id}")
+        return internal_error_json()
     finally:
         service.close()
 
@@ -2877,7 +3282,7 @@ async def compare_sessions_page(request: Request, animal_id: int):
         sessions = service.db.get_sessions_for_animal(animal_id)
 
         if len(sessions) < 2:
-            response = templates.TemplateResponse("compare.html", {
+            response = templates.TemplateResponse(request, "compare.html", {
                 "request": request,
                 "lang": lang,
                 "animal": animal,
@@ -2924,7 +3329,7 @@ async def compare_sessions_page(request: Request, animal_id: int):
             if urin:
                 has_urinalysis = True
 
-        response = templates.TemplateResponse("compare.html", {
+        response = templates.TemplateResponse(request, "compare.html", {
             "request": request,
             "lang": lang,
             "animal": animal,
@@ -2938,11 +3343,9 @@ async def compare_sessions_page(request: Request, animal_id: int):
         return set_lang_cookie(response, lang)
     except HTTPException:
         raise
-    except Exception as e:
-        print(f"Error in compare: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception(f"Error in compare for animal {animal_id}")
+        raise HTTPException(status_code=500, detail=internal_error_detail())
     finally:
         service.close()
 
@@ -2953,10 +3356,10 @@ async def set_language(request: Request, lang: str):
     if lang not in SUPPORTED_LANGUAGES:
         lang = DEFAULT_LANGUAGE
 
-    # Get referer or default to home
-    referer = request.headers.get('referer', '/')
-
-    response = RedirectResponse(url=referer, status_code=303)
+    response = RedirectResponse(
+        url=get_safe_redirect_target(request, fallback="/"),
+        status_code=303,
+    )
     set_lang_cookie(response, lang)
     return response
 

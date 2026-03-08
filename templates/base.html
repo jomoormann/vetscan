@@ -881,6 +881,12 @@
             color: var(--success);
         }
 
+        .alert-info {
+            background: rgba(43, 89, 145, 0.08);
+            border-color: rgba(43, 89, 145, 0.16);
+            color: var(--text);
+        }
+
         .alert-error {
             background: var(--danger-soft);
             border-color: rgba(186, 61, 76, 0.16);
@@ -1091,7 +1097,14 @@
             <p class="text-muted" style="margin-bottom: 1.25rem;">{{ t(lang, 'logout.message') }}</p>
             <div class="inline-actions">
                 <button type="button" class="btn btn-secondary" id="logoutCancel">{{ t(lang, 'common.cancel') }}</button>
-                <a href="/logout" class="btn btn-primary">{{ t(lang, 'logout.confirm') }}</a>
+                <form method="post" action="/logout" style="display: inline;">
+                    <input
+                        type="hidden"
+                        name="csrf_token"
+                        value="{{ csrf_token if csrf_token is defined else csrf_token_for_request(request) }}"
+                    >
+                    <button type="submit" class="btn btn-primary">{{ t(lang, 'logout.confirm') }}</button>
+                </form>
             </div>
         </div>
     </div>

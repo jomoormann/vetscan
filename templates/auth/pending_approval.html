@@ -207,9 +207,12 @@
             </div>
             {% endif %}
 
-            <a href="/logout" class="btn-logout">
-                {{ t(lang, 'auth.pending.logout') }}
-            </a>
+            <form method="post" action="/logout">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn-logout">
+                    {{ t(lang, 'auth.pending.logout') }}
+                </button>
+            </form>
 
             <div class="lang-switcher">
                 <a href="/pending-approval?lang=en" class="{% if lang == 'en' %}active{% endif %}">EN</a>

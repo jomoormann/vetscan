@@ -276,6 +276,11 @@
         "delete_note_confirm": "Delete this clinical note?",
         "delete_note_error": "Could not delete note",
         "diagnosis_error": "Could not generate diagnosis",
+        "diagnosis_queued": "Diagnosis generation has been queued.",
+        "diagnosis_running": "AI diagnosis is currently being generated.",
+        "diagnosis_already_running": "Diagnosis generation is already in progress for this animal.",
+        "diagnosis_ready": "Diagnosis report is ready. Opening report...",
+        "diagnosis_generating_button": "Generating...",
         "save_note_error": "Could not save note",
         "save_profile_error": "Could not save profile",
         "merge_no_matches": "No other animals matched this search.",
@@ -565,6 +570,9 @@
         "no_history": "No import history is available yet."
     },
     "auth": {
+        "common": {
+            "rate_limit": "Too many attempts. Please try again in {minutes} minute(s)."
+        },
         "login": {
             "email": "Email",
             "email_placeholder": "Enter your email",
@@ -584,7 +592,7 @@
             "display_name_hint": "This name will be shown in the app",
             "password": "Password",
             "password_placeholder": "Create a password",
-            "password_hint": "Min 8 chars, 1 uppercase, 1 lowercase, 1 number",
+            "password_hint": "Min 12 chars, 1 uppercase, 1 lowercase, 1 number",
             "password_confirm": "Confirm Password",
             "password_confirm_placeholder": "Repeat password",
             "submit": "Create Account",
@@ -615,7 +623,7 @@
             "subtitle": "Enter your new password below.",
             "password": "New Password",
             "password_placeholder": "Enter new password",
-            "password_hint": "Min 8 chars, 1 uppercase, 1 lowercase, 1 number",
+            "password_hint": "Min 12 chars, 1 uppercase, 1 lowercase, 1 number",
             "password_confirm": "Confirm Password",
             "password_confirm_placeholder": "Repeat new password",
             "submit": "Reset Password",

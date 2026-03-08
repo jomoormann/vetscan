@@ -39,6 +39,8 @@ from .domain import (
     SessionAsset,
     UnassignedReport,
     User,
+    UserSession,
+    AuthEvent,
     PasswordResetToken,
     PROTEIN_MARKERS,
 )
@@ -144,6 +146,8 @@ __all__ = [
     'SessionAsset',
     'UnassignedReport',
     'User',
+    'UserSession',
+    'AuthEvent',
     'PasswordResetToken',
     'PROTEIN_MARKERS',
     # Schema

@@ -322,6 +322,24 @@ CREATE TABLE IF NOT EXISTS diagnosis_reports (
 );
 CREATE INDEX IF NOT EXISTS idx_diagnosis_animal ON diagnosis_reports(animal_id);
 
+-- Background diagnosis generation jobs
+CREATE TABLE IF NOT EXISTS diagnosis_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    animal_id INTEGER NOT NULL,
+    requested_by_user_id INTEGER,
+    report_type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    report_id INTEGER,
+    error_message TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    FOREIGN KEY (animal_id) REFERENCES animals(id) ON DELETE CASCADE,
+    FOREIGN KEY (requested_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (report_id) REFERENCES diagnosis_reports(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_diagnosis_jobs_animal_status ON diagnosis_jobs(animal_id, status, created_at DESC);
+
 -- Email import audit log table
 CREATE TABLE IF NOT EXISTS email_import_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -358,6 +376,39 @@ CREATE TABLE IF NOT EXISTS users (
 );
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_email_normalized ON users(email_normalized);
+
+-- Server-side user sessions
+CREATE TABLE IF NOT EXISTS user_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    session_token_hash TEXT NOT NULL UNIQUE,
+    created_ip TEXT,
+    last_seen_ip TEXT,
+    user_agent_hash TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL,
+    revoked_at TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id, revoked_at);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_expiry ON user_sessions(expires_at, revoked_at);
+
+-- Authentication audit and rate-limiting events
+CREATE TABLE IF NOT EXISTS auth_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    email_normalized TEXT,
+    ip_address TEXT,
+    user_id INTEGER,
+    success INTEGER NOT NULL DEFAULT 0,
+    metadata_json TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_auth_events_type_time ON auth_events(event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_auth_events_email_time ON auth_events(email_normalized, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_auth_events_ip_time ON auth_events(ip_address, created_at DESC);
 
 -- Password reset tokens
 CREATE TABLE IF NOT EXISTS password_reset_tokens (

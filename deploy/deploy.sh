@@ -68,16 +68,26 @@ run_ssh "systemctl enable --now vetscan-email-import.timer"
 echo "Email import units installed"
 echo ""
 
-# Step 6: Restart the service using systemd
-echo "STEP 6: Restarting VetScan service"
+# Step 6: Install and reload Nginx configuration
+echo "STEP 6: Installing Nginx configuration"
+echo "----------------------------------------------"
+run_ssh "install -m 644 $REMOTE_APP_DIR/deploy/vetscan.nginx.conf /etc/nginx/sites-available/vetscan"
+run_ssh "ln -sfn /etc/nginx/sites-available/vetscan /etc/nginx/sites-enabled/vetscan"
+run_ssh "nginx -t"
+run_ssh "systemctl reload nginx"
+echo "Nginx configuration updated"
+echo ""
+
+# Step 7: Restart the service using systemd
+echo "STEP 7: Restarting VetScan service"
 echo "----------------------------------------------"
 run_ssh 'systemctl restart vetscan'
 echo "Service restarted"
 sleep 3
 echo ""
 
-# Step 7: MANDATORY - Verify database has data
-echo "STEP 7: Verifying database integrity (MANDATORY)"
+# Step 8: MANDATORY - Verify database has data
+echo "STEP 8: Verifying database integrity (MANDATORY)"
 echo "----------------------------------------------"
 ANIMAL_COUNT=$(run_ssh "cd $REMOTE_APP_DIR && source venv/bin/activate && python3 -c \"import sqlite3; conn=sqlite3.connect('data/vet_proteins.db'); print(conn.execute('SELECT COUNT(*) FROM animals').fetchone()[0])\"")
 echo "Animals in database: $ANIMAL_COUNT"
@@ -90,8 +100,8 @@ if [ "$ANIMAL_COUNT" -eq "0" ]; then
 fi
 echo ""
 
-# Step 8: Verify server is running
-echo "STEP 8: Verifying server is running"
+# Step 9: Verify server is running
+echo "STEP 9: Verifying server is running"
 echo "----------------------------------------------"
 run_ssh 'systemctl is-active vetscan && echo "VetScan service: RUNNING" || echo "VetScan service: NOT RUNNING"'
 run_ssh 'systemctl is-active vetscan-email-import.timer && echo "Email import timer: RUNNING" || echo "Email import timer: NOT RUNNING"'

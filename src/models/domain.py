@@ -515,6 +515,34 @@ class PasswordResetToken:
     created_at: Optional[datetime] = None
 
 
+@dataclass
+class UserSession:
+    """Opaque server-side session for authenticated access."""
+    id: Optional[int] = None
+    user_id: Optional[int] = None
+    session_token_hash: str = ""
+    created_ip: Optional[str] = None
+    last_seen_ip: Optional[str] = None
+    user_agent_hash: Optional[str] = None
+    created_at: Optional[datetime] = None
+    last_seen_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    revoked_at: Optional[datetime] = None
+
+
+@dataclass
+class AuthEvent:
+    """Authentication-related audit and rate-limiting event."""
+    id: Optional[int] = None
+    event_type: str = ""
+    email_normalized: Optional[str] = None
+    ip_address: Optional[str] = None
+    user_id: Optional[int] = None
+    success: bool = False
+    metadata_json: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
 # =============================================================================
 # REFERENCE DATA
 # =============================================================================
