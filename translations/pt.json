@@ -9,11 +9,11 @@
     "nav": {
         "dashboard": "Painel",
         "animals": "Animais",
-        "upload": "Carregar PDF",
-        "imports": "Importações",
+        "upload": "Carregador PDF",
+        "imports": "Importador de Email",
         "admin": "Admin",
         "reports": "Relatórios",
-        "unassigned": "Por atribuir"
+        "unassigned": "Relatórios por atribuir"
     },
     "lang_switcher": {
         "en": "EN",
@@ -115,6 +115,8 @@
         "open_pdf": "Abrir PDF",
         "refresh": "Atualizar",
         "generate": "Gerar",
+        "show_more": "Mostrar mais",
+        "show_less": "Mostrar menos",
         "showing_range": "A mostrar {start}-{end} de {total}",
         "toggle_navigation": "Alternar navegação"
     },

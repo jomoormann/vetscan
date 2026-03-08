@@ -43,7 +43,10 @@
     {% if report.input_summary %}
     <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--gray-200);">
         <div class="text-muted mb-1">{{ t(lang, 'diagnosis.input_data') }}</div>
-        <div style="font-size: 0.875rem;">{{ report.input_summary }}</div>
+        <div class="collapsible-block">
+            <div class="collapsible-content collapsible-content-report" style="font-size: 0.875rem;">{{ report.input_summary }}</div>
+            <button type="button" class="btn btn-secondary collapsible-toggle" hidden>{{ t(lang, 'common.show_more') }}</button>
+        </div>
     </div>
     {% endif %}
 </div>
@@ -59,8 +62,11 @@
     </div>
 
     <div class="card">
-        <div class="diagnosis-content markdown-content">
-            {{ report.executive_summary | sanitize_html }}
+        <div class="collapsible-block">
+            <div class="diagnosis-content markdown-content collapsible-content collapsible-content-report">
+                {{ report.executive_summary | sanitize_html }}
+            </div>
+            <button type="button" class="btn btn-secondary collapsible-toggle" hidden>{{ t(lang, 'common.show_more') }}</button>
         </div>
     </div>
 </div>
@@ -81,8 +87,11 @@
         <div class="card-header">
             <h3 class="card-title">{{ t(lang, 'diagnosis.test_interpretation') }}</h3>
         </div>
-        <div class="diagnosis-content markdown-content">
-            {{ report.test_interpretation | sanitize_html }}
+        <div class="collapsible-block">
+            <div class="diagnosis-content markdown-content collapsible-content collapsible-content-report">
+                {{ report.test_interpretation | sanitize_html }}
+            </div>
+            <button type="button" class="btn btn-secondary collapsible-toggle" hidden>{{ t(lang, 'common.show_more') }}</button>
         </div>
     </div>
     {% endif %}
@@ -93,8 +102,11 @@
         <div class="card-header">
             <h3 class="card-title">{{ t(lang, 'diagnosis.differential_diagnoses') }}</h3>
         </div>
-        <div class="diagnosis-content markdown-content">
-            {{ report.differential_diagnosis | sanitize_html }}
+        <div class="collapsible-block">
+            <div class="diagnosis-content markdown-content collapsible-content collapsible-content-report">
+                {{ report.differential_diagnosis | sanitize_html }}
+            </div>
+            <button type="button" class="btn btn-secondary collapsible-toggle" hidden>{{ t(lang, 'common.show_more') }}</button>
         </div>
     </div>
     {% endif %}
@@ -105,8 +117,11 @@
         <div class="card-header">
             <h3 class="card-title">{{ t(lang, 'diagnosis.recommendations') }}</h3>
         </div>
-        <div class="diagnosis-content markdown-content">
-            {{ report.recommendations | sanitize_html }}
+        <div class="collapsible-block">
+            <div class="diagnosis-content markdown-content collapsible-content collapsible-content-report">
+                {{ report.recommendations | sanitize_html }}
+            </div>
+            <button type="button" class="btn btn-secondary collapsible-toggle" hidden>{{ t(lang, 'common.show_more') }}</button>
         </div>
     </div>
     {% endif %}
@@ -117,8 +132,11 @@
         <div class="card-header">
             <h3 class="card-title">{{ t(lang, 'diagnosis.references') }}</h3>
         </div>
-        <div class="diagnosis-content markdown-content">
-            {{ report.references | sanitize_html }}
+        <div class="collapsible-block">
+            <div class="diagnosis-content markdown-content collapsible-content collapsible-content-report">
+                {{ report.references | sanitize_html }}
+            </div>
+            <button type="button" class="btn btn-secondary collapsible-toggle" hidden>{{ t(lang, 'common.show_more') }}</button>
         </div>
     </div>
     {% endif %}
@@ -139,8 +157,11 @@
         <div class="card-header">
             <h3 class="card-title">{{ t(lang, 'diagnosis.test_interpretation') }}</h3>
         </div>
-        <div class="diagnosis-content markdown-content">
-            {{ report.openai_test_interpretation | sanitize_html }}
+        <div class="collapsible-block">
+            <div class="diagnosis-content markdown-content collapsible-content collapsible-content-report">
+                {{ report.openai_test_interpretation | sanitize_html }}
+            </div>
+            <button type="button" class="btn btn-secondary collapsible-toggle" hidden>{{ t(lang, 'common.show_more') }}</button>
         </div>
     </div>
     {% endif %}
@@ -151,8 +172,11 @@
         <div class="card-header">
             <h3 class="card-title">{{ t(lang, 'diagnosis.differential_diagnoses') }}</h3>
         </div>
-        <div class="diagnosis-content markdown-content">
-            {{ report.openai_differential_diagnosis | sanitize_html }}
+        <div class="collapsible-block">
+            <div class="diagnosis-content markdown-content collapsible-content collapsible-content-report">
+                {{ report.openai_differential_diagnosis | sanitize_html }}
+            </div>
+            <button type="button" class="btn btn-secondary collapsible-toggle" hidden>{{ t(lang, 'common.show_more') }}</button>
         </div>
     </div>
     {% endif %}
@@ -163,8 +187,11 @@
         <div class="card-header">
             <h3 class="card-title">{{ t(lang, 'diagnosis.recommendations') }}</h3>
         </div>
-        <div class="diagnosis-content markdown-content">
-            {{ report.openai_recommendations | sanitize_html }}
+        <div class="collapsible-block">
+            <div class="diagnosis-content markdown-content collapsible-content collapsible-content-report">
+                {{ report.openai_recommendations | sanitize_html }}
+            </div>
+            <button type="button" class="btn btn-secondary collapsible-toggle" hidden>{{ t(lang, 'common.show_more') }}</button>
         </div>
     </div>
     {% endif %}
@@ -175,8 +202,11 @@
         <div class="card-header">
             <h3 class="card-title">{{ t(lang, 'diagnosis.references') }}</h3>
         </div>
-        <div class="diagnosis-content markdown-content">
-            {{ report.openai_references | sanitize_html }}
+        <div class="collapsible-block">
+            <div class="diagnosis-content markdown-content collapsible-content collapsible-content-report">
+                {{ report.openai_references | sanitize_html }}
+            </div>
+            <button type="button" class="btn btn-secondary collapsible-toggle" hidden>{{ t(lang, 'common.show_more') }}</button>
         </div>
     </div>
     {% endif %}
@@ -252,6 +282,45 @@
     /* Markdown Content Styling */
     .markdown-content {
         line-height: 1.7;
+    }
+
+    .collapsible-block {
+        position: relative;
+    }
+
+    .collapsible-content {
+        overflow: hidden;
+        position: relative;
+    }
+
+    .collapsible-content-notes {
+        white-space: pre-wrap;
+        color: var(--text-muted);
+        line-height: 1.65;
+        max-height: calc(1.65em * 6);
+    }
+
+    .collapsible-content-report {
+        max-height: 16rem;
+    }
+
+    .collapsible-block:not(.is-expanded) .collapsible-content::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 3.5rem;
+        background: linear-gradient(to bottom, rgba(255, 251, 247, 0), rgba(255, 251, 247, 1));
+        pointer-events: none;
+    }
+
+    .collapsible-block.is-expanded .collapsible-content {
+        max-height: none;
+    }
+
+    .collapsible-toggle {
+        margin-top: 0.9rem;
     }
 
     .markdown-content h2 {
@@ -330,6 +399,10 @@
 {% block scripts %}
 <script>
     const diagnosisReportCsrfToken = "{{ csrf_token if csrf_token is defined else csrf_token_for_request(request) }}";
+    const diagnosisCollapsibleTranslations = {
+        more: "{{ t(lang, 'common.show_more') }}",
+        less: "{{ t(lang, 'common.show_less') }}"
+    };
 
     async function deleteDiagnosisReport() {
         if (!confirm("{{ t(lang, 'errors.confirm_delete') }}")) {
@@ -383,6 +456,26 @@
         html = html.replace(/<p>\s*<\/p>/g, '');
 
         el.innerHTML = html;
+    });
+
+    document.querySelectorAll('.collapsible-block').forEach((block) => {
+        const content = block.querySelector('.collapsible-content');
+        const toggle = block.querySelector('.collapsible-toggle');
+        if (!content || !toggle) return;
+
+        const needsToggle = content.scrollHeight > content.clientHeight + 8;
+        if (!needsToggle) {
+            toggle.hidden = true;
+            return;
+        }
+
+        toggle.hidden = false;
+        toggle.addEventListener('click', function () {
+            const expanded = block.classList.toggle('is-expanded');
+            toggle.textContent = expanded
+                ? diagnosisCollapsibleTranslations.less
+                : diagnosisCollapsibleTranslations.more;
+        });
     });
 </script>
 {% endblock %}

@@ -2390,6 +2390,15 @@ async def home(request: Request):
     service = get_service()
     try:
         db = service.db
+        dashboard_page_size = 10
+        reports_page = parse_positive_int(
+            request.query_params.get("reports_page"),
+            default=1,
+        )
+        animals_page = parse_positive_int(
+            request.query_params.get("animals_page"),
+            default=1,
+        )
         stats_row = db.conn.execute("""
             SELECT
                 (SELECT COUNT(*) FROM animals) AS total_animals,
@@ -2405,8 +2414,14 @@ async def home(request: Request):
                 ) AS failed_imports
         """).fetchone()
 
-        recent_reports, _ = db.list_reports_paginated(page=1, page_size=8)
-        recent_animals, _ = db.list_animals_paginated(page=1, page_size=8)
+        recent_reports, recent_reports_total = db.list_reports_paginated(
+            page=reports_page,
+            page_size=dashboard_page_size,
+        )
+        recent_animals, recent_animals_total = db.list_animals_paginated(
+            page=animals_page,
+            page_size=dashboard_page_size,
+        )
         pending_rows, _ = db.list_unassigned_reports(status="pending", page=1, page_size=6)
         pending_reports = []
         for report in pending_rows:
@@ -2439,7 +2454,21 @@ async def home(request: Request):
             "current_user": current_user,
             "stats": dict(stats_row) if stats_row else {},
             "recent_reports": recent_reports,
+            "recent_reports_pagination": build_pagination(
+                request,
+                recent_reports_total,
+                reports_page,
+                dashboard_page_size,
+                param_name="reports_page",
+            ),
             "recent_animals": recent_animals,
+            "recent_animals_pagination": build_pagination(
+                request,
+                recent_animals_total,
+                animals_page,
+                dashboard_page_size,
+                param_name="animals_page",
+            ),
             "pending_reports": pending_reports,
             "recent_failures": recent_failures,
         })

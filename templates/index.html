@@ -130,6 +130,24 @@
             </table>
         </div>
     </div>
+    {% if recent_reports_pagination.total_items > recent_reports_pagination.page_size %}
+    <div class="pagination">
+        <div class="pagination-meta">
+            {{ t(lang, 'common.showing_range').format(start=recent_reports_pagination.range_start, end=recent_reports_pagination.range_end, total=recent_reports_pagination.total_items) }}
+        </div>
+        <div class="pagination-links">
+            {% if recent_reports_pagination.has_prev %}
+            <a href="{{ recent_reports_pagination.prev_url }}" class="pagination-link">{{ t(lang, 'common.previous') }}</a>
+            {% endif %}
+            {% for page in recent_reports_pagination.pages %}
+            <a href="{{ page.url }}" class="pagination-link {% if page.current %}is-current{% endif %}">{{ page.number }}</a>
+            {% endfor %}
+            {% if recent_reports_pagination.has_next %}
+            <a href="{{ recent_reports_pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }}</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
     {% else %}
     <div class="empty-state">{{ t(lang, 'dashboard.no_reports') }}</div>
     {% endif %}
@@ -173,6 +191,24 @@
             </table>
         </div>
     </div>
+    {% if recent_animals_pagination.total_items > recent_animals_pagination.page_size %}
+    <div class="pagination">
+        <div class="pagination-meta">
+            {{ t(lang, 'common.showing_range').format(start=recent_animals_pagination.range_start, end=recent_animals_pagination.range_end, total=recent_animals_pagination.total_items) }}
+        </div>
+        <div class="pagination-links">
+            {% if recent_animals_pagination.has_prev %}
+            <a href="{{ recent_animals_pagination.prev_url }}" class="pagination-link">{{ t(lang, 'common.previous') }}</a>
+            {% endif %}
+            {% for page in recent_animals_pagination.pages %}
+            <a href="{{ page.url }}" class="pagination-link {% if page.current %}is-current{% endif %}">{{ page.number }}</a>
+            {% endfor %}
+            {% if recent_animals_pagination.has_next %}
+            <a href="{{ recent_animals_pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }}</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
     {% else %}
     <div class="empty-state">{{ t(lang, 'dashboard.no_animals') }}</div>
     {% endif %}

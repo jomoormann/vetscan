@@ -279,7 +279,12 @@
                             <button type="button" class="btn btn-danger" onclick="deleteClinicalNote({{ note.id }})">{{ t(lang, 'common.delete') }}</button>
                         </div>
                     </div>
-                    <div style="white-space: pre-wrap; color: var(--text-muted); line-height: 1.65;">{{ note.content }}</div>
+                    <div class="collapsible-block">
+                        <div class="collapsible-content collapsible-content-notes">{{ note.content }}</div>
+                        <button type="button" class="btn btn-secondary collapsible-toggle" hidden>
+                            {{ t(lang, 'common.show_more') }}
+                        </button>
+                    </div>
                 </div>
                 {% endfor %}
             </div>
@@ -574,6 +579,10 @@
         reportCountOne: {{ t(lang, 'animal_detail.report_count_one')|tojson }},
         reportCountOther: {{ t(lang, 'animal_detail.report_count_other')|tojson }}
     };
+    const collapsibleTranslations = {
+        more: {{ t(lang, 'common.show_more')|tojson }},
+        less: {{ t(lang, 'common.show_less')|tojson }}
+    };
 
     function escapeHtml(value) {
         return (value || '').replace(/[&<>"']/g, function (character) {
@@ -617,6 +626,27 @@
         notice.textContent = message;
         notice.className = `alert alert-${type || 'info'}`;
         notice.style.display = 'block';
+    }
+
+    function initializeCollapsibles() {
+        document.querySelectorAll('.collapsible-block').forEach((block) => {
+            const content = block.querySelector('.collapsible-content');
+            const toggle = block.querySelector('.collapsible-toggle');
+            if (!content || !toggle) return;
+
+            block.classList.remove('is-expanded');
+            toggle.hidden = true;
+
+            const needsToggle = content.scrollHeight > content.clientHeight + 8;
+            if (!needsToggle) return;
+
+            toggle.hidden = false;
+            toggle.textContent = collapsibleTranslations.more;
+            toggle.onclick = function () {
+                const expanded = block.classList.toggle('is-expanded');
+                toggle.textContent = expanded ? collapsibleTranslations.less : collapsibleTranslations.more;
+            };
+        });
     }
 
     function getDiagnosisStatusMessage(job) {
@@ -757,6 +787,8 @@
     if (activeDiagnosisJob && activeDiagnosisJob.is_active) {
         startDiagnosisPolling(activeDiagnosisJob.id, getDiagnosisStatusMessage(activeDiagnosisJob));
     }
+
+    initializeCollapsibles();
 
     const noteForm = document.getElementById('noteForm');
     if (noteForm) {

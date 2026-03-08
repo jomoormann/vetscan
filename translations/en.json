@@ -9,11 +9,11 @@
     "nav": {
         "dashboard": "Dashboard",
         "animals": "Animals",
-        "upload": "Upload PDF",
-        "imports": "Auto Imports",
+        "upload": "PDF Uploader",
+        "imports": "Mail Importer",
         "admin": "Admin",
         "reports": "Reports",
-        "unassigned": "Unassigned"
+        "unassigned": "Unassigned Reports"
     },
     "lang_switcher": {
         "en": "EN",
@@ -115,6 +115,8 @@
         "open_pdf": "Open PDF",
         "refresh": "Refresh",
         "generate": "Generate",
+        "show_more": "Show more",
+        "show_less": "Show less",
         "showing_range": "Showing {start}-{end} of {total}",
         "toggle_navigation": "Toggle navigation"
     },
