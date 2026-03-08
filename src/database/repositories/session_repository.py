@@ -562,6 +562,12 @@ class SessionRepository:
     def mark_unassigned_report_assigned(self, report_id: int, animal_id: int,
                                         session_id: int) -> bool:
         """Mark a queued report as assigned after manual action."""
+        report_row = self.db.conn.execute("""
+            SELECT report_number, filename
+            FROM unassigned_reports
+            WHERE id = ?
+        """, (report_id,)).fetchone()
+
         cursor = self.db.conn.execute("""
             UPDATE unassigned_reports
             SET status = 'assigned',
@@ -570,5 +576,36 @@ class SessionRepository:
                 assigned_at = CURRENT_TIMESTAMP
             WHERE id = ? AND status = 'pending'
         """, (animal_id, session_id, report_id))
+
+        if cursor.rowcount > 0 and report_row:
+            match_filters = []
+            match_params: List[object] = []
+
+            report_number = report_row["report_number"]
+            filename = report_row["filename"]
+
+            if report_number:
+                match_filters.append("report_number = ?")
+                match_params.append(report_number)
+            if filename:
+                match_filters.append("attachment_name = ?")
+                match_params.append(filename)
+
+            if match_filters:
+                self.db.conn.execute(f"""
+                    UPDATE email_import_log
+                    SET animal_id = ?,
+                        session_id = ?
+                    WHERE id = (
+                        SELECT id
+                        FROM email_import_log
+                        WHERE validation_result = 'queued_manual_assignment'
+                          AND session_id IS NULL
+                          AND ({' OR '.join(match_filters)})
+                        ORDER BY import_timestamp DESC, id DESC
+                        LIMIT 1
+                    )
+                """, (animal_id, session_id, *match_params))
+
         self.db.conn.commit()
         return cursor.rowcount > 0

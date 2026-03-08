@@ -543,6 +543,7 @@
         },
         "status": {
             "success": "Importado",
+            "assigned": "Atribuído",
             "duplicate": "Duplicado",
             "failed": "Falhou",
             "rate_limited": "Limite Excedido",

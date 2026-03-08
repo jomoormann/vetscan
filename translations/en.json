@@ -543,6 +543,7 @@
         },
         "status": {
             "success": "Imported",
+            "assigned": "Assigned",
             "duplicate": "Duplicate",
             "failed": "Failed",
             "rate_limited": "Rate Limited",

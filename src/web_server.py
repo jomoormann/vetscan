@@ -329,6 +329,91 @@ def secure_cookie_enabled(request: Request) -> bool:
     return request.url.scheme == "https" or IS_PRODUCTION
 
 
+def enrich_import_audit_rows(service: VetProteinService,
+                             imports: List[Dict[str, Any]]) -> None:
+    """Overlay the current assignment state onto historical email import rows."""
+    if not imports:
+        return
+
+    report_numbers = sorted({
+        row["report_number"]
+        for row in imports
+        if row.get("report_number")
+    })
+    filenames = sorted({
+        row["attachment_name"]
+        for row in imports
+        if row.get("attachment_name")
+    })
+
+    assigned_by_report: Dict[str, Dict[str, Any]] = {}
+    assigned_by_filename: Dict[str, Dict[str, Any]] = {}
+
+    filters = []
+    params: List[object] = []
+    if report_numbers:
+        filters.append(f"ur.report_number IN ({','.join('?' for _ in report_numbers)})")
+        params.extend(report_numbers)
+    if filenames:
+        filters.append(f"ur.filename IN ({','.join('?' for _ in filenames)})")
+        params.extend(filenames)
+
+    if filters:
+        rows = service.db.conn.execute(f"""
+            SELECT
+                ur.report_number,
+                ur.filename,
+                ur.status,
+                ur.assigned_animal_id,
+                ur.session_id,
+                a.name AS assigned_animal_name
+            FROM unassigned_reports ur
+            LEFT JOIN animals a ON a.id = ur.assigned_animal_id
+            WHERE {' OR '.join(filters)}
+            ORDER BY COALESCE(ur.assigned_at, ur.created_at) DESC, ur.id DESC
+        """, tuple(params)).fetchall()
+
+        for row in rows:
+            item = dict(row)
+            if item["status"] != "assigned":
+                continue
+            if item.get("report_number") and item["report_number"] not in assigned_by_report:
+                assigned_by_report[item["report_number"]] = item
+            if item.get("filename") and item["filename"] not in assigned_by_filename:
+                assigned_by_filename[item["filename"]] = item
+
+    for imp in imports:
+        display_status = "failed"
+
+        if imp.get("validation_result") == "queued_manual_assignment":
+            assigned_entry = None
+            if imp.get("session_id") or imp.get("animal_id"):
+                display_status = "assigned"
+            else:
+                report_number = imp.get("report_number")
+                filename = imp.get("attachment_name")
+                if report_number and report_number in assigned_by_report:
+                    assigned_entry = assigned_by_report[report_number]
+                elif filename and filename in assigned_by_filename:
+                    assigned_entry = assigned_by_filename[filename]
+
+                if assigned_entry:
+                    imp["animal_id"] = imp.get("animal_id") or assigned_entry.get("assigned_animal_id")
+                    imp["animal_name"] = imp.get("animal_name") or assigned_entry.get("assigned_animal_name")
+                    imp["session_id"] = imp.get("session_id") or assigned_entry.get("session_id")
+                    display_status = "assigned"
+                else:
+                    display_status = "queued"
+        elif imp.get("import_success"):
+            display_status = "success"
+        elif imp.get("validation_result") == "duplicate":
+            display_status = "duplicate"
+        elif imp.get("validation_result") == "rate_limited":
+            display_status = "rate_limited"
+
+        imp["display_status"] = display_status
+
+
 def add_csrf_cookie(response: Response, request: Request, csrf_raw: Optional[str] = None) -> str:
     """Attach the CSRF cookie to a response and return the raw token."""
     token = csrf_raw or getattr(request.state, "csrf_raw", None) or request.cookies.get(CSRF_COOKIE_NAME)
@@ -2597,6 +2682,8 @@ async def view_imports(request: Request):
                 imp['time_ago'] = '--'
 
             imports.append(imp)
+
+        enrich_import_audit_rows(service, imports)
 
         # Calculate stats
         stats = {
