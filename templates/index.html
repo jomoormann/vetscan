@@ -106,9 +106,8 @@
             <table>
                 <thead>
                     <tr>
-                        <th>{{ t(lang, 'common.date') }}</th>
-                        <th>{{ t(lang, 'common.report') }}</th>
                         <th>{{ t(lang, 'common.animal') }}</th>
+                        <th>{{ t(lang, 'common.report') }}</th>
                         <th class="desktop-hide">{{ t(lang, 'common.summary') }}</th>
                         <th>{{ t(lang, 'common.actions') }}</th>
                     </tr>
@@ -116,15 +115,14 @@
                 <tbody>
                     {% for report in recent_reports %}
                     <tr>
-                        <td>{{ report.test_date|format_date if report.test_date else '--' }}</td>
-                        <td>
-                            {% set recent_label = report.report_number or report.external_report_id or ('Report ' ~ report.id) %}
-                            <div class="table-title text-truncate" style="max-width: 14rem;" title="{{ recent_label }}">{{ recent_label|short_report_label(20) }}</div>
-                            <div class="table-meta">{{ report.display_type }} · {{ report.source_system or '--' }}</div>
-                        </td>
                         <td>
                             <div class="table-title">{{ report.animal_name }}</div>
-                            <div class="table-meta">{{ report.animal_species or '--' }}{% if report.responsible_vet %} · {{ report.responsible_vet }}{% endif %}</div>
+                            <div class="table-meta">{{ report.animal_species or '--' }}</div>
+                        </td>
+                        <td>
+                            {% set recent_label = report.report_number or report.external_report_id or ('Report ' ~ report.id) %}
+                            <div class="table-title">{{ report.test_date|format_date if report.test_date else '--' }}</div>
+                            <div class="table-meta text-truncate" style="max-width: 16rem;" title="{{ recent_label }}">{{ recent_label|short_report_label(24) }}</div>
                         </td>
                         <td class="desktop-hide">{{ report.summary }}</td>
                         <td><a href="/session/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
