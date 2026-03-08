@@ -52,8 +52,7 @@
                         {% if item.report_type_label %} · {{ item.report_type_label }}{% endif %}
                     </div>
                     <div class="table-meta">
-                        {{ summary.owner_name or report.owner_name or '--' }}
-                        {% if summary.clinic_name or report.clinic_name %} · {{ summary.clinic_name or report.clinic_name }}{% endif %}
+                        {{ summary.clinic_name or report.clinic_name or '--' }}
                     </div>
                 </div>
                     <div class="inline-actions">
@@ -125,7 +124,7 @@
                         </td>
                         <td>
                             <div class="table-title">{{ report.animal_name }}</div>
-                            <div class="table-meta">{{ report.owner_name or '--' }}{% if report.responsible_vet %} · {{ report.responsible_vet }}{% endif %}</div>
+                            <div class="table-meta">{{ report.animal_species or '--' }}{% if report.responsible_vet %} · {{ report.responsible_vet }}{% endif %}</div>
                         </td>
                         <td class="desktop-hide">{{ report.summary }}</td>
                         <td><a href="/session/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
@@ -154,7 +153,6 @@
                 <thead>
                     <tr>
                         <th>{{ t(lang, 'common.animal') }}</th>
-                        <th>{{ t(lang, 'common.pet_owner') }}</th>
                         <th>{{ t(lang, 'animal.responsible_vet') }}</th>
                         <th>{{ t(lang, 'nav.reports') }}</th>
                     </tr>
@@ -166,7 +164,6 @@
                             <a href="/animal/{{ item.animal.id }}" class="table-title">{{ item.animal.name }}</a>
                             <div class="table-meta">{{ item.animal.species }}{% if item.animal.breed %} · {{ item.animal.breed }}{% endif %}</div>
                         </td>
-                        <td>{{ item.animal.owner_name or '--' }}</td>
                         <td>{{ item.animal.responsible_vet or '--' }}</td>
                         <td>
                             <span class="badge badge-info">{{ item.test_count }}</span>

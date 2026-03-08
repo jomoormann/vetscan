@@ -41,6 +41,7 @@ class Animal:
     sex: str = "U"
     weight_kg: Optional[float] = None
     neutered: Optional[bool] = None
+    patient_since: Optional[date] = None
     medical_history: Optional[str] = None
     notes: Optional[str] = None
     responsible_vet: Optional[str] = None

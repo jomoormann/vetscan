@@ -819,10 +819,17 @@
             gap: 1.25rem;
         }
 
+        .detail-layout > section,
+        .detail-sidebar {
+            align-self: start;
+        }
+
         .detail-sidebar {
             display: grid;
             gap: 1rem;
             align-content: start;
+            position: sticky;
+            top: 1rem;
         }
 
         .summary-grid {
@@ -1050,6 +1057,10 @@
             .grid-3,
             .grid-2 {
                 grid-template-columns: 1fr;
+            }
+
+            .detail-sidebar {
+                position: static;
             }
         }
 

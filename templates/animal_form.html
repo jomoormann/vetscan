@@ -50,6 +50,10 @@
                 <input id="animal-vet" name="responsible_vet" value="{{ form_values.responsible_vet or '' }}" placeholder="{{ t(lang, 'animal_form.vet_placeholder') }}">
             </div>
             <div class="field">
+                <label for="animal-patient-since">{{ t(lang, 'animal_detail.patient_since') }}</label>
+                <input id="animal-patient-since" name="patient_since" type="date" value="{{ form_values.patient_since or '' }}">
+            </div>
+            <div class="field">
                 <label for="animal-microchip">{{ t(lang, 'animal_detail.microchip') }}</label>
                 <input id="animal-microchip" name="microchip" value="{{ form_values.microchip or '' }}">
             </div>

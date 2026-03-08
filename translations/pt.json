@@ -206,6 +206,7 @@
         "workspace": "Espaço do paciente",
         "back_to_animals": "Voltar aos animais",
         "pet_owner_label": "Tutor: {owner}",
+        "patient_since": "Paciente desde",
         "compare_reports": "Comparar relatórios",
         "update_differential_diagnosis": "Atualizar diagnóstico diferencial",
         "merge_notice": "Animal duplicado fundido neste registo.",

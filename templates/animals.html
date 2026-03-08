@@ -61,7 +61,6 @@
                 <thead>
                     <tr>
                         <th><a class="sort-link" href="{{ sort_links.animal.url }}">{{ t(lang, 'common.animal') }}{% if sort_links.animal.state %}<span class="sort-state">{{ '^' if sort_links.animal.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
-                        <th><a class="sort-link" href="{{ sort_links.owner.url }}">{{ t(lang, 'common.pet_owner') }}{% if sort_links.owner.state %}<span class="sort-state">{{ '^' if sort_links.owner.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
                         <th><a class="sort-link" href="{{ sort_links.vet.url }}">{{ t(lang, 'animal.responsible_vet') }}{% if sort_links.vet.state %}<span class="sort-state">{{ '^' if sort_links.vet.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
                         <th><a class="sort-link" href="{{ sort_links.last_report.url }}">{{ t(lang, 'animals.last_report') }}{% if sort_links.last_report.state %}<span class="sort-state">{{ '^' if sort_links.last_report.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
                         <th><a class="sort-link" href="{{ sort_links.reports.url }}">{{ t(lang, 'nav.reports') }}{% if sort_links.reports.state %}<span class="sort-state">{{ '^' if sort_links.reports.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
@@ -75,10 +74,8 @@
                             <div class="table-title">{{ item.animal.name }}</div>
                             <div class="table-meta">
                                 {{ item.animal.species }}{% if item.animal.breed %} · {{ item.animal.breed }}{% endif %}
-                                {% if item.animal.microchip %} · {{ item.animal.microchip }}{% endif %}
                             </div>
                         </td>
-                        <td>{{ item.animal.owner_name or '--' }}</td>
                         <td>{{ item.animal.responsible_vet or '--' }}</td>
                         <td>
                             {% if item.last_test %}

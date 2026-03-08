@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS animals (
     sex TEXT DEFAULT 'U',
     weight_kg REAL,
     neutered INTEGER,
+    patient_since DATE,
     medical_history TEXT,
     notes TEXT,
     responsible_vet TEXT,

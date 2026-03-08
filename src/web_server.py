@@ -2497,7 +2497,6 @@ async def list_animals(request: Request):
             },
             "sort_links": {
                 "animal": build_sort_toggle(request, sort, "name", "asc"),
-                "owner": build_sort_toggle(request, sort, "owner", "asc"),
                 "vet": build_sort_toggle(request, sort, "vet", "asc"),
                 "last_report": build_sort_toggle(request, sort, "last_report", "desc"),
                 "reports": build_sort_toggle(request, sort, "reports", "desc"),
@@ -2553,6 +2552,7 @@ async def create_animal_page(
     sex: str = Form("U"),
     responsible_vet: str = Form(None),
     microchip: str = Form(None),
+    patient_since: str = Form(None),
     weight_kg: float = Form(None),
     medical_history: str = Form(None),
     notes: str = Form(None),
@@ -2576,6 +2576,7 @@ async def create_animal_page(
             sex=sex,
             responsible_vet=responsible_vet.strip() if responsible_vet else None,
             microchip=microchip.strip() if microchip else None,
+            patient_since=parse_date_value(patient_since.strip()) if patient_since and patient_since.strip() else None,
             weight_kg=weight_kg,
             medical_history=medical_history.strip() if medical_history else None,
             notes=notes.strip() if notes else None,
@@ -2600,6 +2601,7 @@ async def create_animal_page(
                 "sex": sex,
                 "responsible_vet": responsible_vet,
                 "microchip": microchip,
+                "patient_since": patient_since,
                 "weight_kg": weight_kg,
                 "medical_history": medical_history,
                 "notes": notes,
@@ -2833,6 +2835,7 @@ async def update_animal(
     sex: str = Form("U"),
     responsible_vet: str = Form(None),
     microchip: str = Form(None),
+    patient_since: str = Form(None),
     weight_kg: float = Form(None),
     medical_history: str = Form(None),
     notes: str = Form(None),
@@ -2870,6 +2873,10 @@ async def update_animal(
             update_fields["responsible_vet"] = responsible_vet if responsible_vet.strip() else None
         if microchip is not None:
             update_fields["microchip"] = microchip if microchip.strip() else None
+        if patient_since is not None:
+            update_fields["patient_since"] = (
+                parse_date_value(patient_since.strip()) if patient_since.strip() else None
+            )
         if weight_kg is not None:
             update_fields["weight_kg"] = weight_kg
         if medical_history is not None:

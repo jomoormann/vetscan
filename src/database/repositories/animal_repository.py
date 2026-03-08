@@ -47,12 +47,12 @@ class AnimalRepository:
         cursor = self.db.conn.execute("""
             INSERT INTO animals (name, species, breed, microchip, age_years,
                                 owner_name, age_months, sex, weight_kg, neutered,
-                                medical_history, notes, responsible_vet)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                patient_since, medical_history, notes, responsible_vet)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (animal.name, animal.species, animal.breed, animal.microchip,
               animal.age_years, animal.owner_name, animal.age_months, animal.sex,
-              animal.weight_kg, animal.neutered, animal.medical_history,
-              animal.notes, animal.responsible_vet))
+              animal.weight_kg, animal.neutered, animal.patient_since or date.today(),
+              animal.medical_history, animal.notes, animal.responsible_vet))
         animal_id = cursor.lastrowid
         if animal.responsible_vet:
             self._record_vet_assignment(animal_id, animal.responsible_vet)
@@ -177,6 +177,8 @@ class AnimalRepository:
             updates["age_years"] = animal.age_years
         if animal.age_months and not existing.age_months:
             updates["age_months"] = animal.age_months
+        if animal.patient_since and not existing.patient_since:
+            updates["patient_since"] = animal.patient_since
         if animal.sex and existing.sex == "U" and animal.sex != "U":
             updates["sex"] = animal.sex
         if animal.neutered is not None and existing.neutered is None:
@@ -494,8 +496,6 @@ class AnimalRepository:
         order_clause = {
             "name_asc": "a.name COLLATE NOCASE ASC, a.id ASC",
             "name_desc": "a.name COLLATE NOCASE DESC, a.id DESC",
-            "owner_asc": "COALESCE(a.owner_name, '') COLLATE NOCASE ASC, a.name COLLATE NOCASE ASC",
-            "owner_desc": "COALESCE(a.owner_name, '') COLLATE NOCASE DESC, a.name COLLATE NOCASE ASC",
             "vet_asc": "COALESCE(a.responsible_vet, '') COLLATE NOCASE ASC, a.name COLLATE NOCASE ASC",
             "vet_desc": "COALESCE(a.responsible_vet, '') COLLATE NOCASE DESC, a.name COLLATE NOCASE ASC",
             "last_report_desc": "COALESCE(latest_report_at, '') DESC, a.name COLLATE NOCASE ASC",
@@ -626,7 +626,7 @@ class AnimalRepository:
 
         allowed_fields = {'name', 'species', 'breed', 'microchip', 'owner_name', 'age_years',
                          'age_months', 'sex', 'weight_kg', 'neutered',
-                         'medical_history', 'notes', 'responsible_vet'}
+                         'patient_since', 'medical_history', 'notes', 'responsible_vet'}
         update_fields = {k: v for k, v in kwargs.items() if k in allowed_fields}
         if not update_fields:
             return False
@@ -701,6 +701,10 @@ class AnimalRepository:
             update_fields["age_years"] = source.age_years
         if target.age_months is None and source.age_months is not None:
             update_fields["age_months"] = source.age_months
+        if target.patient_since is None and source.patient_since is not None:
+            update_fields["patient_since"] = source.patient_since
+        elif target.patient_since and source.patient_since:
+            update_fields["patient_since"] = min(target.patient_since, source.patient_since)
         if (target.sex or "U") == "U" and source.sex and source.sex != "U":
             update_fields["sex"] = source.sex
         if target.weight_kg is None and source.weight_kg is not None:

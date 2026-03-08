@@ -90,6 +90,15 @@ class Database:
 
         ensure_column("animals", "responsible_vet", "TEXT")
         ensure_column("animals", "owner_name", "TEXT")
+        ensure_column("animals", "patient_since", "DATE")
+
+        self.conn.execute("""
+            UPDATE animals
+            SET patient_since = DATE(created_at)
+            WHERE patient_since IS NULL
+              AND created_at IS NOT NULL
+        """)
+        self.conn.commit()
 
         ensure_column("test_sessions", "source_system", "TEXT DEFAULT 'dnatech'")
         ensure_column("test_sessions", "report_type", "TEXT DEFAULT 'dnatech_proteinogram'")

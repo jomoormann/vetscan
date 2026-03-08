@@ -206,6 +206,7 @@
         "workspace": "Patient workspace",
         "back_to_animals": "Back to animals",
         "pet_owner_label": "Pet owner: {owner}",
+        "patient_since": "Patient since",
         "compare_reports": "Compare reports",
         "update_differential_diagnosis": "Update differential diagnosis",
         "merge_notice": "Duplicate animal merged into this record.",

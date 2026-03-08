@@ -13,7 +13,6 @@
         <h1>{{ animal.name }}</h1>
         <p class="page-subtitle">
             {{ animal.species }}{% if animal.breed %} · {{ animal.breed }}{% endif %}
-            {% if animal.owner_name %} · {{ t(lang, 'animal_detail.pet_owner_label').format(owner=animal.owner_name) }}{% endif %}
         </p>
     </div>
     <div class="inline-actions">
@@ -389,10 +388,6 @@
                         <input id="profile-name" name="name" value="{{ animal.name }}" required>
                     </div>
                     <div class="field">
-                        <label for="profile-owner">{{ t(lang, 'common.pet_owner') }}</label>
-                        <input id="profile-owner" name="owner_name" value="{{ animal.owner_name or '' }}">
-                    </div>
-                    <div class="field">
                         <label for="profile-species">{{ t(lang, 'common.species') }}</label>
                         <input id="profile-species" name="species" value="{{ animal.species }}">
                     </div>
@@ -409,8 +404,16 @@
                         <input id="profile-assignment-reason" name="assignment_reason" placeholder="{{ t(lang, 'animal_detail.vet_change_reason_placeholder') }}">
                     </div>
                     <div class="field">
+                        <label for="profile-owner">{{ t(lang, 'common.pet_owner') }}</label>
+                        <input id="profile-owner" name="owner_name" value="{{ animal.owner_name or '' }}">
+                    </div>
+                    <div class="field">
                         <label for="profile-microchip">{{ t(lang, 'animal_detail.microchip') }}</label>
                         <input id="profile-microchip" name="microchip" value="{{ animal.microchip or '' }}">
+                    </div>
+                    <div class="field">
+                        <label for="profile-patient-since">{{ t(lang, 'animal_detail.patient_since') }}</label>
+                        <input id="profile-patient-since" name="patient_since" type="date" value="{{ animal.patient_since or '' }}">
                     </div>
                     <div class="field">
                         <label for="profile-weight">{{ t(lang, 'animal_form.weight') }}</label>
@@ -514,20 +517,20 @@
             <h2 class="card-title" style="margin-bottom: 1rem;">{{ animal.name }}</h2>
             <div class="summary-grid">
                 <div class="summary-block">
-                    <div class="summary-block-label">{{ t(lang, 'common.pet_owner') }}</div>
-                    <div class="summary-block-value">{{ animal.owner_name or '--' }}</div>
-                </div>
-                <div class="summary-block">
                     <div class="summary-block-label">{{ t(lang, 'animal.responsible_vet') }}</div>
                     <div class="summary-block-value">{{ animal.responsible_vet or '--' }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">{{ t(lang, 'animal_detail.microchip') }}</div>
-                    <div class="summary-block-value">{{ animal.microchip or '--' }}</div>
-                </div>
-                <div class="summary-block">
                     <div class="summary-block-label">{{ t(lang, 'common.age') }}</div>
                     <div class="summary-block-value">{{ animal.age_display }}</div>
+                </div>
+                <div class="summary-block">
+                    <div class="summary-block-label">{{ t(lang, 'animal_detail.patient_since') }}</div>
+                    <div class="summary-block-value">{{ animal.patient_since|format_date if animal.patient_since else '--' }}</div>
+                </div>
+                <div class="summary-block">
+                    <div class="summary-block-label">{{ t(lang, 'common.species') }}</div>
+                    <div class="summary-block-value">{{ animal.species }}{% if animal.breed %} · {{ animal.breed }}{% endif %}</div>
                 </div>
                 <div class="summary-block">
                     <div class="summary-block-label">{{ t(lang, 'nav.reports') }}</div>
@@ -538,23 +541,6 @@
                     <div class="summary-block-value">{{ clinical_notes|length }}</div>
                 </div>
             </div>
-        </section>
-
-        <section class="card">
-            <h2 class="card-title" style="margin-bottom: 0.8rem;">{{ t(lang, 'animal_detail.ai_differential_diagnosis') }}</h2>
-            {% if latest_diagnosis %}
-            <div class="table-meta" style="margin-bottom: 0.6rem;">{{ t(lang, 'animal_detail.last_updated').format(date=latest_diagnosis.report_date|format_date if latest_diagnosis.report_date else '--') }}</div>
-            <p class="text-muted" style="line-height: 1.6;">{{ (latest_diagnosis.executive_summary or latest_diagnosis.input_summary)|truncate(260) }}</p>
-            <div class="inline-actions" style="margin-top: 1rem;">
-                <a href="/animal/{{ animal.id }}/diagnosis/{{ latest_diagnosis.id }}" class="btn btn-secondary">{{ t(lang, 'animal_detail.open_latest') }}</a>
-                <button type="button" class="btn btn-primary" data-diagnosis-trigger onclick="triggerDiagnosis()">{{ t(lang, 'common.refresh') }}</button>
-            </div>
-            {% else %}
-            <p class="text-muted" style="line-height: 1.6;">{{ t(lang, 'animal_detail.no_ai_diagnosis_sidebar') }}</p>
-            <div class="inline-actions" style="margin-top: 1rem;">
-                <button type="button" class="btn btn-primary" data-diagnosis-trigger onclick="triggerDiagnosis()">{{ t(lang, 'common.generate') }}</button>
-            </div>
-            {% endif %}
         </section>
     </aside>
 </div>
@@ -850,8 +836,6 @@
 
         mergeResults.innerHTML = items.map(function (item) {
             const reportCount = item.test_count || 0;
-            const owner = item.owner_name ? ` · ${item.owner_name}` : '';
-            const microchip = item.microchip ? ` · ${item.microchip}` : '';
             const reportLabel = reportCount === 1
                 ? animalDetailTranslations.reportCountOne
                 : animalDetailTranslations.reportCountOther;
@@ -859,7 +843,7 @@
                 <button type="button" class="list-item" style="width: 100%; text-align: left; background: var(--surface-muted);" data-target-id="${item.id}">
                     <div>
                         <div class="table-title">${escapeHtml(item.name)}</div>
-                        <div class="table-meta">${escapeHtml(item.species || '--')}${escapeHtml(owner)}${escapeHtml(microchip)}</div>
+                        <div class="table-meta">${escapeHtml(item.species || '--')}${item.responsible_vet ? ` · ${escapeHtml(item.responsible_vet)}` : ''}</div>
                         <div class="table-meta">${reportLabel.replace('{count}', reportCount)}</div>
                     </div>
                 </button>
