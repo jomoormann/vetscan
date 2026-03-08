@@ -3,6 +3,83 @@
 {% block title %}{{ t(lang, 'profile.title') }} · {{ t(lang, 'app.title') }}{% endblock %}
 
 {% block content %}
+<style>
+    .profile-shell {
+        max-width: 980px;
+    }
+
+    .profile-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1.25rem;
+        align-items: start;
+    }
+
+    .profile-card {
+        background: rgba(255,255,255,0.96);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow);
+        padding: 1.4rem;
+    }
+
+    .profile-card h2 {
+        margin-top: 0.15rem;
+    }
+
+    .profile-form {
+        display: grid;
+        gap: 1rem;
+    }
+
+    .profile-form .field {
+        display: grid;
+        gap: 0.4rem;
+    }
+
+    .profile-form .field label {
+        font-size: 0.84rem;
+        font-weight: 600;
+        color: var(--text-muted);
+    }
+
+    .profile-form .field input {
+        width: 100%;
+        min-height: 44px;
+        padding: 0.8rem 0.9rem;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+        color: var(--text);
+    }
+
+    .profile-form .field input:focus {
+        outline: none;
+        border-color: var(--brand);
+        box-shadow: 0 0 0 3px rgba(255, 139, 90, 0.18);
+    }
+
+    .profile-form .form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+    }
+
+    .profile-actions {
+        display: flex;
+        justify-content: flex-end;
+        padding-top: 0.25rem;
+    }
+
+    @media (max-width: 860px) {
+        .profile-grid,
+        .profile-form .form-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+<div class="profile-shell">
 <section class="page-header">
     <div>
         <div class="eyebrow">{{ t(lang, 'profile.kicker') }}</div>
@@ -11,9 +88,9 @@
     </div>
 </section>
 
-<section class="grid-two" style="align-items: start;">
-    <article class="panel">
-        <div class="panel-header">
+<section class="profile-grid">
+    <article class="profile-card">
+        <div class="card-header">
             <div>
                 <div class="card-kicker">{{ t(lang, 'profile.account_details') }}</div>
                 <h2>{{ t(lang, 'profile.identity_title') }}</h2>
@@ -21,13 +98,13 @@
         </div>
 
         {% if profile_success %}
-        <div class="alert success" style="margin-bottom: 1rem;">{{ t(lang, 'profile.profile_saved') }}</div>
+        <div class="alert alert-success">{{ t(lang, 'profile.profile_saved') }}</div>
         {% endif %}
         {% if profile_error %}
-        <div class="alert danger" style="margin-bottom: 1rem;">{{ profile_error }}</div>
+        <div class="alert alert-error">{{ profile_error }}</div>
         {% endif %}
 
-        <form method="post" action="/profile" class="filters">
+        <form method="post" action="/profile" class="profile-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token if csrf_token is defined else csrf_token_for_request(request) }}">
 
             <div class="form-grid">
@@ -55,14 +132,14 @@
                 </div>
             </div>
 
-            <div class="inline-actions">
+            <div class="profile-actions">
                 <button type="submit" class="btn btn-primary">{{ t(lang, 'profile.save_changes') }}</button>
             </div>
         </form>
     </article>
 
-    <article class="panel">
-        <div class="panel-header">
+    <article class="profile-card">
+        <div class="card-header">
             <div>
                 <div class="card-kicker">{{ t(lang, 'profile.security') }}</div>
                 <h2>{{ t(lang, 'profile.password_title') }}</h2>
@@ -70,13 +147,13 @@
         </div>
 
         {% if password_success %}
-        <div class="alert success" style="margin-bottom: 1rem;">{{ t(lang, 'profile.password_saved') }}</div>
+        <div class="alert alert-success">{{ t(lang, 'profile.password_saved') }}</div>
         {% endif %}
         {% if password_error %}
-        <div class="alert danger" style="margin-bottom: 1rem;">{{ password_error }}</div>
+        <div class="alert alert-error">{{ password_error }}</div>
         {% endif %}
 
-        <form method="post" action="/profile/password" class="filters">
+        <form method="post" action="/profile/password" class="profile-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token if csrf_token is defined else csrf_token_for_request(request) }}">
 
             <div class="field">
@@ -93,10 +170,11 @@
                 <input id="confirm-password" type="password" name="confirm_password" autocomplete="new-password" required>
             </div>
 
-            <div class="inline-actions">
+            <div class="profile-actions">
                 <button type="submit" class="btn btn-primary">{{ t(lang, 'profile.update_password') }}</button>
             </div>
         </form>
     </article>
 </section>
+</div>
 {% endblock %}
