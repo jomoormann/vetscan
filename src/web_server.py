@@ -662,7 +662,7 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 STATIC_DIR = BASE_DIR / "static"
 STATIC_DIR.mkdir(exist_ok=True)
 
-# Mount static files for game assets and other static content
+# Mount static files
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
