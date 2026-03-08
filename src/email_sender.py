@@ -6,6 +6,7 @@ Sends emails via SMTP (configured for Hostinger).
 Email types:
 - Password reset links
 - Account approval notifications
+- Admin invitation links
 - New registration alerts to admins
 """
 
@@ -247,6 +248,39 @@ class EmailService:
         msg = self._create_message(to_email, subject, html_content, text_content)
         return self._send(msg, to_email)
 
+    def send_user_invitation(self, to_email: str, invite_url: str, role: str,
+                             invited_by_name: Optional[str] = None,
+                             lang: str = "en") -> bool:
+        """Send an invitation email for a new admin- or user-level account."""
+        context = {
+            "invite_url": invite_url,
+            "email": to_email,
+            "role": role,
+            "invited_by_name": invited_by_name,
+            "lang": lang,
+        }
+
+        try:
+            html_content = self._render_template("user_invitation.html", **context)
+        except Exception as e:
+            print(f"Template render error: {e}")
+            html_content = self._fallback_user_invitation_html(
+                invite_url, role, invited_by_name, lang
+            )
+
+        role_label = "administrator" if role == "admin" else "user"
+        if lang == "pt":
+            role_label = "administrador" if role == "admin" else "utilizador"
+        subject = (
+            "You have been invited to VetScan"
+            if lang == "en"
+            else "Foi convidado para o VetScan"
+        )
+        text_content = f"Accept your VetScan invitation as {role_label}: {invite_url}"
+
+        msg = self._create_message(to_email, subject, html_content, text_content)
+        return self._send(msg, to_email)
+
     def send_new_registration_alert(self, admin_emails: List[str],
                                     new_user_email: str,
                                     new_user_name: Optional[str],
@@ -415,6 +449,36 @@ class EmailService:
             <p><strong>Email:</strong> {safe_email}</p>
             <p><strong>Name:</strong> {safe_name}</p>
             <p><a href="{safe_url}" style="background: #135E4B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Review in Admin Panel</a></p>
+        </body>
+        </html>
+        """
+
+    def _fallback_user_invitation_html(self, invite_url: str, role: str,
+                                       invited_by_name: Optional[str],
+                                       lang: str) -> str:
+        """Fallback HTML for user invitation emails."""
+        safe_url = escape_url_for_href(invite_url)
+        safe_inviter = escape_html(invited_by_name) if invited_by_name else ("a clinic administrator" if lang == "en" else "um administrador da clínica")
+        if lang == "pt":
+            role_label = "administrador" if role == "admin" else "utilizador"
+            return f"""
+            <html>
+            <body style="font-family: sans-serif; padding: 20px;">
+                <h2>Convite VetScan</h2>
+                <p>Recebeu um convite de {safe_inviter} para criar uma conta VetScan como {role_label}.</p>
+                <p><a href="{safe_url}" style="background: #135E4B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Aceitar convite</a></p>
+                <p>Este link expira em 7 dias.</p>
+            </body>
+            </html>
+            """
+        role_label = "administrator" if role == "admin" else "user"
+        return f"""
+        <html>
+        <body style="font-family: sans-serif; padding: 20px;">
+            <h2>VetScan Invitation</h2>
+            <p>You have been invited by {safe_inviter} to create a VetScan account as {role_label}.</p>
+            <p><a href="{safe_url}" style="background: #135E4B; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Accept invitation</a></p>
+            <p>This link expires in 7 days.</p>
         </body>
         </html>
         """

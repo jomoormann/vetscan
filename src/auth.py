@@ -16,7 +16,7 @@ from typing import Optional, Tuple
 
 from passlib.context import CryptContext
 
-from models import Database, User, PasswordResetToken
+from models import Database, User, PasswordResetToken, InvitationToken
 
 
 # =============================================================================
@@ -92,6 +92,11 @@ def generate_reset_token() -> str:
 def hash_token(token: str) -> str:
     """Hash a token for storage in database"""
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def generate_invitation_token() -> str:
+    """Generate a secure random token for user invitations."""
+    return secrets.token_urlsafe(32)
 
 
 # =============================================================================
@@ -200,6 +205,108 @@ class AuthService:
         self.db.create_password_reset_token(user.id, token_hash, expires_at)
 
         return plain_token, ""
+
+    def create_invited_user(self, email: str, role: str,
+                            invited_by_user_id: int) -> Tuple[Optional[User], Optional[str], str]:
+        """Create a pre-approved invited user and return a plain invitation token."""
+        is_valid, error = validate_email(email)
+        if not is_valid:
+            return None, None, error
+
+        normalized_role = (role or "user").strip().lower()
+        if normalized_role not in {"user", "admin"}:
+            return None, None, "Invalid role"
+
+        email_normalized = email.lower().strip()
+        existing = self.db.get_user_by_email(email_normalized)
+        if existing:
+            active_invitation = next(
+                (
+                    invite
+                    for invite in self.db.list_active_invitations()
+                    if invite.user_id == existing.id
+                ),
+                None,
+            )
+            if not active_invitation or existing.last_login_at or existing.display_name:
+                return None, None, "An account with this email already exists"
+
+            self.db.update_user(
+                existing.id,
+                is_active=True,
+                is_approved=True,
+                is_superuser=(normalized_role == "admin"),
+                approved_at=datetime.now().isoformat(),
+                approved_by_user_id=invited_by_user_id,
+            )
+            user = self.db.get_user(existing.id)
+        else:
+            temporary_password_hash = hash_password(secrets.token_urlsafe(24))
+            user = User(
+                email=email.strip(),
+                email_normalized=email_normalized,
+                password_hash=temporary_password_hash,
+                display_name=None,
+                is_active=True,
+                is_approved=True,
+                is_superuser=(normalized_role == "admin"),
+                approved_at=datetime.now().isoformat(),
+                approved_by_user_id=invited_by_user_id,
+            )
+            user.id = self.db.create_user(user)
+
+        if not user:
+            return None, None, "Could not create invited user"
+
+        plain_token = generate_invitation_token()
+        self.db.create_invitation_token(
+            user_id=user.id,
+            invited_email=user.email,
+            invited_role=normalized_role,
+            token_hash=hash_token(plain_token),
+            expires_at=datetime.now() + timedelta(days=7),
+            invited_by_user_id=invited_by_user_id,
+        )
+        return user, plain_token, ""
+
+    def accept_invitation(self, token: str, display_name: str,
+                          password: str) -> Tuple[Optional[User], str]:
+        """Accept an invitation by setting the user's name and password."""
+        cleaned_name = (display_name or "").strip()
+        if not cleaned_name:
+            return None, "Name is required"
+
+        is_valid, error = validate_password(password, min_length=12)
+        if not is_valid:
+            return None, error
+
+        invitation = self.db.get_invitation_token(hash_token(token))
+        if not invitation:
+            return None, "Invalid or expired invitation link"
+        if invitation.used_at:
+            return None, "Invitation link has already been used"
+
+        expires_at = invitation.expires_at
+        if isinstance(expires_at, str):
+            expires_at = datetime.fromisoformat(expires_at)
+        if expires_at and expires_at < datetime.now():
+            return None, "Invitation link has expired"
+
+        user = self.db.get_user(invitation.user_id)
+        if not user or not user.is_active:
+            return None, "Invitation is no longer active"
+
+        self.db.update_user(
+            user.id,
+            display_name=cleaned_name,
+            password_hash=hash_password(password),
+            is_approved=True,
+            is_superuser=(invitation.invited_role == "admin"),
+        )
+        self.db.mark_invitation_used(invitation.id)
+        self.db.revoke_all_user_sessions(user.id)
+        self.db.cleanup_expired_invitations()
+        return self.db.get_user(user.id), ""
 
     def reset_password(self, token: str, new_password: str) -> Tuple[bool, str]:
         """

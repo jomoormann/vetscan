@@ -10,6 +10,40 @@
     </div>
 </div>
 
+{% if invite_success %}
+<div class="alert alert-success">{{ t(lang, 'admin.users.invite.success') }}</div>
+{% endif %}
+
+{% if invite_error %}
+<div class="alert alert-error">{{ invite_error }}</div>
+{% endif %}
+
+<div class="card" style="margin-bottom: 1.5rem;">
+    <div class="card-header">
+        <div>
+            <div class="card-kicker">{{ t(lang, 'admin.users.invite.kicker') }}</div>
+            <h2 class="card-title">{{ t(lang, 'admin.users.invite.title') }}</h2>
+        </div>
+    </div>
+    <form method="POST" action="/admin/users/invite" class="filters filters-compact">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="field search-field">
+            <label for="invite-email">{{ t(lang, 'admin.users.invite.email') }}</label>
+            <input id="invite-email" type="email" name="email" required placeholder="{{ t(lang, 'admin.users.invite.email_placeholder') }}">
+        </div>
+        <div class="field">
+            <label for="invite-role">{{ t(lang, 'admin.users.invite.role') }}</label>
+            <select id="invite-role" name="role">
+                <option value="user">{{ t(lang, 'admin.users.role.user') }}</option>
+                <option value="admin">{{ t(lang, 'admin.users.role.admin') }}</option>
+            </select>
+        </div>
+        <div class="inline-actions">
+            <button type="submit" class="btn btn-primary">{{ t(lang, 'admin.users.invite.submit') }}</button>
+        </div>
+    </form>
+</div>
+
 <!-- Stats -->
 <div class="stats-grid">
     <div class="stat-card">
@@ -103,6 +137,8 @@
                     <td>
                         {% if not user.is_active %}
                         <span class="badge badge-low">{{ t(lang, 'admin.users.status.disabled') }}</span>
+                        {% elif invitation_lookup.get(user.id) %}
+                        <span class="badge badge-info">{{ t(lang, 'admin.users.status.invited') }}</span>
                         {% elif not user.is_approved %}
                         <span class="badge" style="background: var(--warning); color: white;">{{ t(lang, 'admin.users.status.pending') }}</span>
                         {% else %}
@@ -117,7 +153,9 @@
                         {% endif %}
                     </td>
                     <td class="mobile-hide">
-                        {% if user.last_login_at %}
+                        {% if invitation_lookup.get(user.id) %}
+                        {{ invitation_lookup[user.id].created_at|format_date }}
+                        {% elif user.last_login_at %}
                         {{ user.last_login_at|format_date }}
                         {% else %}
                         <span class="text-muted">{{ t(lang, 'admin.users.never') }}</span>

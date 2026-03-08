@@ -422,6 +422,23 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 );
 CREATE INDEX IF NOT EXISTS idx_reset_tokens_hash ON password_reset_tokens(token_hash);
 
+-- Admin invitation tokens for invite-only account creation
+CREATE TABLE IF NOT EXISTS invitation_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    invited_email TEXT NOT NULL,
+    invited_role TEXT NOT NULL DEFAULT 'user',
+    invited_by_user_id INTEGER,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TIMESTAMP NOT NULL,
+    used_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (invited_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_invitation_tokens_hash ON invitation_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_invitation_tokens_user ON invitation_tokens(user_id, used_at, expires_at);
+
 -- View for easy result querying with animal info
 CREATE VIEW IF NOT EXISTS v_results_with_animal AS
 SELECT

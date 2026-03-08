@@ -8,7 +8,9 @@ server-side sessions, and auth-event logging.
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from models.domain import User, PasswordResetToken, UserSession, AuthEvent
+from models.domain import (
+    User, PasswordResetToken, InvitationToken, UserSession, AuthEvent
+)
 
 
 def _sqlite_timestamp(value: datetime) -> str:
@@ -191,6 +193,73 @@ class UserRepository:
         cursor = self.db.conn.execute("""
             DELETE FROM password_reset_tokens
             WHERE datetime(expires_at) < datetime('now') OR used_at IS NOT NULL
+        """)
+        self.db.conn.commit()
+        return cursor.rowcount
+
+    # -------------------------------------------------------------------------
+    # Invitation Tokens
+    # -------------------------------------------------------------------------
+
+    def create_invitation_token(self, user_id: int, invited_email: str,
+                                invited_role: str, token_hash: str,
+                                expires_at: datetime,
+                                invited_by_user_id: Optional[int] = None) -> int:
+        """Create an invitation token for an admin-created account."""
+        cursor = self.db.conn.execute("""
+            INSERT INTO invitation_tokens (
+                user_id, invited_email, invited_role, invited_by_user_id,
+                token_hash, expires_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            user_id,
+            invited_email,
+            invited_role,
+            invited_by_user_id,
+            token_hash,
+            _sqlite_timestamp(expires_at),
+        ))
+        self.db.conn.commit()
+        return cursor.lastrowid
+
+    def get_invitation_token(self, token_hash: str) -> Optional[InvitationToken]:
+        """Get an invitation token by its hash."""
+        cursor = self.db.conn.execute(
+            "SELECT * FROM invitation_tokens WHERE token_hash = ?",
+            (token_hash,),
+        )
+        row = cursor.fetchone()
+        if row:
+            return InvitationToken(**dict(row))
+        return None
+
+    def list_active_invitations(self) -> List[InvitationToken]:
+        """List invitation tokens that are not yet used or expired."""
+        cursor = self.db.conn.execute("""
+            SELECT *
+            FROM invitation_tokens
+            WHERE used_at IS NULL
+              AND datetime(expires_at) >= datetime('now')
+            ORDER BY created_at DESC
+        """)
+        return [InvitationToken(**dict(row)) for row in cursor.fetchall()]
+
+    def mark_invitation_used(self, invitation_id: int) -> bool:
+        """Mark an invitation as used."""
+        cursor = self.db.conn.execute("""
+            UPDATE invitation_tokens
+            SET used_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND used_at IS NULL
+        """, (invitation_id,))
+        self.db.conn.commit()
+        return cursor.rowcount > 0
+
+    def cleanup_expired_invitations(self) -> int:
+        """Remove expired invitation tokens while keeping used ones for audit."""
+        cursor = self.db.conn.execute("""
+            DELETE FROM invitation_tokens
+            WHERE datetime(expires_at) < datetime('now')
         """)
         self.db.conn.commit()
         return cursor.rowcount

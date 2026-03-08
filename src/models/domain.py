@@ -516,6 +516,20 @@ class PasswordResetToken:
 
 
 @dataclass
+class InvitationToken:
+    """One-time invitation token for admin-created accounts."""
+    id: Optional[int] = None
+    user_id: int = 0
+    invited_email: str = ""
+    invited_role: str = "user"
+    invited_by_user_id: Optional[int] = None
+    token_hash: str = ""
+    expires_at: Optional[datetime] = None
+    used_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
+
+@dataclass
 class UserSession:
     """Opaque server-side session for authenticated access."""
     id: Optional[int] = None

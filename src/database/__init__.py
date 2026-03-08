@@ -32,7 +32,7 @@ from models.domain import (
     ClinicalNote, DiagnosisReport, BiochemistryResult, UrinalysisResult,
     AnimalIdentifier, AnimalMatchDecision, SessionMeasurement,
     PathologyFinding, SessionAsset, UnassignedReport, AnimalVetAssignment,
-    User, UserSession, AuthEvent, PasswordResetToken
+    User, UserSession, AuthEvent, PasswordResetToken, InvitationToken
 )
 
 
@@ -445,6 +445,32 @@ class Database(BaseDatabase):
     def cleanup_expired_tokens(self) -> int:
         """Remove expired password reset tokens."""
         return self._user_repo.cleanup_expired_tokens()
+
+    def create_invitation_token(self, user_id: int, invited_email: str,
+                                invited_role: str, token_hash: str,
+                                expires_at: datetime,
+                                invited_by_user_id: Optional[int] = None) -> int:
+        """Create an invitation token."""
+        return self._user_repo.create_invitation_token(
+            user_id, invited_email, invited_role, token_hash, expires_at,
+            invited_by_user_id,
+        )
+
+    def get_invitation_token(self, token_hash: str) -> Optional[InvitationToken]:
+        """Get an invitation token by its hash."""
+        return self._user_repo.get_invitation_token(token_hash)
+
+    def list_active_invitations(self) -> List[InvitationToken]:
+        """List all active invitation tokens."""
+        return self._user_repo.list_active_invitations()
+
+    def mark_invitation_used(self, invitation_id: int) -> bool:
+        """Mark an invitation token as used."""
+        return self._user_repo.mark_invitation_used(invitation_id)
+
+    def cleanup_expired_invitations(self) -> int:
+        """Remove expired invitation tokens."""
+        return self._user_repo.cleanup_expired_invitations()
 
     # =========================================================================
     # SESSION & AUTH EVENT OPERATIONS

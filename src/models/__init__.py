@@ -42,6 +42,7 @@ from .domain import (
     UserSession,
     AuthEvent,
     PasswordResetToken,
+    InvitationToken,
     PROTEIN_MARKERS,
 )
 
@@ -149,6 +150,7 @@ __all__ = [
     'UserSession',
     'AuthEvent',
     'PasswordResetToken',
+    'InvitationToken',
     'PROTEIN_MARKERS',
     # Schema
     'SCHEMA_SQL',

@@ -634,6 +634,22 @@
             "invalid_token": "Este link de reposição é inválido ou expirou.",
             "request_new_link": "Pedir novo link",
             "error_password_mismatch": "As palavras-passe não coincidem"
+        },
+        "invite": {
+            "title": "Aceitar convite",
+            "subtitle": "Defina o seu nome e a sua palavra-passe para concluir a criação da conta VetScan.",
+            "email": "Email",
+            "role": "Função",
+            "display_name": "Nome",
+            "password": "Palavra-passe",
+            "password_confirm": "Confirmar palavra-passe",
+            "password_hint": "Mín 12 caract., 1 maiúscula, 1 minúscula, 1 número",
+            "submit": "Criar conta",
+            "success_title": "Conta pronta",
+            "success_message": "A sua conta VetScan foi criada. Já pode iniciar sessão.",
+            "login_link": "Iniciar sessão",
+            "invalid_token": "Este link de convite é inválido ou expirou.",
+            "error_password_mismatch": "As palavras-passe não coincidem"
         }
     },
     "admin": {
@@ -659,7 +675,8 @@
             "status": {
                 "active": "Ativo",
                 "pending": "Pendente",
-                "disabled": "Desativado"
+                "disabled": "Desativado",
+                "invited": "Convidado"
             },
             "role": {
                 "admin": "Admin",
@@ -675,7 +692,21 @@
             "no_users": "Sem utilizadores registados",
             "no_users_hint": "Os utilizadores que se registarem aparecerão aqui.",
             "confirm_approve": "Aprovar este utilizador?",
-            "confirm_disable": "Desativar este utilizador? Não poderá iniciar sessão."
+            "confirm_disable": "Desativar este utilizador? Não poderá iniciar sessão.",
+            "invite": {
+                "kicker": "Convidar acesso",
+                "title": "Convidar utilizador",
+                "email": "Endereço de email",
+                "email_placeholder": "nome@clinica.com",
+                "role": "Função",
+                "submit": "Enviar convite",
+                "success": "Email de convite enviado.",
+                "error_exists": "Já existe uma conta com este email.",
+                "error_invalid_role": "Escolha uma função válida para o convite.",
+                "error_invalid_email": "Introduza um endereço de email válido.",
+                "error_send_failed": "O convite foi criado, mas não foi possível enviar o email.",
+                "error_generic": "Não foi possível criar o convite."
+            }
         }
     },
     "search": {

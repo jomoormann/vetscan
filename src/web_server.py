@@ -43,7 +43,10 @@ from models import (
 )
 from app import VetProteinService
 from i18n import get_text, get_language_from_request, SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE
-from auth import AuthService, hash_password, verify_password, validate_password, validate_email
+from auth import (
+    AuthService, hash_password, verify_password, validate_password,
+    validate_email, hash_token
+)
 from email_sender import email_service
 from logging_config import get_logger, setup_logging
 from pdf_validator import PDFValidator, ValidationResult
@@ -458,6 +461,17 @@ def current_session_is_expired(session) -> bool:
     return False
 
 
+def invitation_is_invalid(invitation) -> bool:
+    """Check whether an invitation token is missing, used, or expired."""
+    if not invitation or invitation.used_at:
+        return True
+
+    expires_at = invitation.expires_at
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    return bool(expires_at and expires_at < datetime.now())
+
+
 class CSRFCookieMiddleware(BaseHTTPMiddleware):
     """Ensure every request has a CSRF cookie/token pair available."""
 
@@ -489,7 +503,8 @@ class CookieAuthMiddleware(BaseHTTPMiddleware):
 
     # Public paths that don't require authentication
     PUBLIC_PATHS = [
-        "/login", "/logout", "/register", "/forgot-password", "/reset-password"
+        "/login", "/logout", "/register", "/forgot-password", "/reset-password",
+        "/accept-invite"
     ]
 
     async def dispatch(self, request: Request, call_next):
@@ -1839,6 +1854,158 @@ async def reset_password_submit(
     return set_lang_cookie(response, lang)
 
 
+@app.get("/accept-invite", response_class=HTMLResponse)
+async def accept_invite_page(
+    request: Request,
+    token: str,
+    lang: Optional[str] = None,
+):
+    """Display the invitation acceptance page."""
+    current_lang = lang if lang in SUPPORTED_LANGUAGES else get_lang(request)
+    service = get_service()
+    try:
+        invitation = service.db.get_invitation_token(hash_token(token))
+        invited_user = service.db.get_user(invitation.user_id) if invitation else None
+        invalid_token = invitation_is_invalid(invitation) or not invited_user
+    finally:
+        service.close()
+
+    response = render_template_with_csrf("auth/accept_invite.html", request, {
+        "request": request,
+        "lang": current_lang,
+        "token": token,
+        "error": None,
+        "success": False,
+        "invalid_token": invalid_token,
+        "invited_email": invited_user.email if invited_user else None,
+        "invited_role": invitation.invited_role if invitation else "user",
+        "display_name": invited_user.display_name if invited_user else "",
+        "csrf_token": csrf_token_for_request(request),
+    })
+    return set_lang_cookie(response, current_lang)
+
+
+@app.post("/accept-invite", response_class=HTMLResponse)
+async def accept_invite_submit(
+    request: Request,
+    token: str = Form(...),
+    display_name: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+    csrf_token: str = Form(None),
+):
+    """Accept an invitation and finish account setup."""
+    lang = get_lang(request)
+    if not validate_csrf(request, csrf_token):
+        return RedirectResponse(url=f"/accept-invite?token={quote_plus(token)}&error=invalid", status_code=302)
+
+    service = get_service()
+    try:
+        invitation = service.db.get_invitation_token(hash_token(token))
+        invited_user = service.db.get_user(invitation.user_id) if invitation else None
+        email_normalized = invited_user.email_normalized if invited_user else None
+
+        if invitation_is_invalid(invitation) or not invited_user:
+            response = render_template_with_csrf("auth/accept_invite.html", request, {
+                "request": request,
+                "lang": lang,
+                "token": token,
+                "error": None,
+                "success": False,
+                "invalid_token": True,
+                "invited_email": invited_user.email if invited_user else None,
+                "invited_role": invitation.invited_role if invitation else "user",
+                "display_name": display_name,
+                "csrf_token": csrf_token_for_request(request),
+            }, status_code=400)
+            return set_lang_cookie(response, lang)
+
+        if password != password_confirm:
+            response = render_template_with_csrf("auth/accept_invite.html", request, {
+                "request": request,
+                "lang": lang,
+                "token": token,
+                "error": get_text(lang, "auth.invite.error_password_mismatch"),
+                "success": False,
+                "invalid_token": False,
+                "invited_email": invited_user.email,
+                "invited_role": invitation.invited_role,
+                "display_name": display_name,
+                "csrf_token": csrf_token_for_request(request),
+            }, status_code=400)
+            return set_lang_cookie(response, lang)
+
+        if auth_action_is_limited(
+            service, "accept_invite", request, email_normalized, failures_only=False
+        ):
+            record_auth_event(
+                service,
+                "accept_invite",
+                request,
+                success=False,
+                email_normalized=email_normalized,
+                user_id=invited_user.id,
+                metadata={"limited": True},
+            )
+            response = render_template_with_csrf("auth/accept_invite.html", request, {
+                "request": request,
+                "lang": lang,
+                "token": token,
+                "error": get_text(lang, "auth.common.rate_limit").format(
+                    minutes=AUTH_LOCKOUT_MINUTES
+                ),
+                "success": False,
+                "invalid_token": False,
+                "invited_email": invited_user.email,
+                "invited_role": invitation.invited_role,
+                "display_name": display_name,
+                "csrf_token": csrf_token_for_request(request),
+            }, status_code=429)
+            return set_lang_cookie(response, lang)
+
+        auth_service = AuthService(service.db)
+        accepted_user, error = auth_service.accept_invitation(token, display_name, password)
+        record_auth_event(
+            service,
+            "accept_invite",
+            request,
+            success=bool(accepted_user),
+            email_normalized=email_normalized,
+            user_id=invited_user.id,
+            metadata={"error": error} if error else None,
+        )
+
+        if error or not accepted_user:
+            response = render_template_with_csrf("auth/accept_invite.html", request, {
+                "request": request,
+                "lang": lang,
+                "token": token,
+                "error": error,
+                "success": False,
+                "invalid_token": False,
+                "invited_email": invited_user.email,
+                "invited_role": invitation.invited_role,
+                "display_name": display_name,
+                "csrf_token": csrf_token_for_request(request),
+            }, status_code=400)
+            return set_lang_cookie(response, lang)
+    finally:
+        service.close()
+
+    response = templates.TemplateResponse(request, "auth/accept_invite.html", {
+        "request": request,
+        "lang": lang,
+        "token": token,
+        "error": None,
+        "success": True,
+        "invalid_token": False,
+        "invited_email": accepted_user.email,
+        "invited_role": invitation.invited_role,
+        "display_name": accepted_user.display_name,
+    })
+    return set_lang_cookie(response, lang)
+
+
 # =============================================================================
 # ADMIN ROUTES
 # =============================================================================
@@ -1861,6 +2028,8 @@ async def admin_users_page(request: Request):
     try:
         users = service.db.list_users(include_inactive=True)
         pending_users = service.db.get_pending_users()
+        active_invitations = service.db.list_active_invitations()
+        invitation_lookup = {invite.user_id: invite for invite in active_invitations}
 
         # Calculate stats
         stats = {
@@ -1879,9 +2048,24 @@ async def admin_users_page(request: Request):
             "lang": lang,
             "users": users,
             "pending_users": pending_users,
+            "invitation_lookup": invitation_lookup,
             "stats": stats,
             "current_user": current_user,
-            "csrf_token": signed_csrf
+            "csrf_token": signed_csrf,
+            "invite_success": request.query_params.get("invited") == "1",
+            "invite_error": (
+                get_text(lang, "admin.users.invite.error_exists")
+                if request.query_params.get("error") == "invite_exists"
+                else get_text(lang, "admin.users.invite.error_invalid_role")
+                if request.query_params.get("error") == "invite_role"
+                else get_text(lang, "admin.users.invite.error_send_failed")
+                if request.query_params.get("error") == "invite_email"
+                else get_text(lang, "admin.users.invite.error_invalid_email")
+                if request.query_params.get("error") == "invite_invalid"
+                else get_text(lang, "admin.users.invite.error_generic")
+                if request.query_params.get("error") == "invite_failed"
+                else None
+            ),
         })
         response.set_cookie(
             key=CSRF_COOKIE_NAME,
@@ -1894,6 +2078,60 @@ async def admin_users_page(request: Request):
         return set_lang_cookie(response, lang)
     finally:
         service.close()
+
+
+@app.post("/admin/users/invite")
+async def admin_invite_user(
+    request: Request,
+    email: str = Form(...),
+    role: str = Form(...),
+    csrf_token: str = Form(None),
+):
+    """Create an invited account and email a setup link."""
+    current_user = require_superuser(request)
+    lang = get_lang(request)
+
+    if not validate_csrf(request, csrf_token):
+        return RedirectResponse(url="/admin/users?error=csrf", status_code=302)
+
+    service = get_service()
+    try:
+        if not email_service.is_configured():
+            return RedirectResponse(url="/admin/users?error=invite_email", status_code=302)
+
+        auth_service = AuthService(service.db)
+        invited_user, plain_token, error = auth_service.create_invited_user(
+            email=email,
+            role=role,
+            invited_by_user_id=current_user.id,
+        )
+
+        if error or not invited_user or not plain_token:
+            error_code = "invite_failed"
+            if error == "An account with this email already exists":
+                error_code = "invite_exists"
+            elif error == "Invalid role":
+                error_code = "invite_role"
+            elif error in {"Email is required", "Invalid email format"}:
+                error_code = "invite_invalid"
+            return RedirectResponse(url=f"/admin/users?error={error_code}", status_code=302)
+
+        host = get_safe_host(request)
+        scheme = "https" if request.headers.get("x-forwarded-proto") == "https" else "http"
+        invite_url = f"{scheme}://{host}/accept-invite?token={quote_plus(plain_token)}"
+        sent = email_service.send_user_invitation(
+            invited_user.email,
+            invite_url,
+            role,
+            current_user.display_name or current_user.email,
+            lang,
+        )
+        if not sent:
+            return RedirectResponse(url="/admin/users?error=invite_email", status_code=302)
+    finally:
+        service.close()
+
+    return RedirectResponse(url="/admin/users?invited=1", status_code=302)
 
 
 @app.post("/admin/users/{user_id}/approve")

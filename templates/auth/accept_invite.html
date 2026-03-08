@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="{{ lang|default('pt') }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t(lang, 'auth.invite.title') }} - {{ t(lang, 'app.title') }}</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <style>
+        :root {
+            --primary: #135E4B;
+            --primary-dark: #0d4436;
+            --primary-light: #A1D8B5;
+            --accent-light: #d4ebe0;
+            --danger: #C4214A;
+            --gray-100: #f0f5f2;
+            --gray-200: #CCDCDB;
+            --gray-300: #b8ccc9;
+            --gray-500: #5f7a74;
+            --gray-700: #2d4a44;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, var(--gray-200) 0%, var(--primary-light) 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .invite-container { width: 100%; max-width: 440px; }
+
+        .invite-card {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.1), 0 8px 25px rgba(0,0,0,0.08);
+            padding: 2.5rem;
+            text-align: center;
+        }
+
+        .invite-logo { font-size: 3rem; margin-bottom: 0.6rem; }
+        .invite-title { font-size: 1.5rem; font-weight: 700; color: var(--primary); margin-bottom: 0.25rem; }
+        .invite-subtitle { color: var(--gray-500); font-size: 0.875rem; margin-bottom: 1.75rem; }
+        .form-group { margin-bottom: 1.2rem; text-align: left; }
+        .form-group label { display: block; font-weight: 500; margin-bottom: 0.5rem; color: var(--gray-700); font-size: 0.875rem; }
+        .form-group input {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            border: 1px solid var(--gray-300);
+            border-radius: 0.5rem;
+            font-size: 1rem;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(19, 94, 75, 0.15);
+        }
+        .form-group input[readonly] {
+            background: var(--gray-100);
+            color: var(--gray-500);
+        }
+        .form-hint { font-size: 0.75rem; color: var(--gray-500); margin-top: 0.375rem; }
+        .btn-submit {
+            width: 100%;
+            padding: 0.875rem 1.5rem;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 0.5rem;
+        }
+        .btn-submit:hover { background: var(--primary-dark); }
+        .error-message {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1.25rem;
+            font-size: 0.875rem;
+            text-align: left;
+        }
+        .success-message {
+            background: var(--accent-light);
+            color: #166534;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1.25rem;
+            font-size: 0.875rem;
+            text-align: center;
+            line-height: 1.5;
+        }
+        .success-message a {
+            display: inline-block;
+            margin-top: 1rem;
+            padding: 0.75rem 1.5rem;
+            background: var(--primary);
+            color: white;
+            text-decoration: none;
+            border-radius: 0.5rem;
+            font-weight: 600;
+        }
+        .lang-switcher {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+        .lang-switcher a {
+            padding: 0.375rem 0.75rem;
+            border-radius: 0.375rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-decoration: none;
+            color: var(--gray-500);
+        }
+        .lang-switcher a.active { color: white; background: var(--primary); }
+    </style>
+</head>
+<body>
+    <div class="invite-container">
+        <div class="invite-card">
+            <div class="invite-logo">✉️</div>
+            <h1 class="invite-title">{{ t(lang, 'auth.invite.title') }}</h1>
+            <p class="invite-subtitle">{{ t(lang, 'auth.invite.subtitle') }}</p>
+
+            {% if error %}
+            <div class="error-message">{{ error }}</div>
+            {% endif %}
+
+            {% if success %}
+            <div class="success-message">
+                <h3>✓ {{ t(lang, 'auth.invite.success_title') }}</h3>
+                <p>{{ t(lang, 'auth.invite.success_message') }}</p>
+                <a href="/login">{{ t(lang, 'auth.invite.login_link') }}</a>
+            </div>
+            {% elif invalid_token %}
+            <div class="error-message">{{ t(lang, 'auth.invite.invalid_token') }}</div>
+            {% else %}
+            <form method="POST" action="/accept-invite">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="token" value="{{ token }}">
+                <div class="form-group">
+                    <label for="invite-email">{{ t(lang, 'auth.invite.email') }}</label>
+                    <input id="invite-email" type="email" value="{{ invited_email or '' }}" readonly>
+                </div>
+                <div class="form-group">
+                    <label for="invite-role">{{ t(lang, 'auth.invite.role') }}</label>
+                    <input id="invite-role" type="text" value="{{ t(lang, 'admin.users.role.admin') if invited_role == 'admin' else t(lang, 'admin.users.role.user') }}" readonly>
+                </div>
+                <div class="form-group">
+                    <label for="display_name">{{ t(lang, 'auth.invite.display_name') }}</label>
+                    <input id="display_name" type="text" name="display_name" required autocomplete="name" value="{{ display_name|default('') }}">
+                </div>
+                <div class="form-group">
+                    <label for="password">{{ t(lang, 'auth.invite.password') }}</label>
+                    <input id="password" type="password" name="password" required autocomplete="new-password">
+                    <p class="form-hint">{{ t(lang, 'auth.invite.password_hint') }}</p>
+                </div>
+                <div class="form-group">
+                    <label for="password_confirm">{{ t(lang, 'auth.invite.password_confirm') }}</label>
+                    <input id="password_confirm" type="password" name="password_confirm" required autocomplete="new-password">
+                </div>
+                <button type="submit" class="btn-submit">{{ t(lang, 'auth.invite.submit') }}</button>
+            </form>
+            {% endif %}
+
+            <div class="lang-switcher">
+                <a href="/accept-invite?token={{ token }}&lang=en" class="{% if lang == 'en' %}active{% endif %}">EN</a>
+                <a href="/accept-invite?token={{ token }}&lang=pt" class="{% if lang == 'pt' %}active{% endif %}">PT</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

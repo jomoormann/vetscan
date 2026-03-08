@@ -634,6 +634,22 @@
             "invalid_token": "This reset link is invalid or has expired.",
             "request_new_link": "Request a new reset link",
             "error_password_mismatch": "Passwords do not match"
+        },
+        "invite": {
+            "title": "Accept Invitation",
+            "subtitle": "Set your name and password to finish creating your VetScan account.",
+            "email": "Email",
+            "role": "Role",
+            "display_name": "Name",
+            "password": "Password",
+            "password_confirm": "Confirm Password",
+            "password_hint": "Min 12 chars, 1 uppercase, 1 lowercase, 1 number",
+            "submit": "Create account",
+            "success_title": "Account Ready",
+            "success_message": "Your VetScan account has been created. You can now sign in.",
+            "login_link": "Sign In",
+            "invalid_token": "This invitation link is invalid or has expired.",
+            "error_password_mismatch": "Passwords do not match"
         }
     },
     "admin": {
@@ -659,7 +675,8 @@
             "status": {
                 "active": "Active",
                 "pending": "Pending",
-                "disabled": "Disabled"
+                "disabled": "Disabled",
+                "invited": "Invited"
             },
             "role": {
                 "admin": "Admin",
@@ -675,7 +692,21 @@
             "no_users": "No users registered",
             "no_users_hint": "Users who register will appear here.",
             "confirm_approve": "Approve this user?",
-            "confirm_disable": "Disable this user? They will not be able to log in."
+            "confirm_disable": "Disable this user? They will not be able to log in.",
+            "invite": {
+                "kicker": "Invite access",
+                "title": "Invite a user",
+                "email": "Email address",
+                "email_placeholder": "name@clinic.com",
+                "role": "Role",
+                "submit": "Send invitation",
+                "success": "Invitation email sent.",
+                "error_exists": "An account with this email already exists.",
+                "error_invalid_role": "Choose a valid role for the invitation.",
+                "error_invalid_email": "Enter a valid email address.",
+                "error_send_failed": "The invitation was created, but the email could not be sent.",
+                "error_generic": "Could not create the invitation."
+            }
         }
     },
     "search": {
