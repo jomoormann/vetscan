@@ -26,16 +26,16 @@
 
 <div id="diagnosisJobNotice" class="alert alert-info" style="display: none;"></div>
 
+<div class="tabs" style="margin-bottom: 1.25rem;">
+    <a href="/animal/{{ animal.id }}?tab=overview" class="tab-link {% if active_tab == 'overview' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.overview') }}</a>
+    <a href="/animal/{{ animal.id }}?tab=reports" class="tab-link {% if active_tab == 'reports' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.reports') }}</a>
+    <a href="/animal/{{ animal.id }}?tab=notes" class="tab-link {% if active_tab == 'notes' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.notes') }}</a>
+    <a href="/animal/{{ animal.id }}?tab=diagnostics" class="tab-link {% if active_tab == 'diagnostics' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.diagnostics') }}</a>
+    <a href="/animal/{{ animal.id }}?tab=profile" class="tab-link {% if active_tab == 'profile' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.profile') }}</a>
+</div>
+
 <div class="detail-layout">
     <section>
-        <div class="tabs">
-            <a href="/animal/{{ animal.id }}?tab=overview" class="tab-link {% if active_tab == 'overview' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.overview') }}</a>
-            <a href="/animal/{{ animal.id }}?tab=reports" class="tab-link {% if active_tab == 'reports' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.reports') }}</a>
-            <a href="/animal/{{ animal.id }}?tab=notes" class="tab-link {% if active_tab == 'notes' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.notes') }}</a>
-            <a href="/animal/{{ animal.id }}?tab=diagnostics" class="tab-link {% if active_tab == 'diagnostics' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.diagnostics') }}</a>
-            <a href="/animal/{{ animal.id }}?tab=profile" class="tab-link {% if active_tab == 'profile' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.profile') }}</a>
-        </div>
-
         {% if active_tab == 'overview' %}
         <section class="card">
             <div class="card-header">

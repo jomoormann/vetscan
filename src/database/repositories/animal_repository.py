@@ -51,7 +51,7 @@ class AnimalRepository:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (animal.name, animal.species, animal.breed, animal.microchip,
               animal.age_years, animal.owner_name, animal.age_months, animal.sex,
-              animal.weight_kg, animal.neutered, animal.patient_since or date.today(),
+              animal.weight_kg, animal.neutered, animal.patient_since,
               animal.medical_history, animal.notes, animal.responsible_vet))
         animal_id = cursor.lastrowid
         if animal.responsible_vet:
