@@ -9,10 +9,6 @@
         <h1>{{ t(lang, 'upload.page_title') }}</h1>
         <p class="page-subtitle">{{ t(lang, 'upload.page_subtitle') }}</p>
     </div>
-    <div class="inline-actions">
-        <a href="/reports" class="btn btn-secondary">{{ t(lang, 'nav.reports') }}</a>
-        <a href="/unassigned-reports" class="btn btn-secondary">{{ t(lang, 'dashboard.review_queue') }}</a>
-    </div>
 </div>
 
 <div class="grid-2">
@@ -86,7 +82,6 @@
         animalLabel: {{ t(lang, 'upload.animal_label')|tojson }},
         reportLabel: {{ t(lang, 'upload.report_label')|tojson }},
         dateLabel: {{ t(lang, 'upload.date_label')|tojson }},
-        reviewQueue: {{ t(lang, 'upload.open_review_queue')|tojson }},
         openReport: {{ t(lang, 'upload.open_report')|tojson }},
         openAnimal: {{ t(lang, 'upload.open_animal')|tojson }},
         newUpload: {{ t(lang, 'upload.new_upload')|tojson }},
@@ -152,8 +147,7 @@
                         <strong>${translations.dateLabel}:</strong> ${data.test_date}
                     </p>
                     <div class="inline-actions">
-                        <a href="/unassigned-reports" class="btn btn-primary">${translations.reviewQueue}</a>
-                        <button type="button" class="btn btn-secondary" onclick="resetUpload()">${translations.newUpload}</button>
+                        <button type="button" class="btn btn-primary" onclick="resetUpload()">${translations.newUpload}</button>
                     </div>
                 `);
                 return;

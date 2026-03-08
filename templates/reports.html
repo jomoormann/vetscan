@@ -11,7 +11,6 @@
     </div>
     <div class="inline-actions">
         <a href="/upload" class="btn btn-primary">{{ t(lang, 'dashboard.upload_report') }}</a>
-        <a href="/unassigned-reports" class="btn btn-secondary">{{ t(lang, 'reports.unassigned_with_count').format(count=pending_count) }}</a>
     </div>
 </div>
 
@@ -46,14 +45,6 @@
                 <option value="">{{ t(lang, 'reports.all_vets') }}</option>
                 {% for vet in responsible_vets %}
                 <option value="{{ vet }}" {% if filters.responsible_vet == vet %}selected{% endif %}>{{ vet }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="field">
-            <label for="report-page-size" class="sr-only">{{ t(lang, 'reports.rows_per_page') }}</label>
-            <select id="report-page-size" name="page_size" onchange="this.form.submit()">
-                {% for size in [10, 25, 50, 100] %}
-                <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ t(lang, 'reports.rows_count').format(count=size) }}</option>
                 {% endfor %}
             </select>
         </div>
@@ -94,7 +85,7 @@
                         <td>{{ report.test_date|format_date if report.test_date else '--' }}</td>
                         <td>
                             {% set report_label = report.report_number or report.external_report_id or ('Report ' ~ report.id) %}
-                            <div class="table-title text-truncate" title="{{ report_label }}">{{ report_label|truncate(42, False, '...') }}</div>
+                            <div class="table-title text-truncate" style="max-width: 14rem;" title="{{ report_label }}">{{ report_label|short_report_label(20) }}</div>
                             <div class="table-meta">{{ report.display_type }}</div>
                         </td>
                         <td>
@@ -124,16 +115,32 @@
             {{ t(lang, 'reports.no_reports_found') }}
             {% endif %}
         </div>
-        <div class="pagination-links">
-            {% if pagination.has_prev %}
-            <a href="{{ pagination.prev_url }}" class="pagination-link">{{ t(lang, 'common.previous') }}</a>
-            {% endif %}
-            {% for page in pagination.pages %}
-            <a href="{{ page.url }}" class="pagination-link {% if page.current %}is-current{% endif %}">{{ page.number }}</a>
-            {% endfor %}
-            {% if pagination.has_next %}
-            <a href="{{ pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }}</a>
-            {% endif %}
+        <div class="pagination-tools">
+            <form method="get" action="/reports" class="page-size-form">
+                <input type="hidden" name="q" value="{{ filters.q }}">
+                <input type="hidden" name="source_system" value="{{ filters.source_system }}">
+                <input type="hidden" name="report_type" value="{{ filters.report_type }}">
+                <input type="hidden" name="responsible_vet" value="{{ filters.responsible_vet }}">
+                <input type="hidden" name="sort" value="{{ filters.sort }}">
+                <input type="hidden" name="page" value="1">
+                <label for="report-page-size">{{ t(lang, 'reports.rows_per_page') }}</label>
+                <select id="report-page-size" name="page_size" onchange="this.form.submit()">
+                    {% for size in [10, 25, 50, 100] %}
+                    <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+            <div class="pagination-links">
+                {% if pagination.has_prev %}
+                <a href="{{ pagination.prev_url }}" class="pagination-link">{{ t(lang, 'common.previous') }}</a>
+                {% endif %}
+                {% for page in pagination.pages %}
+                <a href="{{ page.url }}" class="pagination-link {% if page.current %}is-current{% endif %}">{{ page.number }}</a>
+                {% endfor %}
+                {% if pagination.has_next %}
+                <a href="{{ pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }}</a>
+                {% endif %}
+            </div>
         </div>
     </div>
     {% else %}

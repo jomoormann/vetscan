@@ -40,14 +40,6 @@
                 {% endfor %}
             </select>
         </div>
-        <div class="field">
-            <label for="animal-page-size" class="sr-only">{{ t(lang, 'animals.rows_per_page') }}</label>
-            <select id="animal-page-size" name="page_size" onchange="this.form.submit()">
-                {% for size in [10, 25, 50, 100] %}
-                <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ t(lang, 'animals.rows_count').format(count=size) }}</option>
-                {% endfor %}
-            </select>
-        </div>
         <div class="inline-actions">
             <button type="submit" class="btn btn-primary">{{ t(lang, 'common.search') }}</button>
             <a href="/animals" class="btn btn-secondary">{{ t(lang, 'common.clear') }}</a>
@@ -118,16 +110,31 @@
             {{ t(lang, 'animals.no_animals_found') }}
             {% endif %}
         </div>
-        <div class="pagination-links">
-            {% if pagination.has_prev %}
-            <a href="{{ pagination.prev_url }}" class="pagination-link">{{ t(lang, 'common.previous') }}</a>
-            {% endif %}
-            {% for page in pagination.pages %}
-            <a href="{{ page.url }}" class="pagination-link {% if page.current %}is-current{% endif %}">{{ page.number }}</a>
-            {% endfor %}
-            {% if pagination.has_next %}
-            <a href="{{ pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }}</a>
-            {% endif %}
+        <div class="pagination-tools">
+            <form method="get" action="/animals" class="page-size-form">
+                <input type="hidden" name="q" value="{{ filters.q }}">
+                <input type="hidden" name="responsible_vet" value="{{ filters.responsible_vet }}">
+                <input type="hidden" name="species" value="{{ filters.species }}">
+                <input type="hidden" name="sort" value="{{ filters.sort }}">
+                <input type="hidden" name="page" value="1">
+                <label for="animal-page-size">{{ t(lang, 'animals.rows_per_page') }}</label>
+                <select id="animal-page-size" name="page_size" onchange="this.form.submit()">
+                    {% for size in [10, 25, 50, 100] %}
+                    <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+            <div class="pagination-links">
+                {% if pagination.has_prev %}
+                <a href="{{ pagination.prev_url }}" class="pagination-link">{{ t(lang, 'common.previous') }}</a>
+                {% endif %}
+                {% for page in pagination.pages %}
+                <a href="{{ page.url }}" class="pagination-link {% if page.current %}is-current{% endif %}">{{ page.number }}</a>
+                {% endfor %}
+                {% if pagination.has_next %}
+                <a href="{{ pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }}</a>
+                {% endif %}
+            </div>
         </div>
     </div>
     {% else %}

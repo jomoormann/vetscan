@@ -11,7 +11,6 @@
     </div>
     <div class="inline-actions">
         <a href="/upload" class="btn btn-primary">{{ t(lang, 'dashboard.upload_report') }}</a>
-        <a href="/reports" class="btn btn-secondary">{{ t(lang, 'nav.reports') }}</a>
     </div>
 </div>
 
@@ -24,14 +23,6 @@
         <div class="field search-field">
             <label for="pending-search" class="sr-only">{{ t(lang, 'unassigned.search_label') }}</label>
             <input id="pending-search" type="search" name="q" value="{{ filters.q }}" placeholder="{{ t(lang, 'unassigned.search_placeholder') }}">
-        </div>
-        <div class="field">
-            <label for="pending-page-size" class="sr-only">{{ t(lang, 'unassigned.cards_per_page') }}</label>
-            <select id="pending-page-size" name="page_size" onchange="this.form.submit()">
-                {% for size in [6, 12, 24, 48] %}
-                <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ t(lang, 'unassigned.cards_count').format(count=size) }}</option>
-                {% endfor %}
-            </select>
         </div>
         <div class="inline-actions">
             <button type="submit" class="btn btn-primary">{{ t(lang, 'common.search') }}</button>
@@ -54,7 +45,7 @@
                         <h2 class="card-title">{{ summary.animal_name or report.animal_name or t(lang, 'common.unknown_patient') }}</h2>
                         <div class="table-meta" style="margin-top: 0.35rem;">
                             {% set queue_label = report.report_number or report.external_report_id or report.filename %}
-                            <span class="text-truncate" style="max-width: 22rem;" title="{{ queue_label }}">{{ queue_label|truncate(44, False, '...') }}</span>
+                            <span class="text-truncate" style="max-width: 16rem;" title="{{ queue_label }}">{{ queue_label|short_report_label(20) }}</span>
                             {% if item.report_type_label %} · {{ item.report_type_label }}{% endif %}
                         </div>
                     </div>
@@ -179,16 +170,28 @@
 
 <div class="pagination" style="margin-top: 1.25rem;">
     <div class="pagination-meta">{{ t(lang, 'common.showing_range').format(start=pagination.range_start, end=pagination.range_end, total=pagination.total_items) }}</div>
-    <div class="pagination-links">
-        {% if pagination.has_prev %}
-        <a href="{{ pagination.prev_url }}" class="pagination-link">{{ t(lang, 'common.previous') }}</a>
-        {% endif %}
-        {% for page in pagination.pages %}
-        <a href="{{ page.url }}" class="pagination-link {% if page.current %}is-current{% endif %}">{{ page.number }}</a>
-        {% endfor %}
-        {% if pagination.has_next %}
-        <a href="{{ pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }}</a>
-        {% endif %}
+    <div class="pagination-tools">
+        <form method="get" action="/unassigned-reports" class="page-size-form">
+            <input type="hidden" name="q" value="{{ filters.q }}">
+            <input type="hidden" name="page" value="1">
+            <label for="pending-page-size">{{ t(lang, 'unassigned.cards_per_page') }}</label>
+            <select id="pending-page-size" name="page_size" onchange="this.form.submit()">
+                {% for size in [6, 12, 24, 48] %}
+                <option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>
+                {% endfor %}
+            </select>
+        </form>
+        <div class="pagination-links">
+            {% if pagination.has_prev %}
+            <a href="{{ pagination.prev_url }}" class="pagination-link">{{ t(lang, 'common.previous') }}</a>
+            {% endif %}
+            {% for page in pagination.pages %}
+            <a href="{{ page.url }}" class="pagination-link {% if page.current %}is-current{% endif %}">{{ page.number }}</a>
+            {% endfor %}
+            {% if pagination.has_next %}
+            <a href="{{ pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }}</a>
+            {% endif %}
+        </div>
     </div>
 </div>
 {% else %}

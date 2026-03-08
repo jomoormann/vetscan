@@ -9,10 +9,6 @@
         <h1>{{ t(lang, 'imports.page_title') }}</h1>
         <p class="page-subtitle">{{ t(lang, 'imports.page_subtitle') }}</p>
     </div>
-    <div class="inline-actions">
-        <a href="/unassigned-reports" class="btn btn-secondary">{{ t(lang, 'dashboard.review_queue') }}</a>
-        <a href="/reports" class="btn btn-secondary">{{ t(lang, 'nav.reports') }}</a>
-    </div>
 </div>
 
 <section class="card">
@@ -68,9 +64,9 @@
                         <td>{{ imp.time_ago }}</td>
                         <td>{{ imp.email_from or '--' }}</td>
                         <td>
-                            <div class="table-title">{{ imp.attachment_name or '--' }}</div>
+                            <div class="table-title text-truncate" style="max-width: 14rem;" title="{{ imp.attachment_name or '--' }}">{{ imp.attachment_name or '--' }}</div>
                             {% if imp.report_number %}
-                            <div class="table-meta">{{ imp.report_number }}</div>
+                            <div class="table-meta" title="{{ imp.report_number }}">{{ imp.report_number|short_report_label(20) }}</div>
                             {% endif %}
                         </td>
                         <td>

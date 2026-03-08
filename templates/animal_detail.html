@@ -44,7 +44,6 @@
                     <div class="card-kicker">{{ t(lang, 'animal_detail.latest_activity') }}</div>
                     <h2 class="card-title">{{ t(lang, 'animal_detail.recent_reports') }}</h2>
                 </div>
-                <a href="/animal/{{ animal.id }}?tab=reports" class="btn btn-secondary">{{ t(lang, 'animal_detail.open_all_reports') }}</a>
             </div>
             {% if overview_reports %}
             <div class="table-shell">
@@ -65,7 +64,7 @@
                                 <td>{{ report.test_date|format_date if report.test_date else '--' }}</td>
                                 <td>
                                     {% set overview_label = report.report_number or report.external_report_id or ('Report ' ~ report.id) %}
-                                    <div class="table-title text-truncate" title="{{ overview_label }}">{{ overview_label|truncate(42, False, '...') }}</div>
+                                    <div class="table-title text-truncate" style="max-width: 14rem;" title="{{ overview_label }}">{{ overview_label|short_report_label(20) }}</div>
                                     <div class="table-meta">{{ report.source_system or '--' }}</div>
                                 </td>
                                 <td>{{ report.display_type }}</td>
@@ -89,7 +88,6 @@
                         <div class="card-kicker">{{ t(lang, 'animal_detail.clinical_context') }}</div>
                         <h2 class="card-title">{{ t(lang, 'animal_detail.recent_notes') }}</h2>
                     </div>
-                    <a href="/animal/{{ animal.id }}?tab=notes" class="btn btn-secondary">{{ t(lang, 'animal_detail.open_notes') }}</a>
                 </div>
                 {% if clinical_notes %}
                 <div class="list-stack">
@@ -194,7 +192,7 @@
                                 <td>{{ report.test_date|format_date if report.test_date else '--' }}</td>
                                 <td>
                                     {% set report_label = report.report_number or report.external_report_id or ('Report ' ~ report.id) %}
-                                    <div class="table-title text-truncate" title="{{ report_label }}">{{ report_label|truncate(42, False, '...') }}</div>
+                                    <div class="table-title text-truncate" style="max-width: 14rem;" title="{{ report_label }}">{{ report_label|short_report_label(20) }}</div>
                                     <div class="table-meta">{{ report.sample_type or '--' }}</div>
                                 </td>
                                 <td>{{ report.display_type }}</td>

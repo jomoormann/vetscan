@@ -12,7 +12,6 @@
     <div class="inline-actions">
         <a href="/upload" class="btn btn-primary">{{ t(lang, 'dashboard.upload_report') }}</a>
         <a href="/animals/new" class="btn btn-secondary">{{ t(lang, 'dashboard.new_animal') }}</a>
-        <a href="/unassigned-reports" class="btn btn-secondary">{{ t(lang, 'dashboard.review_queue') }}</a>
     </div>
 </div>
 
@@ -42,7 +41,6 @@
                 <div class="card-kicker">{{ t(lang, 'dashboard.needs_attention') }}</div>
                 <h2 class="card-title">{{ t(lang, 'dashboard.assignment_queue') }}</h2>
             </div>
-            <a href="/unassigned-reports" class="btn btn-secondary">{{ t(lang, 'dashboard.open_queue') }}</a>
         </div>
         {% if pending_reports %}
         <div class="list-stack">
@@ -54,7 +52,7 @@
                     <div class="table-title">{{ summary.animal_name or report.animal_name or t(lang, 'common.unknown_patient') }}</div>
                     <div class="table-meta">
                         {% set pending_label = report.report_number or report.external_report_id or report.filename %}
-                        <span class="text-truncate" style="max-width: 18rem;" title="{{ pending_label }}">{{ pending_label|truncate(38, False, '...') }}</span>
+                        <span class="text-truncate" style="max-width: 15rem;" title="{{ pending_label }}">{{ pending_label|short_report_label(20) }}</span>
                         {% if item.report_type_label %} · {{ item.report_type_label }}{% endif %}
                     </div>
                     <div class="table-meta">
@@ -80,7 +78,6 @@
                 <div class="card-kicker">{{ t(lang, 'dashboard.needs_attention') }}</div>
                 <h2 class="card-title">{{ t(lang, 'dashboard.import_failures') }}</h2>
             </div>
-            <a href="/imports" class="btn btn-secondary">{{ t(lang, 'dashboard.view_imports') }}</a>
         </div>
         {% if recent_failures %}
         <div class="list-stack">
@@ -101,131 +98,94 @@
     </section>
 </div>
 
-<div class="grid-2">
-    <section class="card">
-        <div class="card-header">
-            <div>
-                <div class="card-kicker">{{ t(lang, 'dashboard.recent_activity') }}</div>
-                <h2 class="card-title">{{ t(lang, 'nav.reports') }}</h2>
-            </div>
-            <a href="/reports" class="btn btn-secondary">{{ t(lang, 'dashboard.all_reports') }}</a>
+<section class="card">
+    <div class="card-header">
+        <div>
+            <div class="card-kicker">{{ t(lang, 'dashboard.recent_activity') }}</div>
+            <h2 class="card-title">{{ t(lang, 'nav.reports') }}</h2>
         </div>
-        {% if recent_reports %}
-        <div class="table-shell">
-            <div class="table-responsive">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>{{ t(lang, 'common.date') }}</th>
-                            <th>{{ t(lang, 'common.report') }}</th>
-                            <th>{{ t(lang, 'common.animal') }}</th>
-                            <th class="desktop-hide">{{ t(lang, 'common.summary') }}</th>
-                            <th>{{ t(lang, 'common.actions') }}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for report in recent_reports %}
-                        <tr>
-                            <td>{{ report.test_date|format_date if report.test_date else '--' }}</td>
-                            <td>
-                                {% set recent_label = report.report_number or report.external_report_id or ('Report ' ~ report.id) %}
-                                <div class="table-title text-truncate" title="{{ recent_label }}">{{ recent_label|truncate(42, False, '...') }}</div>
-                                <div class="table-meta">{{ report.display_type }} · {{ report.source_system or '--' }}</div>
-                            </td>
-                            <td>
-                                <div class="table-title">{{ report.animal_name }}</div>
-                                <div class="table-meta">{{ report.owner_name or '--' }}{% if report.responsible_vet %} · {{ report.responsible_vet }}{% endif %}</div>
-                            </td>
-                            <td class="desktop-hide">{{ report.summary }}</td>
-                            <td><a href="/session/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+    </div>
+    {% if recent_reports %}
+    <div class="table-shell">
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>{{ t(lang, 'common.date') }}</th>
+                        <th>{{ t(lang, 'common.report') }}</th>
+                        <th>{{ t(lang, 'common.animal') }}</th>
+                        <th class="desktop-hide">{{ t(lang, 'common.summary') }}</th>
+                        <th>{{ t(lang, 'common.actions') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for report in recent_reports %}
+                    <tr>
+                        <td>{{ report.test_date|format_date if report.test_date else '--' }}</td>
+                        <td>
+                            {% set recent_label = report.report_number or report.external_report_id or ('Report ' ~ report.id) %}
+                            <div class="table-title text-truncate" style="max-width: 14rem;" title="{{ recent_label }}">{{ recent_label|short_report_label(20) }}</div>
+                            <div class="table-meta">{{ report.display_type }} · {{ report.source_system or '--' }}</div>
+                        </td>
+                        <td>
+                            <div class="table-title">{{ report.animal_name }}</div>
+                            <div class="table-meta">{{ report.owner_name or '--' }}{% if report.responsible_vet %} · {{ report.responsible_vet }}{% endif %}</div>
+                        </td>
+                        <td class="desktop-hide">{{ report.summary }}</td>
+                        <td><a href="/session/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-        {% else %}
-        <div class="empty-state">{{ t(lang, 'dashboard.no_reports') }}</div>
-        {% endif %}
-    </section>
-
-    <section class="card">
-        <div class="card-header">
-            <div>
-                <div class="card-kicker">{{ t(lang, 'dashboard.recent_activity') }}</div>
-                <h2 class="card-title">{{ t(lang, 'nav.animals') }}</h2>
-            </div>
-            <a href="/animals" class="btn btn-secondary">{{ t(lang, 'dashboard.all_animals') }}</a>
-        </div>
-        {% if recent_animals %}
-        <div class="table-shell">
-            <div class="table-responsive">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>{{ t(lang, 'common.animal') }}</th>
-                            <th>{{ t(lang, 'common.pet_owner') }}</th>
-                            <th>{{ t(lang, 'animal.responsible_vet') }}</th>
-                            <th>{{ t(lang, 'nav.reports') }}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for item in recent_animals %}
-                        <tr>
-                            <td>
-                                <a href="/animal/{{ item.animal.id }}" class="table-title">{{ item.animal.name }}</a>
-                                <div class="table-meta">{{ item.animal.species }}{% if item.animal.breed %} · {{ item.animal.breed }}{% endif %}</div>
-                            </td>
-                            <td>{{ item.animal.owner_name or '--' }}</td>
-                            <td>{{ item.animal.responsible_vet or '--' }}</td>
-                            <td>
-                                <span class="badge badge-info">{{ item.test_count }}</span>
-                                {% if item.last_test %}
-                                <div class="table-meta">{{ item.last_test|format_date }}</div>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        {% else %}
-        <div class="empty-state">{{ t(lang, 'dashboard.no_animals') }}</div>
-        {% endif %}
-    </section>
-</div>
+    </div>
+    {% else %}
+    <div class="empty-state">{{ t(lang, 'dashboard.no_reports') }}</div>
+    {% endif %}
+</section>
 
 <section class="card">
     <div class="card-header">
         <div>
-            <div class="card-kicker">{{ t(lang, 'dashboard.continuity') }}</div>
-            <h2 class="card-title">{{ t(lang, 'dashboard.recent_vet_changes') }}</h2>
+            <div class="card-kicker">{{ t(lang, 'dashboard.recent_activity') }}</div>
+            <h2 class="card-title">{{ t(lang, 'nav.animals') }}</h2>
         </div>
     </div>
-    {% if recent_handovers %}
-    <div class="list-stack">
-        {% for item in recent_handovers %}
-        <div class="list-item">
-            <div>
-                <div class="table-title"><a href="/animal/{{ item.animal_id }}">{{ item.animal_name }}</a></div>
-                <div class="table-meta">{{ t(lang, 'dashboard.assigned_to').format(vet=item.vet_name) }}</div>
-                <div class="table-meta">
-                    {{ item.start_date|format_date if item.start_date else '--' }}
-                    {% if item.changed_by_name %} · {{ t(lang, 'dashboard.changed_by').format(user=item.changed_by_name) }}{% endif %}
-                    {% if item.change_reason %} · {{ item.change_reason }}{% endif %}
-                </div>
-            </div>
-            {% if not item.end_date %}
-            <span class="badge badge-info">{{ t(lang, 'common.current') }}</span>
-            {% else %}
-            <span class="badge badge-normal">{{ t(lang, 'common.previous') }}</span>
-            {% endif %}
+    {% if recent_animals %}
+    <div class="table-shell">
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>{{ t(lang, 'common.animal') }}</th>
+                        <th>{{ t(lang, 'common.pet_owner') }}</th>
+                        <th>{{ t(lang, 'animal.responsible_vet') }}</th>
+                        <th>{{ t(lang, 'nav.reports') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in recent_animals %}
+                    <tr>
+                        <td>
+                            <a href="/animal/{{ item.animal.id }}" class="table-title">{{ item.animal.name }}</a>
+                            <div class="table-meta">{{ item.animal.species }}{% if item.animal.breed %} · {{ item.animal.breed }}{% endif %}</div>
+                        </td>
+                        <td>{{ item.animal.owner_name or '--' }}</td>
+                        <td>{{ item.animal.responsible_vet or '--' }}</td>
+                        <td>
+                            <span class="badge badge-info">{{ item.test_count }}</span>
+                            {% if item.last_test %}
+                            <div class="table-meta">{{ item.last_test|format_date }}</div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-        {% endfor %}
     </div>
     {% else %}
-    <div class="empty-state">{{ t(lang, 'dashboard.no_vet_handovers') }}</div>
+    <div class="empty-state">{{ t(lang, 'dashboard.no_animals') }}</div>
     {% endif %}
 </section>
 {% endblock %}

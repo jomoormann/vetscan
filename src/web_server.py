@@ -729,6 +729,31 @@ def format_datetime_filter(d) -> str:
         return d.strftime("%d/%m/%Y")
     return "N/A"
 
+
+def short_report_label_filter(value: Optional[str], max_length: int = 22) -> str:
+    """Shorten long report identifiers for dense table layouts."""
+    if value is None:
+        return ""
+
+    label = str(value).strip()
+    if len(label) <= max_length:
+        return label
+
+    parts = [part for part in label.split("/") if part]
+    if len(parts) >= 4:
+        candidate = f"{parts[0]}/{parts[1]}/.../{parts[-1]}"
+        if len(candidate) <= max_length:
+            return candidate
+
+        tail_fragment = parts[-2][-4:] if len(parts[-2]) > 4 else parts[-2]
+        candidate = f"{parts[0]}/{parts[1]}/...{tail_fragment}/{parts[-1]}"
+        if len(candidate) <= max_length:
+            return candidate
+
+    head_length = max(8, (max_length - 3) // 2)
+    tail_length = max(5, max_length - head_length - 3)
+    return f"{label[:head_length]}...{label[-tail_length:]}"
+
 # HTML sanitization for AI-generated content
 ALLOWED_TAGS = [
     'p', 'br', 'strong', 'em', 'b', 'i', 'u',
@@ -763,6 +788,7 @@ templates.env.filters["format_date"] = format_date_filter
 templates.env.filters["format_date_short"] = format_date_short_filter
 templates.env.filters["format_number"] = format_number_filter
 templates.env.filters["format_datetime"] = format_datetime_filter
+templates.env.filters["short_report_label"] = short_report_label_filter
 templates.env.filters["sanitize_html"] = sanitize_html_filter
 
 # Register translation function as Jinja2 global
@@ -2001,27 +2027,6 @@ async def home(request: Request):
                 LIMIT 5
             """).fetchall()
         ]
-        recent_handovers = [
-            dict(row) for row in db.conn.execute("""
-                SELECT
-                    ava.*,
-                    a.name AS animal_name,
-                    COALESCE(u.display_name, u.email) AS changed_by_name
-                FROM animal_vet_assignments ava
-                JOIN animals a ON a.id = ava.animal_id
-                LEFT JOIN users u ON u.id = ava.changed_by_user_id
-                WHERE ava.change_reason IS NOT NULL
-                   OR EXISTS (
-                        SELECT 1
-                        FROM animal_vet_assignments other
-                        WHERE other.animal_id = ava.animal_id
-                          AND other.id != ava.id
-                   )
-                ORDER BY ava.created_at DESC
-                LIMIT 6
-            """).fetchall()
-        ]
-
         for row in recent_reports:
             row["display_type"] = humanize_report_type(
                 row.get("report_type"), row.get("panel_name"), lang
@@ -2037,7 +2042,6 @@ async def home(request: Request):
             "recent_animals": recent_animals,
             "pending_reports": pending_reports,
             "recent_failures": recent_failures,
-            "recent_handovers": recent_handovers,
         })
         return set_lang_cookie(response, lang)
     except Exception:
@@ -2262,10 +2266,6 @@ async def list_reports(request: Request):
                 ORDER BY source_system
             """).fetchall()
         ]
-        pending_count_row = service.db.conn.execute(
-            "SELECT COUNT(*) AS total FROM unassigned_reports WHERE status = 'pending'"
-        ).fetchone()
-
         response = templates.TemplateResponse(request, "reports.html", {
             "request": request,
             "lang": lang,
@@ -2290,7 +2290,6 @@ async def list_reports(request: Request):
             "source_systems": source_systems,
             "report_types": report_types,
             "responsible_vets": service.db.list_responsible_vets(),
-            "pending_count": pending_count_row["total"] if pending_count_row else 0,
             "total_reports": total,
         })
         return set_lang_cookie(response, lang)
