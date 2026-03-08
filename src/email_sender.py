@@ -20,6 +20,10 @@ from typing import List, Optional
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 
 def escape_html(text: str) -> str:
