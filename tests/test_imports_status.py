@@ -295,7 +295,7 @@ class ImportStatusTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("31370/1611430", response.text)
         self.assertIn("Dr Ordering", response.text)
-        self.assertIn("Veterinário requisitante", response.text)
+        self.assertIn("Veterinário do pedido", response.text)
         self.assertNotIn("<th>Resumo</th>", response.text)
         self.assertIn('class="nav-badge"', response.text)
         self.assertIn(">1</span>", response.text)

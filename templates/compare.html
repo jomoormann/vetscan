@@ -61,11 +61,24 @@
                                 font-weight: 600;
                             ">
                                 {{ "%.1f"|format(val.value) if val.value is not none else '--' }}
+                                {% if val.unit %} {{ val.unit }}{% endif %}
                             </span>
                             {% if val.flag == 'high' %}
                                 <small>↑</small>
                             {% elif val.flag == 'low' %}
                                 <small>↓</small>
+                            {% endif %}
+                            {% if val.value_absolute is not none %}
+                            <div class="table-meta">
+                                {{ "%.2f"|format(val.value_absolute) }}{% if val.unit_absolute %} {{ val.unit_absolute }}{% endif %}
+                                {% if val.flag_absolute == 'high' %}↑{% elif val.flag_absolute == 'low' %}↓{% endif %}
+                            </div>
+                            {% endif %}
+                            {% if val.reference_min is not none and val.reference_max is not none %}
+                            <div class="table-meta">Ref: {{ "%.1f"|format(val.reference_min) }} - {{ "%.1f"|format(val.reference_max) }}</div>
+                            {% endif %}
+                            {% if val.reference_min_absolute is not none and val.reference_max_absolute is not none %}
+                            <div class="table-meta">Ref g/dL: {{ "%.2f"|format(val.reference_min_absolute) }} - {{ "%.2f"|format(val.reference_max_absolute) }}</div>
                             {% endif %}
                         {% else %}
                             <span class="text-muted">--</span>

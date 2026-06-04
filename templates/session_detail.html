@@ -118,6 +118,9 @@
                                 <td>
                                     {% if result.reference_min is not none and result.reference_max is not none %}
                                     {{ "%.1f"|format(result.reference_min) }} - {{ "%.1f"|format(result.reference_max) }}
+                                    {% if result.reference_min_absolute is not none and result.reference_max_absolute is not none %}
+                                    <div class="table-meta">g/dL: {{ "%.2f"|format(result.reference_min_absolute) }} - {{ "%.2f"|format(result.reference_max_absolute) }}</div>
+                                    {% endif %}
                                     {% else %}
                                     --
                                     {% endif %}
@@ -328,10 +331,6 @@
                     <div class="summary-block-label">{{ t(lang, 'common.ordering_vet') }}</div>
                     <div class="summary-block-value">{{ session.ordering_vet or '--' }}</div>
                 </div>
-            </div>
-            <div style="margin-top: 1rem;">
-                <div class="summary-block-label">{{ t(lang, 'session_detail.source_reference') }}</div>
-                <div class="table-meta" style="word-break: break-word;">{{ session.report_source or '--' }}</div>
             </div>
         </section>
 

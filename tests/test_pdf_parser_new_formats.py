@@ -78,12 +78,28 @@ class NewReportFormatTests(unittest.TestCase):
         self.assertEqual(parsed.animal.sex, "F")
         self.assertIsNone(parsed.animal.responsible_vet)
         self.assertEqual(parsed.session.ordering_vet, "Carina Marta")
-        self.assertEqual(len(parsed.pathology_findings), 1)
+        self.assertEqual(len(parsed.pathology_findings), 2)
         finding = parsed.pathology_findings[0]
-        self.assertEqual(finding.section_type, "general_comment")
-        self.assertIsNone(finding.diagnosis)
+        self.assertEqual(finding.section_type, "histology")
+        self.assertEqual(finding.title, "Amostra Cirúrgica · Baço")
+        self.assertIn("Hematoma esplénico", finding.diagnosis)
         self.assertIsNone(finding.microscopic_description)
-        self.assertIn("Nas secções examinadas", finding.comment)
+        comment = parsed.pathology_findings[1]
+        self.assertEqual(comment.section_type, "general_comment")
+        self.assertIn("Nas secções examinadas", comment.comment)
+
+    def test_vedis_cytology_imports_portuguese_translation_fields(self):
+        path = SAMPLE_DIR / "26000620 - Finn - Maria Barreiros.pdf"
+
+        parsed = parse_lab_report(str(path))
+
+        diagnoses = [finding for finding in parsed.pathology_findings if finding.diagnosis]
+        self.assertEqual(len(diagnoses), 2)
+        self.assertEqual(diagnoses[0].title, "A- Citologia de rim esquerdo")
+        self.assertIn("Não diagnóstico", diagnoses[0].diagnosis)
+        self.assertEqual(diagnoses[1].title, "B- Citologia de retroperitoneu")
+        self.assertIn("linfoma de grandes células", diagnoses[1].diagnosis)
+        self.assertIn("amostras examinadas", parsed.pathology_findings[-1].comment)
 
     def test_genevet_urinalysis_imports_upc_and_urine_values(self):
         path = SAMPLE_DIR / "Resultado_53283_Fidel_TiagoGomes.pdf"
@@ -240,6 +256,27 @@ class NewReportFormatTests(unittest.TestCase):
         self.assertEqual(frutosamina.unit, "µmol/L")
         self.assertEqual(frutosamina.reference_text, "< 340")
         self.assertEqual(frutosamina.flag, "high")
+        self.assertNotIn("telefone", by_code)
+        self.assertNotIn("dnatech_lda_estrada_do_paco_do_lumiar", by_code)
+
+    def test_dnatech_generic_measurements_filter_noise_and_keep_urine_references(self):
+        path = SAMPLE_DIR / "bolt58630_1500951.pdf"
+
+        parsed = parse_lab_report(str(path))
+        by_code = {measurement.measurement_code: measurement for measurement in parsed.measurements}
+
+        self.assertNotIn("telefone", by_code)
+        self.assertNotIn("documento_procesado_electronicamente_e_deialab_slice_pagina", by_code)
+        self.assertNotIn("dnatech_lda_estrada_do_paco_do_lumiar", by_code)
+        self.assertNotIn("albumina", by_code)
+        self.assertIn("ph", by_code)
+        self.assertEqual(by_code["ph"].value_text, "8,0")
+        self.assertEqual(by_code["ph"].reference_text, "5,0-7,0")
+        self.assertIn("cel_epiteliais", by_code)
+        self.assertEqual(by_code["cel_epiteliais"].value_text, "Raras")
+        self.assertEqual(by_code["cel_epiteliais"].reference_text, "Raras")
+        self.assertIn("cristais", by_code)
+        self.assertEqual(by_code["cristais"].value_text, "Ausentes")
 
     def test_classifies_dnatech_same_work_order_panels(self):
         parser = DNAtechParser()

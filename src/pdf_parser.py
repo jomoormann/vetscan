@@ -959,22 +959,60 @@ class DNAtechParser:
             "PESQUISA DE PARASITAS FECAIS",
             "MATERIAL RECEBIDO",
             "RESULTADO",
+            "TELEFONE",
+            "FAX",
+            "LOCALIDADE",
+            "ENVIO",
+            "DOCUMENTO PROCESADO",
+            "DOCUMENTO PROCESSADO",
+            "DNATECH",
+            "RKURK",
+            "VKROK",
         )
+        ignored_codes = {
+            "telefone",
+            "fax",
+            "documento_procesado_electronicamente_e_deialab_slice_pagina",
+            "documento_processado_electronicamente_e_deialab_slice_pagina",
+            "dnatech_lda_estrada_do_paco_do_lumiar",
+            "proteinas_totais",
+            "albumina",
+            "alfa",
+            "alfa_1",
+            "alfa_2",
+            "beta",
+            "gama",
+            "rel_albumina_globulina",
+        }
         value_pattern = (
             r"(?:Aguarda\s+Resultado|"
             r"Positivo(?:\s*\([^)]+\))?|"
             r"Negativo(?:\s*\([^)]+\))?|"
-            r"Ausentes?|Presentes?|Raros?|"
+            r"Ausentes?|Presentes?|Rar[ao]s?|Rar[ao]|Discret[ao]s?|"
             r"[<>]?\s*\d+(?:[,.]\d+)?)"
         )
+        textual_reference_values = {
+            "negativo",
+            "negativa",
+            "ausente",
+            "ausentes",
+            "presente",
+            "presentes",
+            "raro",
+            "rara",
+            "raros",
+            "raras",
+            "normal",
+        }
 
         for line in lines:
+            line = _normalize_space(line.replace("*", " "))
             folded_line = _fold_for_detection(line)
             if any(folded_line.startswith(_fold_for_detection(prefix)) for prefix in ignored_prefixes):
                 continue
 
             match = re.match(
-                rf"^(?P<name>[A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9 .,/()+%°º-]{{2,90}}?)\s+"
+                rf"^(?P<name>[A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9 .,/()+%°º-]{{1,90}}?)\s+"
                 rf"(?P<value>{value_pattern})"
                 rf"(?:\s*(?P<flag>\([A-Z]\)))?"
                 rf"(?:\s+(?P<rest>.*))?$",
@@ -993,6 +1031,8 @@ class DNAtechParser:
                 value_text = f"{value_text} {flag_text}"
 
             code = self._measurement_code(name)
+            if code in ignored_codes:
+                continue
             if code in existing_codes or code in {item.measurement_code for item in measurements}:
                 continue
 
@@ -1005,7 +1045,7 @@ class DNAtechParser:
 
             reference_text = None
             reference_match = re.search(
-                r"(<\s*[\d,\.]+|[\d,\.]+\s*-\s*[\d,\.]+)",
+                r"(<\s*[\d,\.]+(?:/[A-Za-zÀ-ÿ]+)?|[\d,\.]+\s*-\s*[\d,\.]+(?:/[A-Za-zÀ-ÿ]+)?)",
                 rest,
             )
             if reference_match:
@@ -1015,9 +1055,18 @@ class DNAtechParser:
                 )
 
             unit = None
-            unit_match = re.match(r"([A-Za-zÀ-ÿµμ/%]+(?:/[A-Za-zÀ-ÿµμ]+)?)", rest)
-            if unit_match:
-                unit = unit_match.group(1)
+            if rest and _fold_for_detection(rest).lower() in textual_reference_values:
+                reference_text = rest
+                rest = ""
+            else:
+                unit_match = re.match(r"([A-Za-zÀ-ÿµμ/%]+(?:/[A-Za-zÀ-ÿµμ]+)?)", rest)
+                if unit_match:
+                    unit = unit_match.group(1)
+                    rest = _normalize_space(rest[unit_match.end():])
+                if rest and _fold_for_detection(rest).lower() in textual_reference_values:
+                    reference_text = rest
+                elif not unit and raw_value.lower() in textual_reference_values and rest:
+                    reference_text = rest
 
             self._add_measurement(
                 measurements,
@@ -1992,13 +2041,18 @@ class VedisCytologyParser:
             pdf_path=pdf_path,
         )
 
-        findings = []
+        findings = self._extract_portuguese_pathology_findings(
+            text,
+            default_title="Citologia",
+            default_section_type="cytology",
+            general_comment=general_comment,
+        )
         if general_comment:
             findings.append(PathologyFinding(
                 section_type="general_comment",
                 title="Comentário geral",
                 comment=general_comment,
-                sort_order=0,
+                sort_order=len(findings),
             ))
 
         return ParsedReport(
@@ -2069,6 +2123,139 @@ class VedisCytologyParser:
                         if _is_plausible_ordering_vet_value(first_column):
                             return first_column
         return None
+
+    def _is_vedis_report_noise_line(self, value: str) -> bool:
+        folded = _fold_for_detection(value)
+        if not folded:
+            return True
+        noise_prefixes = (
+            "VEDIS",
+            "PATIENT",
+            "PACIENTE",
+            "CLIENT",
+            "ENTIDADE",
+            "OWNER:",
+            "TUTOR:",
+            "SPECIE:",
+            "ESPECIE:",
+            "BREED:",
+            "RACA:",
+            "GENDER:",
+            "SEXO:",
+            "DOB/AGE:",
+            "DN/IDADE:",
+            "DATE OF RECEIPT",
+            "DATA DE RECECAO",
+            "DATE OF REPORT",
+            "DATA DE RELATORIO",
+            "ATTENDING VET",
+            "VETERINARIO/A",
+            "PATHOLOGIST",
+            "TECHNICAL DIRECTOR",
+            "DIRETOR TECNICO",
+            "DIRECTOR TECNICO",
+            "EXAM ID",
+            "ID EXAME",
+            "PAGE ",
+            "PAGINA ",
+            "IN CASE OF DOUBT",
+            "EM CASO DE DUVIDAS",
+            "REPORTS@VEDIS",
+            "NOTA:",
+        )
+        return any(folded.startswith(prefix) for prefix in noise_prefixes)
+
+    def _extract_portuguese_pathology_findings(
+        self,
+        text: str,
+        default_title: str,
+        default_section_type: str,
+        general_comment: Optional[str] = None,
+    ) -> List[PathologyFinding]:
+        lines = [_normalize_space(line) for line in text.splitlines()]
+        lines = [line for line in lines if line]
+        folded_lines = [_fold_for_detection(line) for line in lines]
+
+        translation_start = next(
+            (idx for idx, folded in enumerate(folded_lines) if folded == "TRADUCAO"),
+            None,
+        )
+        if translation_start is None:
+            diagnosis = (
+                self._right_text_between_labels(
+                    text,
+                    "DIAGNÓSTICO",
+                    (
+                        "SUSPEITA CLINICA",
+                        "SUSPEITA CLÍNICA",
+                        "PRODUTO ENVIADO",
+                        "DESCRIÇÃO MICROSCÓPICA",
+                        "COMENTÁRIO GERAL",
+                        "Data de receção",
+                        "Data de relatório",
+                        "Em caso de dúvidas",
+                    ),
+                )
+                or _clean_vedis_text(
+                    self._extract_block(text, "DIAGNÓSTICO", "SUSPEITA CLINICA")
+                    or self._extract_block(text, "DIAGNÓSTICO", "SUSPEITA CLÍNICA")
+                    or self._extract_block(text, "DIAGNÓSTICO", "PRODUTO ENVIADO")
+                    or self._extract_block(text, "DIAGNÓSTICO", "DESCRIÇÃO MICROSCÓPICA")
+                    or self._extract_block(text, "DIAGNÓSTICO", "COMENTÁRIO GERAL")
+                )
+            )
+            if diagnosis:
+                return [PathologyFinding(
+                    section_type=default_section_type,
+                    title=default_title,
+                    diagnosis=diagnosis,
+                    sort_order=0,
+                )]
+            return []
+
+        findings: List[PathologyFinding] = []
+        pending_titles: List[str] = []
+        idx = translation_start + 1
+        while idx < len(lines):
+            line = lines[idx]
+            folded = folded_lines[idx]
+            if folded in {"COMENTARIO GERAL", "GENERAL COMMENT"}:
+                break
+            if self._is_vedis_report_noise_line(line):
+                idx += 1
+                continue
+            if folded == "DIAGNOSTICO":
+                diagnosis_lines: List[str] = []
+                idx += 1
+                while idx < len(lines):
+                    candidate = lines[idx]
+                    candidate_folded = folded_lines[idx]
+                    if (
+                        candidate_folded in {"DIAGNOSTICO", "COMENTARIO GERAL", "GENERAL COMMENT", "SAMPLE", "AMOSTRA"}
+                        or self._is_vedis_report_noise_line(candidate)
+                        or (diagnosis_lines and re.match(r'^[A-Z]-\s+', candidate))
+                    ):
+                        break
+                    if candidate:
+                        diagnosis_lines.append(candidate)
+                    idx += 1
+                diagnosis = _clean_vedis_text(" ".join(diagnosis_lines))
+                title = " · ".join(pending_titles[-2:]) if pending_titles else default_title
+                pending_titles = []
+                if diagnosis:
+                    findings.append(PathologyFinding(
+                        section_type=default_section_type,
+                        title=title,
+                        diagnosis=diagnosis,
+                        sort_order=len(findings),
+                    ))
+                continue
+            if not any(token in folded for token in {"CLINICAL", "HISTORY", "RELATORIO", "REPORT"}):
+                pending_titles.append(line)
+                pending_titles = pending_titles[-3:]
+            idx += 1
+
+        return findings
 
     def _right_column_between_markers(self, text: str, anchor: str,
                                       start_label: str, end_label: str) -> Optional[str]:
@@ -2463,13 +2650,18 @@ class VedisHistologyParser(VedisCytologyParser):
             pdf_path=pdf_path,
         )
 
-        findings = []
+        findings = self._extract_portuguese_pathology_findings(
+            text,
+            default_title="Histologia",
+            default_section_type="histology",
+            general_comment=comment,
+        )
         if comment:
             findings.append(PathologyFinding(
                 section_type="general_comment",
                 title="Comentário geral",
                 comment=comment,
-                sort_order=0,
+                sort_order=len(findings),
             ))
 
         return ParsedReport(

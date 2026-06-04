@@ -3794,7 +3794,15 @@ async def compare_sessions_page(request: Request, animal_id: int):
                     r = all_results[session.id][marker]
                     row['values'].append({
                         'value': r.value,
+                        'unit': r.unit,
+                        'value_absolute': r.value_absolute,
+                        'unit_absolute': r.unit_absolute,
+                        'reference_min': r.reference_min,
+                        'reference_max': r.reference_max,
+                        'reference_min_absolute': r.reference_min_absolute,
+                        'reference_max_absolute': r.reference_max_absolute,
                         'flag': r.flag,
+                        'flag_absolute': r.flag_absolute,
                         'date': session.test_date
                     })
                 else:

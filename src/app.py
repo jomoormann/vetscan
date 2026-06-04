@@ -474,6 +474,8 @@ class VetProteinService:
                     stats.failed += 1
                     stats.errors.append({"kind": "unassigned", "id": str(report_id), "error": str(exc)})
 
+        self._cleanup_invalid_imported_responsible_vets()
+
         self.db.conn.execute("""
             INSERT INTO email_import_log (
                 email_uid,
@@ -496,6 +498,41 @@ class VetProteinService:
         ))
         self.db.conn.commit()
         return stats
+
+    def _cleanup_invalid_imported_responsible_vets(self):
+        """Clear old animal responsible-vet values that are clearly report text, not names."""
+        invalid_exact = {
+            "DESCRIÇÃO MICROSCÓPICA",
+            "DESCRICAO MICROSCOPICA",
+            "Turbididade: transparente",
+            "Desconhecido Unknown",
+            "Dr(a).",
+        }
+        invalid_fragments = (
+            "shrinkage",
+            "turbididade",
+            "descrição",
+            "descricao",
+            "diagnóstico",
+            "diagnostico",
+            "comentário",
+            "comentario",
+            "microscópica",
+            "microscopica",
+        )
+        rows = self.db.conn.execute("""
+            SELECT id, responsible_vet
+            FROM animals
+            WHERE responsible_vet IS NOT NULL AND TRIM(responsible_vet) != ''
+        """).fetchall()
+        for row in rows:
+            value = (row["responsible_vet"] or "").strip()
+            lowered = value.lower()
+            if value in invalid_exact or any(fragment in lowered for fragment in invalid_fragments):
+                self.db.conn.execute(
+                    "UPDATE animals SET responsible_vet = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (row["id"],),
+                )
 
     def _queue_unassigned_report(self, parsed: ParsedReport,
                                  match_decision: AnimalMatchDecision) -> int:
