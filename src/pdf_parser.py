@@ -102,16 +102,43 @@ def _extract_ordering_vet_from_text(text: str) -> Optional[str]:
         r'M[ée]dico[ \t]+Veterin[áa]rio[ \t]*:?[ \t]*(?:Nome:[ \t]*[^\n\r]+[ \t]*)?([^\n\r]+)',
         r'Veterin[áa]rio(?!/a)[ \t]*:?[ \t]*([^\n\r]+)',
     )
-    invalid_values = {"dr(a).", "dr(a)", "dr.", "dra.", "dr", "dra"}
     for pattern in patterns:
         match = re.search(pattern, text or "", re.IGNORECASE)
         if not match:
             continue
         value = _normalize_space(match.group(1))
         value = re.split(r'\s{2,}|Idade:|Esp[ée]cie:|Ra[çc]a:', value)[0].strip(" :-")
-        if value and value.lower() not in invalid_values:
+        if _is_plausible_ordering_vet_value(value):
             return value
     return None
+
+
+def _is_plausible_ordering_vet_value(value: Optional[str]) -> bool:
+    if not value:
+        return False
+    normalized = _normalize_space(value).strip(" :-")
+    if not normalized:
+        return False
+    lowered = normalized.lower()
+    if lowered in {"dr(a).", "dr(a)", "dr.", "dra.", "dr", "dra"}:
+        return False
+    if normalized[:1].islower():
+        return False
+    blocked_fragments = (
+        "descrição",
+        "descricao",
+        "diagnosis",
+        "microscopic",
+        "turbididade",
+        "shrinkage",
+        "sample",
+        "general comment",
+    )
+    if any(fragment in lowered for fragment in blocked_fragments):
+        return False
+    if len(normalized.split()) > 5:
+        return False
+    return bool(re.search(r'[A-Za-zÀ-ÿ]', normalized))
 
 
 def _extract_pdf_text(pdf_path: str) -> str:
@@ -2029,10 +2056,12 @@ class VedisCytologyParser:
         lines = [line.rstrip() for line in text.splitlines()]
         for index, raw_line in enumerate(lines):
             if raw_line.strip().startswith(label):
-                for followup in lines[index + 1:]:
+                for followup in lines[index + 1:index + 4]:
                     candidate = followup.strip()
                     if candidate:
-                        return _normalize_space(re.split(r'\s{2,}', candidate)[0])
+                        first_column = _normalize_space(re.split(r'\s{2,}', candidate)[0])
+                        if _is_plausible_ordering_vet_value(first_column):
+                            return first_column
         return None
 
     def _right_column_between_markers(self, text: str, anchor: str,
@@ -2449,16 +2478,12 @@ class VedisHistologyParser(VedisCytologyParser):
         for index, raw_line in enumerate(lines):
             if not raw_line.strip().startswith("Attending Vet"):
                 continue
-            for followup in lines[index + 1:]:
+            for followup in lines[index + 1:index + 4]:
                 candidate = followup.strip()
                 if not candidate:
                     continue
                 first_column = re.split(r'\s{2,}', candidate)[0].strip()
-                if not first_column or ":" in first_column:
-                    continue
-                if first_column.startswith("-") or first_column[:1].islower():
-                    continue
-                if len(first_column.split()) > 4:
+                if not _is_plausible_ordering_vet_value(first_column):
                     continue
                 return _normalize_space(first_column)
         return self._next_first_column_after_label(text, "Attending Vet")
@@ -2555,10 +2580,12 @@ class VedisImmunocytochemistryParser:
         lines = [line.rstrip() for line in text.splitlines()]
         for index, raw_line in enumerate(lines):
             if raw_line.strip().startswith(label):
-                for followup in lines[index + 1:]:
+                for followup in lines[index + 1:index + 4]:
                     candidate = followup.strip()
                     if candidate:
-                        return _normalize_space(re.split(r'\s{2,}', candidate)[0])
+                        first_column = _normalize_space(re.split(r'\s{2,}', candidate)[0])
+                        if _is_plausible_ordering_vet_value(first_column):
+                            return first_column
         return None
 
     def _right_column_between_labels(self, text: str, start_label: str,

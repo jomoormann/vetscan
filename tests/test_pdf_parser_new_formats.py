@@ -36,6 +36,10 @@ class NewReportFormatTests(unittest.TestCase):
         self.assertIsNone(_extract_ordering_vet_from_text("Veterinário:\nshrinkage and damaged cells). Few epithelial cells without atypia and"))
         self.assertIsNone(_extract_ordering_vet_from_text("Nome do Veterinário: Dr(a)."))
         self.assertEqual(_extract_ordering_vet_from_text("Attending Vet: Sofia Castro"), "Sofia Castro")
+        parser = VedisCytologyParser()
+        self.assertIsNone(parser._next_first_column_after_label("Veterinário/a\n\nTurbididade: transparente", "Veterinário/a"))
+        self.assertIsNone(parser._next_first_column_after_label("Attending Vet\n\nDESCRIÇÃO MICROSCÓPICA", "Attending Vet"))
+        self.assertEqual(parser._next_first_column_after_label("Veterinário/a\nDra. Carina Marta", "Veterinário/a"), "Dra. Carina Marta")
 
     def test_dnatech_urine_biochemistry_imports_without_proteinogram(self):
         path = SAMPLE_DIR / "bolt22799_1589395.pdf"
