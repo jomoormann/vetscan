@@ -314,6 +314,17 @@ class VetProteinService:
 
         parsed.session.pdf_path = existing.pdf_path
         parsed.session.report_source = existing.report_source or parsed.session.report_source
+        if not parsed.session.report_number:
+            parsed.session.report_number = existing.report_number
+        elif parsed.session.report_number != existing.report_number:
+            conflict = self.db.conn.execute("""
+                SELECT id
+                FROM test_sessions
+                WHERE report_number = ? AND id != ?
+                LIMIT 1
+            """, (parsed.session.report_number, existing.id)).fetchone()
+            if conflict:
+                parsed.session.report_number = existing.report_number
         return self._update_existing_session(parsed, existing)
 
     def _update_unassigned_from_parsed(self, report: UnassignedReport,

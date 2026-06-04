@@ -81,6 +81,46 @@ class ReportReprocessTests(unittest.TestCase):
             self.assertIsNone(findings[0].diagnosis)
             self.assertIsNone(findings[0].microscopic_description)
 
+    def test_reprocess_preserves_existing_report_number_when_parser_output_collides(self):
+        pdf_path = self._pdf("same-work-order.pdf")
+
+        with VetProteinService(db_path=str(self.tempdir / "test.db"), uploads_dir=str(self.uploads)) as service:
+            animal_id = service.db.create_animal(Animal(name="Lua", species="Canídeo"))
+            service.db.create_test_session(TestSession(
+                animal_id=animal_id,
+                report_number="22799/1589395",
+                source_system="dnatech",
+                report_type="biochemistry",
+                panel_name="urine_protein_creatinine_ratio",
+                pdf_path=str(self._pdf("existing.pdf")),
+            ))
+            session_id = service.db.create_test_session(TestSession(
+                animal_id=animal_id,
+                report_number="22799/1589395 [urinalysis]",
+                source_system="dnatech",
+                report_type="urinalysis",
+                panel_name="urinalysis_upc",
+                pdf_path=str(pdf_path),
+            ))
+
+            parsed = ParsedReport(
+                animal=Animal(name="Lua", species="Canídeo"),
+                session=TestSession(
+                    report_number="22799/1589395",
+                    source_system="dnatech",
+                    report_type="urinalysis",
+                    panel_name="urinalysis_upc",
+                    pdf_path=str(pdf_path),
+                ),
+            )
+
+            with patch("app.parse_lab_report", return_value=parsed):
+                service.reprocess_session(session_id)
+
+            session = service.db.get_session(session_id)
+            self.assertEqual(session.report_number, "22799/1589395 [urinalysis]")
+            self.assertEqual(session.report_type, "urinalysis")
+
     def test_reprocess_unassigned_refreshes_and_auto_assigns_confident_match(self):
         pdf_path = self._pdf("simba.pdf")
 
