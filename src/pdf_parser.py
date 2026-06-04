@@ -993,6 +993,9 @@ class DNAtechParser:
             "beta",
             "gama",
             "rel_albumina_globulina",
+            "2_bacterias_leveduras_ou_celulas_inflamatorias",
+            "3_bacterias_leveduras_ou_celulas_inflamatorias",
+            "4_massiva_quantidade_de_bacterias_leveduras_ou_celulas_inflamatorias",
         }
         auricular_cytology_aliases = {
             "celulas_epiteliais_pavimentosas_queratinizadas": "epithelial_cells",

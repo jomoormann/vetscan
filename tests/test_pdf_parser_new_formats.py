@@ -247,6 +247,8 @@ class NewReportFormatTests(unittest.TestCase):
             "Células epiteliais pavimentosas queratinizadas Presentes\n"
             "Bactérias < 2 /campo 100x\n"
             "Bactérias < 2 /campo 100x\n"
+            "2+ Bactérias, leveduras ou células inflamatórias presentes em\n"
+            "4+ Massiva quantidade de bactérias, leveduras ou células inflamatórias presentes e\n"
             "Malassezia sp. < 5 /campo 100x\n"
             "Ácaros Ausentes\n"
             "Neutrófilos Presentes Ausentes\n"
@@ -265,6 +267,8 @@ class NewReportFormatTests(unittest.TestCase):
         self.assertIn("bacteria", codes)
         self.assertNotIn("celulas_epiteliais_pavimentosas_queratinizadas", codes)
         self.assertNotIn("bacterias", codes)
+        self.assertNotIn("2_bacterias_leveduras_ou_celulas_inflamatorias", codes)
+        self.assertNotIn("4_massiva_quantidade_de_bacterias_leveduras_ou_celulas_inflamatorias", codes)
         self.assertEqual(codes.count("bacteria"), 1)
 
     def test_parses_new_dnatech_single_value_measurements(self):
