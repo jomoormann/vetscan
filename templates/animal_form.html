@@ -75,6 +75,15 @@
                 </select>
             </div>
             <div class="field">
+                <label for="animal-neutered">{{ t(lang, 'animal_detail.neutered') }}</label>
+                {% set current_neutered = form_values.neutered %}
+                <select id="animal-neutered" name="neutered">
+                    <option value="" {% if not current_neutered %}selected{% endif %}>{{ t(lang, 'common.unknown') }}</option>
+                    <option value="true" {% if current_neutered == 'true' %}selected{% endif %}>{{ t(lang, 'common.yes') }}</option>
+                    <option value="false" {% if current_neutered == 'false' %}selected{% endif %}>{{ t(lang, 'common.no') }}</option>
+                </select>
+            </div>
+            <div class="field">
                 <label for="animal-weight">{{ t(lang, 'animal_form.weight') }}</label>
                 <input id="animal-weight" name="weight_kg" type="number" step="0.1" min="0" value="{{ form_values.weight_kg or '' }}">
             </div>

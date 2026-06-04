@@ -248,6 +248,7 @@ class ImportStatusTests(unittest.TestCase):
                 source_system="dnatech",
                 report_type="biochemistry",
                 panel_name="biochemistry",
+                ordering_vet="Dr Ordering",
             ))
             service.db.conn.execute("""
                 INSERT INTO unassigned_reports (
@@ -293,11 +294,54 @@ class ImportStatusTests(unittest.TestCase):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertIn("31370/1611430", response.text)
+        self.assertIn("Dr Ordering", response.text)
+        self.assertIn("Veterinário requisitante", response.text)
+        self.assertNotIn("<th>Resumo</th>", response.text)
         self.assertIn('class="nav-badge"', response.text)
         self.assertIn(">1</span>", response.text)
         self.assertNotIn('class="kpi-card"', response.text)
         self.assertNotIn("dashboard-failure.pdf", response.text)
         self.assertNotIn("unassigned.pdf", response.text)
+
+        reports_response = self.client.get("/reports")
+        self.assertEqual(reports_response.status_code, 200)
+        self.assertIn("Dr Ordering", reports_response.text)
+        self.assertNotIn("<th>Resumo</th>", reports_response.text)
+
+        animal_response = self.client.get(f"/animal/{animal_id}")
+        self.assertEqual(animal_response.status_code, 200)
+        self.assertIn("Dr Ordering", animal_response.text)
+        self.assertNotIn("<th>Resumo</th>", animal_response.text)
+
+    def test_animal_profile_updates_and_displays_neutered_status(self):
+        user = self._create_user()
+        login_response = self._login(email=user.email)
+        self.assertEqual(login_response.status_code, 302)
+
+        service = web_server.get_service()
+        try:
+            animal_id = service.db.create_animal(Animal(name="Luna", species="Canídeo"))
+        finally:
+            service.close()
+
+        response = self.client.post(
+            f"/animal/{animal_id}/update",
+            data={
+                "name": "Luna",
+                "species": "Canídeo",
+                "sex": "F",
+                "neutered": "true",
+                "csrf_token": self._csrf_token(),
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["success"])
+
+        page = self.client.get(f"/animal/{animal_id}")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Esterilizado", page.text)
+        self.assertIn("Sim", page.text)
+        self.assertNotIn("Paciente desde</div>", page.text)
 
     def test_animal_detail_has_no_ai_diagnostics_surface(self):
         user = self._create_user()

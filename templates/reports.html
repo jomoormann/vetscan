@@ -40,7 +40,7 @@
             </select>
         </div>
         <div class="field">
-            <label for="report-vet" class="sr-only">{{ t(lang, 'animal.responsible_vet') }}</label>
+            <label for="report-vet" class="sr-only">{{ t(lang, 'common.ordering_vet') }}</label>
             <select id="report-vet" name="responsible_vet" onchange="this.form.submit()">
                 <option value="">{{ t(lang, 'reports.all_vets') }}</option>
                 {% for vet in responsible_vets %}
@@ -72,9 +72,8 @@
                         <th><a class="sort-link" href="{{ sort_links.date.url }}">{{ t(lang, 'common.date') }}{% if sort_links.date.state %}<span class="sort-state">{{ '↑' if sort_links.date.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
                         <th><a class="sort-link" href="{{ sort_links.report.url }}">{{ t(lang, 'common.report') }}{% if sort_links.report.state %}<span class="sort-state">{{ '↑' if sort_links.report.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
                         <th><a class="sort-link" href="{{ sort_links.animal.url }}">{{ t(lang, 'common.animal') }}{% if sort_links.animal.state %}<span class="sort-state">{{ '↑' if sort_links.animal.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
-                        <th><a class="sort-link" href="{{ sort_links.vet.url }}">{{ t(lang, 'animal.responsible_vet') }}{% if sort_links.vet.state %}<span class="sort-state">{{ '↑' if sort_links.vet.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
+                        <th><a class="sort-link" href="{{ sort_links.vet.url }}">{{ t(lang, 'common.ordering_vet') }}{% if sort_links.vet.state %}<span class="sort-state">{{ '↑' if sort_links.vet.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
                         <th><a class="sort-link" href="{{ sort_links.source.url }}">{{ t(lang, 'common.source') }}{% if sort_links.source.state %}<span class="sort-state">{{ '↑' if sort_links.source.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
-                        <th>{{ t(lang, 'common.summary') }}</th>
                         <th>{{ t(lang, 'common.status') }}</th>
                         <th>{{ t(lang, 'common.actions') }}</th>
                     </tr>
@@ -92,12 +91,11 @@
                             <div class="table-title"><a href="/animal/{{ report.animal_id }}">{{ report.animal_name }}</a></div>
                             <div class="table-meta">{{ report.animal_species or '--' }}</div>
                         </td>
-                        <td>{{ report.responsible_vet or '--' }}</td>
+                        <td>{{ report.ordering_vet or '--' }}</td>
                         <td>
                             <div>{{ report.source_system or '--' }}</div>
                             <div class="table-meta">{{ report.clinic_name or report.lab_name or '--' }}</div>
                         </td>
-                        <td>{{ report.summary }}</td>
                         <td><span class="badge badge-normal">{{ t(lang, 'common.imported') }}</span></td>
                         <td><a href="/session/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
                     </tr>

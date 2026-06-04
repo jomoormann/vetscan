@@ -703,6 +703,18 @@ def parse_date_value(d):
                         return None
     return None
 
+
+def parse_optional_bool(value: Optional[str]) -> Optional[bool]:
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "y", "sim"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "nao", "não"}:
+        return False
+    return None
+
+
 def format_date_filter(d) -> str:
     """Format date for display in templates"""
     parsed = parse_date_value(d)
@@ -2501,7 +2513,6 @@ async def home(request: Request):
             row["display_type"] = humanize_report_type(
                 row.get("report_type"), row.get("panel_name"), lang
             )
-            row["summary"] = summarize_report_overview(row, lang)
 
         response = templates.TemplateResponse(request, "index.html", {
             "request": request,
@@ -2623,6 +2634,7 @@ async def create_animal_page(
     age_years: float = Form(None),
     age_months: int = Form(None),
     sex: str = Form("U"),
+    neutered: str = Form(None),
     responsible_vet: str = Form(None),
     microchip: str = Form(None),
     patient_since: str = Form(None),
@@ -2647,6 +2659,7 @@ async def create_animal_page(
             age_years=age_years,
             age_months=age_months,
             sex=sex,
+            neutered=parse_optional_bool(neutered),
             responsible_vet=responsible_vet.strip() if responsible_vet else None,
             microchip=microchip.strip() if microchip else None,
             patient_since=parse_date_value(patient_since.strip()) if patient_since and patient_since.strip() else None,
@@ -2721,7 +2734,6 @@ async def list_reports(request: Request):
             row["display_type"] = humanize_report_type(
                 row.get("report_type"), row.get("panel_name"), lang
             )
-            row["summary"] = summarize_report_overview(row, lang)
 
         pagination = build_pagination(request, total, page, page_size)
         report_types = [{
@@ -2764,7 +2776,14 @@ async def list_reports(request: Request):
             },
             "source_systems": source_systems,
             "report_types": report_types,
-            "responsible_vets": service.db.list_responsible_vets(),
+            "responsible_vets": [
+                row["ordering_vet"] for row in service.db.conn.execute("""
+                    SELECT DISTINCT ordering_vet
+                    FROM test_sessions
+                    WHERE ordering_vet IS NOT NULL AND TRIM(ordering_vet) != ''
+                    ORDER BY ordering_vet COLLATE NOCASE ASC
+                """).fetchall()
+            ],
             "total_reports": total,
         })
         return set_lang_cookie(response, lang)
@@ -2807,7 +2826,6 @@ async def view_animal(request: Request, animal_id: int):
             row["display_type"] = humanize_report_type(
                 row.get("report_type"), row.get("panel_name"), lang
             )
-            row["summary"] = summarize_report_overview(row, lang)
 
         overview_reports, _ = db.list_reports_paginated(
             animal_id=animal_id,
@@ -2818,7 +2836,6 @@ async def view_animal(request: Request, animal_id: int):
             row["display_type"] = humanize_report_type(
                 row.get("report_type"), row.get("panel_name"), lang
             )
-            row["summary"] = summarize_report_overview(row, lang)
 
         clinical_notes = db.get_clinical_notes_for_animal(animal_id)
         vet_history = db.get_vet_assignment_history(animal_id)
@@ -2896,6 +2913,7 @@ async def update_animal(
     age_years: float = Form(None),
     age_months: int = Form(None),
     sex: str = Form("U"),
+    neutered: str = Form(None),
     responsible_vet: str = Form(None),
     microchip: str = Form(None),
     patient_since: str = Form(None),
@@ -2923,6 +2941,7 @@ async def update_animal(
             "name": name,
             "species": species,
             "sex": sex,
+            "neutered": parse_optional_bool(neutered),
         }
         if owner_name is not None:
             update_fields["owner_name"] = owner_name if owner_name.strip() else None

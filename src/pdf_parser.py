@@ -94,6 +94,25 @@ def _parse_species(value: Optional[str]) -> str:
     return normalized or "Canídeo"
 
 
+def _extract_ordering_vet_from_text(text: str) -> Optional[str]:
+    patterns = (
+        r'Nome\s+do\s+Veterin[áa]rio\s*:?\s*([^\n\r]+)',
+        r'Veterin[áa]rio/a\s*:?\s*([^\n\r]+)',
+        r'Attending\s+Vet\s*:?\s*([^\n\r]+)',
+        r'M[ée]dico\s+Veterin[áa]rio\s*:?\s*(?:Nome:\s*[^\n\r]+\s*)?([^\n\r]+)',
+        r'Veterin[áa]rio\s*:?\s*([^\n\r]+)',
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text or "", re.IGNORECASE)
+        if not match:
+            continue
+        value = _normalize_space(match.group(1))
+        value = re.split(r'\s{2,}|Idade:|Esp[ée]cie:|Ra[çc]a:', value)[0].strip(" :-")
+        if value:
+            return value
+    return None
+
+
 def _extract_pdf_text(pdf_path: str) -> str:
     text_parts: List[str] = []
     with pdfplumber.open(pdf_path) as pdf:
@@ -619,6 +638,7 @@ class DNAtechParser:
             report_type=report_type,
             external_report_id=report_number or None,
             report_source=pdf_path,
+            ordering_vet=_extract_ordering_vet_from_text(text),
             panel_name=panel_name,
             pdf_path=pdf_path
         )
@@ -1740,7 +1760,6 @@ class GenevetUrinalysisParser:
             age_years=age_years,
             age_months=age_months,
             sex=sex,
-            responsible_vet=self._extract_vet(parse_text),
         )
 
         session = TestSession(
@@ -1756,6 +1775,7 @@ class GenevetUrinalysisParser:
             reported_at=datetime.combine(closing_date, datetime.min.time()) if closing_date else None,
             received_at=test_datetime,
             clinic_name=self._extract_first_clinic_line(parse_text),
+            ordering_vet=self._extract_vet(parse_text) or _extract_ordering_vet_from_text(parse_text),
             panel_name="urinalysis_upc",
             pdf_path=pdf_path,
         )
@@ -1915,7 +1935,6 @@ class VedisCytologyParser:
             neutered=patient["neutered"],
             age_years=patient["age_years"],
             age_months=patient["age_months"],
-            responsible_vet=attending_vet,
         )
         session = TestSession(
             report_number=f"VEDIS/{exam_id}" if exam_id else f"VEDIS/{os.path.basename(pdf_path)}",
@@ -1930,6 +1949,7 @@ class VedisCytologyParser:
             reported_at=datetime.combine(report_date, datetime.min.time()) if report_date else None,
             received_at=datetime.combine(receipt_date, datetime.min.time()) if receipt_date else None,
             clinic_name=clinic_name or "Clínica Veterinária CVS SOS Animal",
+            ordering_vet=attending_vet,
             panel_name="cytology",
             raw_metadata_json=json.dumps({
                 "attending_vet": attending_vet,
@@ -2384,7 +2404,6 @@ class VedisHistologyParser(VedisCytologyParser):
             neutered=patient["neutered"],
             age_years=patient["age_years"],
             age_months=patient["age_months"],
-            responsible_vet=attending_vet,
         )
         session = TestSession(
             report_number=f"VEDIS/{exam_id}" if exam_id else f"VEDIS/{os.path.basename(pdf_path)}",
@@ -2399,6 +2418,7 @@ class VedisHistologyParser(VedisCytologyParser):
             reported_at=datetime.combine(report_date, datetime.min.time()) if report_date else None,
             received_at=datetime.combine(receipt_date, datetime.min.time()) if receipt_date else None,
             clinic_name=clinic_name or "Clínica Veterinária CVS SOS Animal",
+            ordering_vet=attending_vet,
             panel_name="histology",
             raw_metadata_json=json.dumps({
                 "attending_vet": attending_vet,
@@ -2465,7 +2485,6 @@ class VedisImmunocytochemistryParser:
             neutered=patient["neutered"],
             age_years=patient["age_years"],
             age_months=patient["age_months"],
-            responsible_vet=attending_vet,
         )
         session = TestSession(
             report_number=f"VEDIS/{exam_id}" if exam_id else f"VEDIS/{os.path.basename(pdf_path)}",
@@ -2480,6 +2499,7 @@ class VedisImmunocytochemistryParser:
             reported_at=datetime.combine(report_date, datetime.min.time()) if report_date else None,
             received_at=datetime.combine(receipt_date, datetime.min.time()) if receipt_date else None,
             clinic_name=clinic_name or "Clínica Veterinária CVS SOS Animal",
+            ordering_vet=attending_vet,
             panel_name="immunocytochemistry",
             raw_metadata_json=json.dumps({
                 "general_comment": comment,
@@ -2761,7 +2781,6 @@ class GenericReportParser:
             neutered=patient["neutered"],
             age_years=patient["age_years"],
             age_months=patient["age_months"],
-            responsible_vet=attending_vet,
         )
         session = TestSession(
             report_number=f"VEDIS/{exam_id}" if exam_id else f"PDF/{os.path.splitext(filename)[0]}",
@@ -2776,6 +2795,7 @@ class GenericReportParser:
             reported_at=datetime.combine(report_date, datetime.min.time()) if report_date else None,
             received_at=datetime.combine(receipt_date, datetime.min.time()) if receipt_date else None,
             clinic_name="Clínica Veterinária CVS SOS Animal" if "Clínica Veterinária CVS" in text else None,
+            ordering_vet=attending_vet,
             pdf_path=pdf_path,
         )
         return animal, session
@@ -2806,6 +2826,7 @@ class GenericReportParser:
             report_type="unstructured_report",
             external_report_id=report_number,
             report_source=pdf_path,
+            ordering_vet=_extract_ordering_vet_from_text(text),
             panel_name=None,
             pdf_path=pdf_path,
         )

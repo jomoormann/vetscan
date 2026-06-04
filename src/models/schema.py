@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS test_sessions (
     reported_at TIMESTAMP,
     received_at TIMESTAMP,
     clinic_name TEXT,
+    ordering_vet TEXT,
     panel_name TEXT,
     raw_metadata_json TEXT,
     pdf_path TEXT,

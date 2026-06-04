@@ -45,14 +45,15 @@ class SessionRepository:
                                       source_system, report_type,
                                       external_report_id, report_source,
                                       reported_at, received_at, clinic_name,
-                                      panel_name, raw_metadata_json,
+                                      ordering_vet, panel_name, raw_metadata_json,
                                       pdf_path, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (session.animal_id, session.report_number, session.test_date,
               session.closing_date, session.sample_type, session.lab_name,
               session.source_system, session.report_type,
               session.external_report_id, session.report_source,
               session.reported_at, session.received_at, session.clinic_name,
+              session.ordering_vet,
               session.panel_name, session.raw_metadata_json,
               session.pdf_path, session.notes))
         self.db.conn.commit()
@@ -96,12 +97,13 @@ class SessionRepository:
                     OR ts.external_report_id LIKE ?
                     OR ts.report_source LIKE ?
                     OR ts.clinic_name LIKE ?
+                    OR ts.ordering_vet LIKE ?
                     OR a.name LIKE ?
                     OR a.owner_name LIKE ?
                     OR a.microchip LIKE ?
                 )
             """)
-            params.extend([wildcard] * 7)
+            params.extend([wildcard] * 8)
 
         if source_system:
             filters.append("ts.source_system = ?")
@@ -112,7 +114,7 @@ class SessionRepository:
             params.append(report_type)
 
         if responsible_vet:
-            filters.append("a.responsible_vet = ?")
+            filters.append("ts.ordering_vet = ?")
             params.append(responsible_vet)
 
         if animal_id is not None:
@@ -135,8 +137,8 @@ class SessionRepository:
             "report_desc": "COALESCE(ts.report_number, ts.external_report_id, '') COLLATE NOCASE DESC, ts.id DESC",
             "animal_asc": "a.name COLLATE NOCASE ASC, COALESCE(ts.test_date, DATE(ts.created_at)) DESC",
             "animal_desc": "a.name COLLATE NOCASE DESC, COALESCE(ts.test_date, DATE(ts.created_at)) DESC",
-            "vet_asc": "COALESCE(a.responsible_vet, '') COLLATE NOCASE ASC, a.name COLLATE NOCASE ASC",
-            "vet_desc": "COALESCE(a.responsible_vet, '') COLLATE NOCASE DESC, a.name COLLATE NOCASE ASC",
+            "vet_asc": "COALESCE(ts.ordering_vet, '') COLLATE NOCASE ASC, a.name COLLATE NOCASE ASC",
+            "vet_desc": "COALESCE(ts.ordering_vet, '') COLLATE NOCASE DESC, a.name COLLATE NOCASE ASC",
             "source_asc": "COALESCE(ts.source_system, '') COLLATE NOCASE ASC, COALESCE(ts.clinic_name, ts.lab_name, '') COLLATE NOCASE ASC",
             "source_desc": "COALESCE(ts.source_system, '') COLLATE NOCASE DESC, COALESCE(ts.clinic_name, ts.lab_name, '') COLLATE NOCASE DESC",
         }.get(sort, "COALESCE(ts.test_date, DATE(ts.created_at)) DESC, ts.id DESC")
@@ -149,6 +151,7 @@ class SessionRepository:
                 a.species AS animal_species,
                 a.owner_name AS owner_name,
                 a.responsible_vet AS responsible_vet,
+                ts.ordering_vet AS ordering_vet,
                 (
                     SELECT COUNT(*)
                     FROM protein_results pr
@@ -259,6 +262,7 @@ class SessionRepository:
                 reported_at = ?,
                 received_at = ?,
                 clinic_name = ?,
+                ordering_vet = ?,
                 panel_name = ?,
                 raw_metadata_json = ?,
                 pdf_path = ?,
@@ -278,6 +282,7 @@ class SessionRepository:
             session.reported_at,
             session.received_at,
             session.clinic_name,
+            session.ordering_vet,
             session.panel_name,
             session.raw_metadata_json,
             session.pdf_path,

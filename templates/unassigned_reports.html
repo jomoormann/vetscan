@@ -72,6 +72,10 @@
                         <div class="summary-block-value">{{ summary.clinic_name or report.clinic_name or '--' }}</div>
                     </div>
                     <div class="summary-block">
+                        <div class="summary-block-label">{{ t(lang, 'common.ordering_vet') }}</div>
+                        <div class="summary-block-value">{{ summary.ordering_vet or '--' }}</div>
+                    </div>
+                    <div class="summary-block">
                         <div class="summary-block-label">{{ t(lang, 'unassigned.source_reference') }}</div>
                         <div class="summary-block-value">{{ report.report_source or '--' }}</div>
                     </div>

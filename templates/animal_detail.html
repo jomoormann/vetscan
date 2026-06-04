@@ -49,7 +49,7 @@
                                 <th>{{ t(lang, 'common.date') }}</th>
                                 <th>{{ t(lang, 'common.report') }}</th>
                                 <th>{{ t(lang, 'animal_detail.type') }}</th>
-                                <th>{{ t(lang, 'common.summary') }}</th>
+                                <th>{{ t(lang, 'common.ordering_vet') }}</th>
                                 <th>{{ t(lang, 'common.actions') }}</th>
                             </tr>
                         </thead>
@@ -63,7 +63,7 @@
                                     <div class="table-meta">{{ report.source_system or '--' }}</div>
                                 </td>
                                 <td>{{ report.display_type }}</td>
-                                <td>{{ report.summary }}</td>
+                                <td>{{ report.ordering_vet or '--' }}</td>
                                 <td><a href="/session/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
                             </tr>
                             {% endfor %}
@@ -142,8 +142,8 @@
                                 <th><a class="sort-link" href="{{ report_sort_links.date.url }}">{{ t(lang, 'common.date') }}{% if report_sort_links.date.state %}<span class="sort-state">{{ '↑' if report_sort_links.date.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
                                 <th><a class="sort-link" href="{{ report_sort_links.report.url }}">{{ t(lang, 'common.report') }}{% if report_sort_links.report.state %}<span class="sort-state">{{ '↑' if report_sort_links.report.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
                                 <th>{{ t(lang, 'animal_detail.type') }}</th>
+                                <th>{{ t(lang, 'common.ordering_vet') }}</th>
                                 <th><a class="sort-link" href="{{ report_sort_links.source.url }}">{{ t(lang, 'common.source') }}{% if report_sort_links.source.state %}<span class="sort-state">{{ '↑' if report_sort_links.source.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
-                                <th>{{ t(lang, 'common.summary') }}</th>
                                 <th>{{ t(lang, 'common.actions') }}</th>
                             </tr>
                         </thead>
@@ -157,11 +157,11 @@
                                     <div class="table-meta">{{ report.sample_type or '--' }}</div>
                                 </td>
                                 <td>{{ report.display_type }}</td>
+                                <td>{{ report.ordering_vet or '--' }}</td>
                                 <td>
                                     <div>{{ report.source_system or '--' }}</div>
                                     <div class="table-meta">{{ report.clinic_name or report.lab_name or '--' }}</div>
                                 </td>
-                                <td>{{ report.summary }}</td>
                                 <td><a href="/session/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
                             </tr>
                             {% endfor %}
@@ -319,6 +319,14 @@
                             <option value="F" {% if animal.sex == 'F' %}selected{% endif %}>{{ t(lang, 'common.female') }}</option>
                         </select>
                     </div>
+                    <div class="field">
+                        <label for="profile-neutered">{{ t(lang, 'animal_detail.neutered') }}</label>
+                        <select id="profile-neutered" name="neutered">
+                            <option value="" {% if animal.neutered is none %}selected{% endif %}>{{ t(lang, 'common.unknown') }}</option>
+                            <option value="true" {% if animal.neutered is sameas true %}selected{% endif %}>{{ t(lang, 'common.yes') }}</option>
+                            <option value="false" {% if animal.neutered is sameas false %}selected{% endif %}>{{ t(lang, 'common.no') }}</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="field">
                     <label for="profile-history">{{ t(lang, 'animal_form.medical_history') }}</label>
@@ -409,8 +417,16 @@
                     <div class="summary-block-value">{{ animal.age_display }}</div>
                 </div>
                 <div class="summary-block">
-                    <div class="summary-block-label">{{ t(lang, 'animal_detail.patient_since') }}</div>
-                    <div class="summary-block-value">{{ animal.patient_since|format_date if animal.patient_since else '--' }}</div>
+                    <div class="summary-block-label">{{ t(lang, 'animal_detail.neutered') }}</div>
+                    <div class="summary-block-value">
+                        {% if animal.neutered is sameas true %}
+                        {{ t(lang, 'common.yes') }}
+                        {% elif animal.neutered is sameas false %}
+                        {{ t(lang, 'common.no') }}
+                        {% else %}
+                        --
+                        {% endif %}
+                    </div>
                 </div>
                 <div class="summary-block">
                     <div class="summary-block-label">{{ t(lang, 'common.species') }}</div>

@@ -34,6 +34,12 @@ class AnimalRepository:
         """
         self.db = db
 
+    def _animal_from_row(self, row) -> Animal:
+        data = dict(row)
+        if data.get("neutered") is not None:
+            data["neutered"] = bool(data["neutered"])
+        return Animal(**data)
+
     def create(self, animal: Animal) -> int:
         """
         Insert a new animal and return its ID.
@@ -73,7 +79,7 @@ class AnimalRepository:
             "SELECT * FROM animals WHERE id = ?", (animal_id,))
         row = cursor.fetchone()
         if row:
-            return Animal(**dict(row))
+            return self._animal_from_row(row)
         return None
 
     def find_by_name(self, name: str) -> List[Animal]:
@@ -88,7 +94,7 @@ class AnimalRepository:
         """
         cursor = self.db.conn.execute(
             "SELECT * FROM animals WHERE name LIKE ?", (f"%{name}%",))
-        return [Animal(**dict(row)) for row in cursor.fetchall()]
+        return [self._animal_from_row(row) for row in cursor.fetchall()]
 
     def _normalize_text(self, value: Optional[str]) -> str:
         if not value:
@@ -240,7 +246,7 @@ class AnimalRepository:
 
     def _get_all_candidates(self) -> List[Animal]:
         cursor = self.db.conn.execute("SELECT * FROM animals")
-        return [Animal(**dict(row)) for row in cursor.fetchall()]
+        return [self._animal_from_row(row) for row in cursor.fetchall()]
 
     def analyze_match(self, animal: Animal,
                       identifiers: Optional[List[AnimalIdentifier]] = None) -> AnimalMatchDecision:
@@ -662,7 +668,7 @@ class AnimalRepository:
             List of all animals
         """
         cursor = self.db.conn.execute("SELECT * FROM animals ORDER BY name")
-        return [Animal(**dict(row)) for row in cursor.fetchall()]
+        return [self._animal_from_row(row) for row in cursor.fetchall()]
 
     def update(self, animal_id: int,
                changed_by_user_id: Optional[int] = None,
