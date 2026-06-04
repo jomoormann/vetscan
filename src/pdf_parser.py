@@ -116,7 +116,10 @@ def _extract_ordering_vet_from_text(text: str) -> Optional[str]:
 def _is_plausible_ordering_vet_value(value: Optional[str]) -> bool:
     if not value:
         return False
-    normalized = _normalize_space(value).strip(" :-")
+    raw = _normalize_space(value)
+    if raw.startswith("-"):
+        return False
+    normalized = raw.strip(" :-")
     if not normalized:
         return False
     lowered = normalized.lower()
@@ -133,8 +136,11 @@ def _is_plausible_ordering_vet_value(value: Optional[str]) -> bool:
         "shrinkage",
         "sample",
         "general comment",
+        "size:",
     )
     if any(fragment in lowered for fragment in blocked_fragments):
+        return False
+    if re.search(r'\d+(?:[.,]\d+)?\s*x\s*\d+', lowered):
         return False
     if len(normalized.split()) > 5:
         return False

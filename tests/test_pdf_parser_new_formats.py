@@ -39,6 +39,7 @@ class NewReportFormatTests(unittest.TestCase):
         parser = VedisCytologyParser()
         self.assertIsNone(parser._next_first_column_after_label("Veterinário/a\n\nTurbididade: transparente", "Veterinário/a"))
         self.assertIsNone(parser._next_first_column_after_label("Attending Vet\n\nDESCRIÇÃO MICROSCÓPICA", "Attending Vet"))
+        self.assertIsNone(parser._next_first_column_after_label("Attending Vet\n- Size: 6.0x2.2x0.5 cm", "Attending Vet"))
         self.assertEqual(parser._next_first_column_after_label("Veterinário/a\nDra. Carina Marta", "Veterinário/a"), "Dra. Carina Marta")
 
     def test_dnatech_urine_biochemistry_imports_without_proteinogram(self):
