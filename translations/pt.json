@@ -135,7 +135,7 @@
     "no_animals_title": "Nenhum animal registado",
     "no_animals_description": "Faça upload de um relatório PDF para adicionar o primeiro animal.",
     "registry": "Registo de pacientes",
-    "subtitle": "Pesquise, filtre e abra os animais relevantes sem carregar a lista completa de uma vez.",
+    "subtitle": "Pesquise, filtre e abra os animais relevantes.",
     "new_animal": "Novo animal",
     "search_label": "Pesquisar animais",
     "search_placeholder": "Pesquisar animais, tutores, microchips, raças ou veterinários",
@@ -701,7 +701,7 @@
   "reports": {
     "title": "Relatórios",
     "registry": "Registo de relatórios",
-    "subtitle": "Pesquise relatórios importados de toda a clínica e abra diretamente o animal ou o detalhe certo.",
+    "subtitle": "Pesquise relatórios importados de toda a clínica de acordo com o animal, laboratório, tipo de relatório ou nome do veterinário responsável.",
     "unassigned_with_count": "Por atribuir ({count})",
     "search_label": "Pesquisar relatórios",
     "search_placeholder": "Pesquisar relatórios, animais, tutores, origem ou clínica",

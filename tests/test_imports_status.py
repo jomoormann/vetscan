@@ -245,9 +245,11 @@ class ImportStatusTests(unittest.TestCase):
                 animal_id=animal_id,
                 report_number="31370/1611430",
                 test_date=date.today(),
+                lab_name="DNAtech",
                 source_system="dnatech",
                 report_type="biochemistry",
                 panel_name="biochemistry",
+                clinic_name="Clínica Veterinária CVS SOS Animal",
                 ordering_vet="Dr Ordering",
             ))
             service.db.conn.execute("""
@@ -296,6 +298,7 @@ class ImportStatusTests(unittest.TestCase):
         self.assertIn("31370/1611430", response.text)
         self.assertIn("Dr Ordering", response.text)
         self.assertIn("Veterinário do pedido", response.text)
+        self.assertNotIn("Comece pelo que precisa de ação", response.text)
         self.assertNotIn("<th>Resumo</th>", response.text)
         self.assertIn('class="nav-badge"', response.text)
         self.assertIn(">1</span>", response.text)
@@ -306,12 +309,59 @@ class ImportStatusTests(unittest.TestCase):
         reports_response = self.client.get("/reports")
         self.assertEqual(reports_response.status_code, 200)
         self.assertIn("Dr Ordering", reports_response.text)
+        self.assertIn("Pesquise relatórios importados de toda a clínica de acordo com o animal, laboratório, tipo de relatório ou nome do veterinário responsável.", reports_response.text)
+        self.assertIn("<td>DNATech</td>", reports_response.text)
+        self.assertNotIn("Clínica Veterinária CVS SOS Animal", reports_response.text)
         self.assertNotIn("<th>Resumo</th>", reports_response.text)
 
         animal_response = self.client.get(f"/animal/{animal_id}")
         self.assertEqual(animal_response.status_code, 200)
         self.assertIn("Dr Ordering", animal_response.text)
+        self.assertIn("DNATech", animal_response.text)
         self.assertNotIn("<th>Resumo</th>", animal_response.text)
+
+        animals_response = self.client.get("/animals")
+        self.assertEqual(animals_response.status_code, 200)
+        self.assertIn("Pesquise, filtre e abra os animais relevantes.", animals_response.text)
+        self.assertNotIn("sem carregar a lista completa de uma vez", animals_response.text)
+
+    def test_reports_ordering_vet_filter_merges_title_variants(self):
+        user = self._create_user()
+        login_response = self._login(email=user.email)
+        self.assertEqual(login_response.status_code, 302)
+
+        service = web_server.get_service()
+        try:
+            animal_one = service.db.create_animal(Animal(name="Luna", species="Canídeo"))
+            animal_two = service.db.create_animal(Animal(name="Milo", species="Felino"))
+            service.db.create_test_session(TestSession(
+                animal_id=animal_one,
+                report_number="SOFIA-1",
+                test_date=date.today(),
+                source_system="vedis",
+                report_type="cytology",
+                ordering_vet="Dra. Sofia Castro",
+            ))
+            service.db.create_test_session(TestSession(
+                animal_id=animal_two,
+                report_number="SOFIA-2",
+                test_date=date.today(),
+                source_system="dnatech",
+                report_type="biochemistry",
+                ordering_vet="Sofia Castro",
+            ))
+        finally:
+            service.close()
+
+        reports_response = self.client.get("/reports")
+        self.assertEqual(reports_response.status_code, 200)
+        self.assertEqual(reports_response.text.count('<option value="Sofia Castro"'), 1)
+        self.assertNotIn('<option value="Dra. Sofia Castro"', reports_response.text)
+
+        filtered_response = self.client.get("/reports?responsible_vet=Sofia%20Castro")
+        self.assertEqual(filtered_response.status_code, 200)
+        self.assertIn("SOFIA-1", filtered_response.text)
+        self.assertIn("SOFIA-2", filtered_response.text)
 
     def test_animal_profile_updates_and_displays_neutered_status(self):
         user = self._create_user()

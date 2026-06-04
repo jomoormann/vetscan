@@ -5,12 +5,48 @@ Handles database operations for TestSession, ProteinResult,
 BiochemistryResult, and UrinalysisResult entities.
 """
 
+import re
 from typing import Dict, List, Optional, Tuple
 
 from models.domain import (
     TestSession, ProteinResult, BiochemistryResult, UrinalysisResult,
     SessionMeasurement, PathologyFinding, SessionAsset, UnassignedReport
 )
+
+
+VET_HONORIFIC_RE = re.compile(
+    r"^(?:dr\s*\(?a\)?\.?|dra\.?|dr\.?|doutora?|prof(?:essora?)?\.?)\s+",
+    re.IGNORECASE,
+)
+
+
+def canonicalize_ordering_vet(value: Optional[str]) -> str:
+    text = re.sub(r"\s+", " ", (value or "").strip()).strip(" ,;:")
+    previous = None
+    while text and text != previous:
+        previous = text
+        text = VET_HONORIFIC_RE.sub("", text).strip(" ,;:")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def ordering_vet_sql_normalized(column: str = "ts.ordering_vet") -> str:
+    expr = f"LOWER(TRIM({column}))"
+    for prefix in (
+        "dr(a). ",
+        "dr(a) ",
+        "dra. ",
+        "dra ",
+        "dr. ",
+        "dr ",
+        "doutora ",
+        "doutor ",
+        "professora ",
+        "professor ",
+        "prof. ",
+        "prof ",
+    ):
+        expr = f"REPLACE({expr}, '{prefix}', '')"
+    return f"TRIM({expr})"
 
 
 class SessionRepository:
@@ -114,8 +150,8 @@ class SessionRepository:
             params.append(report_type)
 
         if responsible_vet:
-            filters.append("ts.ordering_vet = ?")
-            params.append(responsible_vet)
+            filters.append(f"{ordering_vet_sql_normalized()} = ?")
+            params.append(canonicalize_ordering_vet(responsible_vet).casefold())
 
         if animal_id is not None:
             filters.append("ts.animal_id = ?")
@@ -139,8 +175,8 @@ class SessionRepository:
             "animal_desc": "a.name COLLATE NOCASE DESC, COALESCE(ts.test_date, DATE(ts.created_at)) DESC",
             "vet_asc": "COALESCE(ts.ordering_vet, '') COLLATE NOCASE ASC, a.name COLLATE NOCASE ASC",
             "vet_desc": "COALESCE(ts.ordering_vet, '') COLLATE NOCASE DESC, a.name COLLATE NOCASE ASC",
-            "source_asc": "COALESCE(ts.source_system, '') COLLATE NOCASE ASC, COALESCE(ts.clinic_name, ts.lab_name, '') COLLATE NOCASE ASC",
-            "source_desc": "COALESCE(ts.source_system, '') COLLATE NOCASE DESC, COALESCE(ts.clinic_name, ts.lab_name, '') COLLATE NOCASE DESC",
+            "source_asc": "COALESCE(ts.lab_name, ts.source_system, '') COLLATE NOCASE ASC, ts.id ASC",
+            "source_desc": "COALESCE(ts.lab_name, ts.source_system, '') COLLATE NOCASE DESC, ts.id DESC",
         }.get(sort, "COALESCE(ts.test_date, DATE(ts.created_at)) DESC, ts.id DESC")
 
         offset = max(page - 1, 0) * page_size

@@ -1341,6 +1341,56 @@ def build_session_groups(sessions_with_results: List[dict],
     return sorted(grouped.values(), key=lambda group: group["sort_order"])
 
 
+VET_HONORIFIC_RE = re.compile(
+    r"^(?:dr\s*\(?a\)?\.?|dra\.?|dr\.?|doutora?|prof(?:essora?)?\.?)\s+",
+    re.IGNORECASE,
+)
+
+
+def canonicalize_vet_name(value: Optional[str]) -> str:
+    """Normalize ordering-vet labels for display/filter grouping."""
+    text = re.sub(r"\s+", " ", (value or "").strip()).strip(" ,;:")
+    previous = None
+    while text and text != previous:
+        previous = text
+        text = VET_HONORIFIC_RE.sub("", text).strip(" ,;:")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def list_ordering_vet_options(conn) -> List[str]:
+    """Return unique ordering-vet filter options without title-only duplicates."""
+    options: Dict[str, str] = {}
+    rows = conn.execute("""
+        SELECT DISTINCT ordering_vet
+        FROM test_sessions
+        WHERE ordering_vet IS NOT NULL AND TRIM(ordering_vet) != ''
+        ORDER BY ordering_vet COLLATE NOCASE ASC
+    """).fetchall()
+    for row in rows:
+        canonical = canonicalize_vet_name(row["ordering_vet"])
+        if not canonical:
+            continue
+        key = canonical.casefold()
+        options.setdefault(key, canonical)
+    return sorted(options.values(), key=lambda name: name.casefold())
+
+
+def display_lab_name(source_system: Optional[str], lab_name: Optional[str]) -> str:
+    """Display only the lab identity for report source columns."""
+    source_key = re.sub(r"[^a-z0-9]+", "", (source_system or "").casefold())
+    lab_key = re.sub(r"[^a-z0-9]+", "", (lab_name or "").casefold())
+    combined = source_key or lab_key
+    if combined == "dnatech" or lab_key == "dnatech":
+        return "DNATech"
+    if combined == "vedis" or lab_key == "vedis":
+        return "Vedis"
+    if "genevet" in {source_key, lab_key} or "genevet" in (lab_name or "").casefold():
+        return "Genevet"
+    if combined == "cvsanalyzer" or "cvs" in lab_key:
+        return "CVS"
+    return (lab_name or source_system or "").strip()
+
+
 def get_lang(request: Request) -> str:
     """Get language from request (query param > cookie > accept-language)"""
     query_lang = request.query_params.get('lang')
@@ -2513,6 +2563,7 @@ async def home(request: Request):
             row["display_type"] = humanize_report_type(
                 row.get("report_type"), row.get("panel_name"), lang
             )
+            row["lab_display"] = display_lab_name(row.get("source_system"), row.get("lab_name"))
 
         response = templates.TemplateResponse(request, "index.html", {
             "request": request,
@@ -2718,7 +2769,7 @@ async def list_reports(request: Request):
         search = (request.query_params.get("q") or "").strip() or None
         source_system = (request.query_params.get("source_system") or "").strip() or None
         report_type = (request.query_params.get("report_type") or "").strip() or None
-        responsible_vet = (request.query_params.get("responsible_vet") or "").strip() or None
+        responsible_vet = canonicalize_vet_name(request.query_params.get("responsible_vet")) or None
         sort = (request.query_params.get("sort") or "date_desc").strip()
 
         rows, total = service.db.list_reports_paginated(
@@ -2734,6 +2785,7 @@ async def list_reports(request: Request):
             row["display_type"] = humanize_report_type(
                 row.get("report_type"), row.get("panel_name"), lang
             )
+            row["lab_display"] = display_lab_name(row.get("source_system"), row.get("lab_name"))
 
         pagination = build_pagination(request, total, page, page_size)
         report_types = [{
@@ -2776,14 +2828,7 @@ async def list_reports(request: Request):
             },
             "source_systems": source_systems,
             "report_types": report_types,
-            "responsible_vets": [
-                row["ordering_vet"] for row in service.db.conn.execute("""
-                    SELECT DISTINCT ordering_vet
-                    FROM test_sessions
-                    WHERE ordering_vet IS NOT NULL AND TRIM(ordering_vet) != ''
-                    ORDER BY ordering_vet COLLATE NOCASE ASC
-                """).fetchall()
-            ],
+            "responsible_vets": list_ordering_vet_options(service.db.conn),
             "total_reports": total,
         })
         return set_lang_cookie(response, lang)
@@ -2826,6 +2871,7 @@ async def view_animal(request: Request, animal_id: int):
             row["display_type"] = humanize_report_type(
                 row.get("report_type"), row.get("panel_name"), lang
             )
+            row["lab_display"] = display_lab_name(row.get("source_system"), row.get("lab_name"))
 
         overview_reports, _ = db.list_reports_paginated(
             animal_id=animal_id,
@@ -2836,6 +2882,7 @@ async def view_animal(request: Request, animal_id: int):
             row["display_type"] = humanize_report_type(
                 row.get("report_type"), row.get("panel_name"), lang
             )
+            row["lab_display"] = display_lab_name(row.get("source_system"), row.get("lab_name"))
 
         clinical_notes = db.get_clinical_notes_for_animal(animal_id)
         vet_history = db.get_vet_assignment_history(animal_id)

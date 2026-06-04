@@ -60,7 +60,7 @@
                                 <td>
                                     {% set overview_label = report.report_number or report.external_report_id or ('Report ' ~ report.id) %}
                                     <div class="table-title text-truncate" style="max-width: 14rem;" title="{{ overview_label }}">{{ overview_label|short_report_label(20) }}</div>
-                                    <div class="table-meta">{{ report.source_system or '--' }}</div>
+                                    <div class="table-meta">{{ report.lab_display or report.lab_name or '--' }}</div>
                                 </td>
                                 <td>{{ report.display_type }}</td>
                                 <td>{{ report.ordering_vet or '--' }}</td>
@@ -158,10 +158,7 @@
                                 </td>
                                 <td>{{ report.display_type }}</td>
                                 <td>{{ report.ordering_vet or '--' }}</td>
-                                <td>
-                                    <div>{{ report.source_system or '--' }}</div>
-                                    <div class="table-meta">{{ report.clinic_name or report.lab_name or '--' }}</div>
-                                </td>
+                                <td>{{ report.lab_display or report.lab_name or '--' }}</td>
                                 <td><a href="/session/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
                             </tr>
                             {% endfor %}

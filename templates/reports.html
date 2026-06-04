@@ -92,10 +92,7 @@
                             <div class="table-meta">{{ report.animal_species or '--' }}</div>
                         </td>
                         <td>{{ report.ordering_vet or '--' }}</td>
-                        <td>
-                            <div>{{ report.source_system or '--' }}</div>
-                            <div class="table-meta">{{ report.clinic_name or report.lab_name or '--' }}</div>
-                        </td>
+                        <td>{{ report.lab_display or report.lab_name or '--' }}</td>
                         <td><span class="badge badge-normal">{{ t(lang, 'common.imported') }}</span></td>
                         <td><a href="/session/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
                     </tr>
