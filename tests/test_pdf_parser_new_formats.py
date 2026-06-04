@@ -19,6 +19,7 @@ from email_importer import EmailImporter
 from app import VetProteinService
 from models import Animal, BiochemistryResult, TestSession as DomainTestSession, UrinalysisResult
 from pdf_parser import DNAtechParser, VedisCytologyParser, detect_report_type, parse_lab_report
+from pdf_parser import _extract_ordering_vet_from_text
 from pdf_parser import ParsedReport
 from pdf_validator import PDFValidator
 
@@ -29,6 +30,12 @@ SAMPLE_DIR = Path(__file__).resolve().parents[2] / "new reports"
 class NewReportFormatTests(unittest.TestCase):
     def setUp(self):
         self.validator = PDFValidator()
+
+    def test_ordering_vet_extractor_does_not_cross_blank_label_lines(self):
+        self.assertIsNone(_extract_ordering_vet_from_text("Veterinário/a:\nTurbididade: transparente"))
+        self.assertIsNone(_extract_ordering_vet_from_text("Veterinário:\nshrinkage and damaged cells). Few epithelial cells without atypia and"))
+        self.assertIsNone(_extract_ordering_vet_from_text("Nome do Veterinário: Dr(a)."))
+        self.assertEqual(_extract_ordering_vet_from_text("Attending Vet: Sofia Castro"), "Sofia Castro")
 
     def test_dnatech_urine_biochemistry_imports_without_proteinogram(self):
         path = SAMPLE_DIR / "bolt22799_1589395.pdf"

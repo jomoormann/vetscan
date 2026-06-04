@@ -96,19 +96,20 @@ def _parse_species(value: Optional[str]) -> str:
 
 def _extract_ordering_vet_from_text(text: str) -> Optional[str]:
     patterns = (
-        r'Nome\s+do\s+Veterin[áa]rio\s*:?\s*([^\n\r]+)',
-        r'Veterin[áa]rio/a\s*:?\s*([^\n\r]+)',
-        r'Attending\s+Vet\s*:?\s*([^\n\r]+)',
-        r'M[ée]dico\s+Veterin[áa]rio\s*:?\s*(?:Nome:\s*[^\n\r]+\s*)?([^\n\r]+)',
-        r'Veterin[áa]rio\s*:?\s*([^\n\r]+)',
+        r'Nome[ \t]+do[ \t]+Veterin[áa]rio[ \t]*:?[ \t]*([^\n\r]+)',
+        r'Veterin[áa]rio/a[ \t]*:?[ \t]*([^\n\r]+)',
+        r'Attending[ \t]+Vet[ \t]*:?[ \t]*([^\n\r]+)',
+        r'M[ée]dico[ \t]+Veterin[áa]rio[ \t]*:?[ \t]*(?:Nome:[ \t]*[^\n\r]+[ \t]*)?([^\n\r]+)',
+        r'Veterin[áa]rio(?!/a)[ \t]*:?[ \t]*([^\n\r]+)',
     )
+    invalid_values = {"dr(a).", "dr(a)", "dr.", "dra.", "dr", "dra"}
     for pattern in patterns:
         match = re.search(pattern, text or "", re.IGNORECASE)
         if not match:
             continue
         value = _normalize_space(match.group(1))
         value = re.split(r'\s{2,}|Idade:|Esp[ée]cie:|Ra[çc]a:', value)[0].strip(" :-")
-        if value:
+        if value and value.lower() not in invalid_values:
             return value
     return None
 
