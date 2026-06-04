@@ -30,7 +30,7 @@ db_base.sqlite3.connect = _threaded_connect
 import web_server
 from auth import AuthService
 from fastapi.testclient import TestClient
-from models import Animal, TestSession
+from models import Animal, PathologyFinding, TestSession
 
 
 class ImportStatusTests(unittest.TestCase):
@@ -163,6 +163,214 @@ class ImportStatusTests(unittest.TestCase):
         self.assertIn("Bobby", response.text)
         self.assertNotIn("Precisa de atribuição", response.text)
         self.assertNotIn("Em fila", response.text)
+
+    def test_admin_can_acknowledge_failed_import_without_dashboard_noise(self):
+        user = self._create_user()
+        login_response = self._login(email=user.email)
+        self.assertEqual(login_response.status_code, 302)
+
+        service = web_server.get_service()
+        try:
+            failed_id = service.db.conn.execute("""
+                INSERT INTO email_import_log (
+                    email_uid,
+                    email_subject,
+                    email_from,
+                    attachment_name,
+                    validation_result,
+                    import_success,
+                    error_message
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                "failed-1",
+                "failed import",
+                "reports@example.com",
+                "failed.pdf",
+                "missing_dnatech_markers",
+                0,
+                "PDF does not match any supported report type",
+            )).lastrowid
+            service.db.conn.commit()
+        finally:
+            service.close()
+
+        dashboard_before = self.client.get("/")
+        self.assertEqual(dashboard_before.status_code, 200)
+        self.assertNotIn("failed.pdf", dashboard_before.text)
+
+        imports_before = self.client.get("/imports")
+        self.assertEqual(imports_before.status_code, 200)
+        self.assertIn("failed.pdf", imports_before.text)
+        self.assertIn("Reconhecer", imports_before.text)
+
+        response = self.client.post(
+            f"/imports/{failed_id}/acknowledge",
+            data={"csrf_token": self._csrf_token()},
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["location"], "/imports")
+
+        service = web_server.get_service()
+        try:
+            row = service.db.conn.execute("""
+                SELECT acknowledged_at, acknowledged_by_user_id
+                FROM email_import_log
+                WHERE id = ?
+            """, (failed_id,)).fetchone()
+            self.assertIsNotNone(row["acknowledged_at"])
+            self.assertEqual(row["acknowledged_by_user_id"], user.id)
+        finally:
+            service.close()
+
+        dashboard_after = self.client.get("/")
+        self.assertEqual(dashboard_after.status_code, 200)
+        self.assertNotIn("failed.pdf", dashboard_after.text)
+
+        imports_after = self.client.get("/imports")
+        self.assertEqual(imports_after.status_code, 200)
+        self.assertIn("failed.pdf", imports_after.text)
+        self.assertIn("Reconhecido", imports_after.text)
+
+    def test_dashboard_shows_recent_reports_and_sidebar_unassigned_badge(self):
+        user = self._create_user()
+        login_response = self._login(email=user.email)
+        self.assertEqual(login_response.status_code, 302)
+
+        service = web_server.get_service()
+        try:
+            animal_id = service.db.create_animal(Animal(name="Simba", species="Canídeo"))
+            service.db.create_test_session(TestSession(
+                animal_id=animal_id,
+                report_number="31370/1611430",
+                test_date=date.today(),
+                source_system="dnatech",
+                report_type="biochemistry",
+                panel_name="biochemistry",
+            ))
+            service.db.conn.execute("""
+                INSERT INTO unassigned_reports (
+                    filename,
+                    pdf_path,
+                    source_system,
+                    report_type,
+                    report_number,
+                    status
+                )
+                VALUES (?, ?, ?, ?, ?, 'pending')
+            """, (
+                "unassigned.pdf",
+                str(self.tempdir / "unassigned.pdf"),
+                "dnatech",
+                "biochemistry",
+                "pending-1",
+            ))
+            service.db.conn.execute("""
+                INSERT INTO email_import_log (
+                    email_uid,
+                    email_subject,
+                    email_from,
+                    attachment_name,
+                    validation_result,
+                    import_success,
+                    error_message
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                "failed-dashboard",
+                "failed import",
+                "reports@example.com",
+                "dashboard-failure.pdf",
+                "missing_markers",
+                0,
+                "Unsupported",
+            ))
+            service.db.conn.commit()
+        finally:
+            service.close()
+
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("31370/1611430", response.text)
+        self.assertIn('class="nav-badge"', response.text)
+        self.assertIn(">1</span>", response.text)
+        self.assertNotIn('class="kpi-card"', response.text)
+        self.assertNotIn("dashboard-failure.pdf", response.text)
+        self.assertNotIn("unassigned.pdf", response.text)
+
+    def test_animal_detail_has_no_ai_diagnostics_surface(self):
+        user = self._create_user()
+        login_response = self._login(email=user.email)
+        self.assertEqual(login_response.status_code, 302)
+
+        service = web_server.get_service()
+        try:
+            animal_id = service.db.create_animal(Animal(name="Loki", species="Canídeo"))
+        finally:
+            service.close()
+
+        response = self.client.get(f"/animal/{animal_id}?tab=diagnostics")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("tab=diagnostics", response.text)
+        self.assertNotIn("data-diagnosis-trigger", response.text)
+        self.assertNotIn("triggerDiagnosis", response.text)
+        self.assertNotIn("diagnosisJobNotice", response.text)
+        self.assertNotIn("Sinais para revisão", response.text)
+        self.assertNotIn("Diagnóstico diferencial", response.text)
+
+        diagnosis_post = self.client.post(
+            f"/animal/{animal_id}/diagnosis",
+            data={"csrf_token": self._csrf_token()},
+        )
+        self.assertEqual(diagnosis_post.status_code, 404)
+        self.assertEqual(self.client.get("/api/diagnosis-jobs/1").status_code, 404)
+        self.assertEqual(self.client.get(f"/animal/{animal_id}/diagnosis/1").status_code, 404)
+
+    def test_session_detail_formats_dense_report_text_without_embedded_pdf(self):
+        user = self._create_user()
+        login_response = self._login(email=user.email)
+        self.assertEqual(login_response.status_code, 302)
+
+        pdf_path = self.uploads_dir / "dense-report.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4\n% test pdf\n")
+        artifact_text = (
+            "As lâminas apresentam moderada celularidade. "
+            "E s t á p r e s e n te u m a p o p u la ç ão i n f la m a t ó r i a "
+            "c o n s ti tu íd a p o r n e u tr ó f il o s d e g e n e r a d o s "
+            "( c ar io li se ) c o m o c a s io n a l f a g o c i to s e "
+            "b a ct e ri a n a (c o c o s ) . Ocasionais macrófagos."
+        )
+
+        service = web_server.get_service()
+        try:
+            animal_id = service.db.create_animal(Animal(name="Loki", species="Canine"))
+            session_id = service.db.create_test_session(TestSession(
+                animal_id=animal_id,
+                report_number="VEDIS/26005750",
+                test_date=date.today(),
+                source_system="vedis",
+                report_type="cytology",
+                panel_name="cytology",
+                pdf_path=str(pdf_path),
+            ))
+            service.db.create_pathology_finding(PathologyFinding(
+                session_id=session_id,
+                section_type="cytology",
+                title="Cytology",
+                microscopic_description=artifact_text,
+                diagnosis="Inflamação séptica",
+            ))
+        finally:
+            service.close()
+
+        response = self.client.get(f"/session/{session_id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('class="report-finding"', response.text)
+        self.assertIn(f'href="/reports/{session_id}/raw-pdf"', response.text)
+        self.assertNotIn('class="pdf-preview-frame"', response.text)
+        self.assertIn("Está presente uma população inflamatória", response.text)
+        self.assertNotIn("E s t á p r e s e n", response.text)
 
 
 if __name__ == "__main__":
