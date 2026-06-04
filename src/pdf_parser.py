@@ -123,7 +123,7 @@ def _is_plausible_ordering_vet_value(value: Optional[str]) -> bool:
     if not normalized:
         return False
     lowered = normalized.lower()
-    if lowered in {"dr(a).", "dr(a)", "dr.", "dra.", "dr", "dra"}:
+    if lowered in {"dr(a).", "dr(a)", "dr.", "dra.", "dr", "dra", "desconhecido unknown"}:
         return False
     if normalized[:1].islower():
         return False

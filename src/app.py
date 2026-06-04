@@ -533,6 +533,19 @@ class VetProteinService:
                     "UPDATE animals SET responsible_vet = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                     (row["id"],),
                 )
+        session_rows = self.db.conn.execute("""
+            SELECT id, ordering_vet
+            FROM test_sessions
+            WHERE ordering_vet IS NOT NULL AND TRIM(ordering_vet) != ''
+        """).fetchall()
+        for row in session_rows:
+            value = (row["ordering_vet"] or "").strip()
+            lowered = value.lower()
+            if value in invalid_exact or any(fragment in lowered for fragment in invalid_fragments):
+                self.db.conn.execute(
+                    "UPDATE test_sessions SET ordering_vet = NULL WHERE id = ?",
+                    (row["id"],),
+                )
 
     def _queue_unassigned_report(self, parsed: ParsedReport,
                                  match_decision: AnimalMatchDecision) -> int:
