@@ -51,6 +51,7 @@ from auth import (
 from email_sender import email_service
 from logging_config import get_logger, setup_logging
 from pdf_validator import PDFValidator, ValidationResult
+from vet_names import canonicalize_vet_name
 
 # Initialize logger for this module
 logger = get_logger("web_server")
@@ -1341,22 +1342,6 @@ def build_session_groups(sessions_with_results: List[dict],
     return sorted(grouped.values(), key=lambda group: group["sort_order"])
 
 
-VET_HONORIFIC_RE = re.compile(
-    r"^(?:dr\s*\(?a\)?\.?|dra\.?|dr\.?|doutora?|prof(?:essora?)?\.?)\s+",
-    re.IGNORECASE,
-)
-
-
-def canonicalize_vet_name(value: Optional[str]) -> str:
-    """Normalize ordering-vet labels for display/filter grouping."""
-    text = re.sub(r"\s+", " ", (value or "").strip()).strip(" ,;:")
-    previous = None
-    while text and text != previous:
-        previous = text
-        text = VET_HONORIFIC_RE.sub("", text).strip(" ,;:")
-    return re.sub(r"\s+", " ", text).strip()
-
-
 def list_ordering_vet_options(conn) -> List[str]:
     """Return unique ordering-vet filter options without title-only duplicates."""
     options: Dict[str, str] = {}
@@ -1389,6 +1374,14 @@ def display_lab_name(source_system: Optional[str], lab_name: Optional[str]) -> s
     if combined == "cvsanalyzer" or "cvs" in lab_key:
         return "CVS"
     return (lab_name or source_system or "").strip()
+
+
+def enrich_report_row(row: Dict[str, Any], lang: str) -> None:
+    row["display_type"] = humanize_report_type(
+        row.get("report_type"), row.get("panel_name"), lang
+    )
+    row["lab_display"] = display_lab_name(row.get("source_system"), row.get("lab_name"))
+    row["ordering_vet_display"] = canonicalize_vet_name(row.get("ordering_vet")) or None
 
 
 def get_lang(request: Request) -> str:
@@ -2560,10 +2553,7 @@ async def home(request: Request):
             page_size=dashboard_page_size,
         )
         for row in recent_reports:
-            row["display_type"] = humanize_report_type(
-                row.get("report_type"), row.get("panel_name"), lang
-            )
-            row["lab_display"] = display_lab_name(row.get("source_system"), row.get("lab_name"))
+            enrich_report_row(row, lang)
 
         response = templates.TemplateResponse(request, "index.html", {
             "request": request,
@@ -2782,10 +2772,7 @@ async def list_reports(request: Request):
             page_size=page_size,
         )
         for row in rows:
-            row["display_type"] = humanize_report_type(
-                row.get("report_type"), row.get("panel_name"), lang
-            )
-            row["lab_display"] = display_lab_name(row.get("source_system"), row.get("lab_name"))
+            enrich_report_row(row, lang)
 
         pagination = build_pagination(request, total, page, page_size)
         report_types = [{
@@ -2868,10 +2855,7 @@ async def view_animal(request: Request, animal_id: int):
             page_size=report_page_size,
         )
         for row in report_rows:
-            row["display_type"] = humanize_report_type(
-                row.get("report_type"), row.get("panel_name"), lang
-            )
-            row["lab_display"] = display_lab_name(row.get("source_system"), row.get("lab_name"))
+            enrich_report_row(row, lang)
 
         overview_reports, _ = db.list_reports_paginated(
             animal_id=animal_id,
@@ -2879,10 +2863,7 @@ async def view_animal(request: Request, animal_id: int):
             page_size=5,
         )
         for row in overview_reports:
-            row["display_type"] = humanize_report_type(
-                row.get("report_type"), row.get("panel_name"), lang
-            )
-            row["lab_display"] = display_lab_name(row.get("source_system"), row.get("lab_name"))
+            enrich_report_row(row, lang)
 
         clinical_notes = db.get_clinical_notes_for_animal(animal_id)
         vet_history = db.get_vet_assignment_history(animal_id)
@@ -3148,6 +3129,7 @@ async def view_session(request: Request, session_id: int):
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
         animal = service.db.get_animal(session.animal_id)
+        ordering_vet_display = canonicalize_vet_name(session.ordering_vet) or None
 
         # Get all results
         results = service.db.get_results_for_session(session_id)
@@ -3190,6 +3172,7 @@ async def view_session(request: Request, session_id: int):
             "current_user": current_user,
             "pdf_url": build_session_pdf_url(session),
             "report_type_label": humanize_report_type(session.report_type, session.panel_name, lang),
+            "ordering_vet_display": ordering_vet_display,
         })
         return set_lang_cookie(response, lang)
     except HTTPException:
@@ -3367,6 +3350,7 @@ async def view_unassigned_reports(request: Request, error: Optional[str] = None)
         report_items = []
         for report in pending_reports:
             summary = json.loads(report.parsed_summary_json or "{}")
+            summary["ordering_vet"] = canonicalize_vet_name(summary.get("ordering_vet")) or None
             candidates = json.loads(report.candidate_matches_json or "[]")
             report_items.append({
                 "report": report,

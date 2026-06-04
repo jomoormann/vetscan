@@ -37,6 +37,8 @@ class NewReportFormatTests(unittest.TestCase):
         self.assertIsNone(_extract_ordering_vet_from_text("Nome do Veterinário: Dr(a)."))
         self.assertIsNone(_extract_ordering_vet_from_text("Veterinário/a: Desconhecido Unknown"))
         self.assertEqual(_extract_ordering_vet_from_text("Attending Vet: Sofia Castro"), "Sofia Castro")
+        self.assertEqual(_extract_ordering_vet_from_text("Nome do Veterinário: Dra. Maria Santos"), "Maria Santos")
+        self.assertEqual(_extract_ordering_vet_from_text("Veterinário/a: Dr. João Costa"), "João Costa")
         parser = VedisCytologyParser()
         self.assertIsNone(parser._next_first_column_after_label("Veterinário/a\n\nTurbididade: transparente", "Veterinário/a"))
         self.assertIsNone(parser._next_first_column_after_label("Attending Vet\n\nDESCRIÇÃO MICROSCÓPICA", "Attending Vet"))

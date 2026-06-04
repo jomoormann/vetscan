@@ -33,6 +33,7 @@ from models import (
     AnimalIdentifier, SessionMeasurement, PathologyFinding,
     parse_portuguese_date, parse_age
 )
+from vet_names import canonicalize_vet_name
 
 
 @dataclass
@@ -109,7 +110,7 @@ def _extract_ordering_vet_from_text(text: str) -> Optional[str]:
         value = _normalize_space(match.group(1))
         value = re.split(r'\s{2,}|Idade:|Esp[ée]cie:|Ra[çc]a:', value)[0].strip(" :-")
         if _is_plausible_ordering_vet_value(value):
-            return value
+            return canonicalize_vet_name(value)
     return None
 
 

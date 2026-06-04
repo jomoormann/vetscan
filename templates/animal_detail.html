@@ -63,7 +63,7 @@
                                     <div class="table-meta">{{ report.lab_display or report.lab_name or '--' }}</div>
                                 </td>
                                 <td>{{ report.display_type }}</td>
-                                <td>{{ report.ordering_vet or '--' }}</td>
+                                <td>{{ report.ordering_vet_display or '--' }}</td>
                                 <td><a href="/session/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
                             </tr>
                             {% endfor %}
@@ -157,7 +157,7 @@
                                     <div class="table-meta">{{ report.sample_type or '--' }}</div>
                                 </td>
                                 <td>{{ report.display_type }}</td>
-                                <td>{{ report.ordering_vet or '--' }}</td>
+                                <td>{{ report.ordering_vet_display or '--' }}</td>
                                 <td>{{ report.lab_display or report.lab_name or '--' }}</td>
                                 <td><a href="/session/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
                             </tr>

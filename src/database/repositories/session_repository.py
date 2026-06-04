@@ -5,48 +5,13 @@ Handles database operations for TestSession, ProteinResult,
 BiochemistryResult, and UrinalysisResult entities.
 """
 
-import re
 from typing import Dict, List, Optional, Tuple
 
 from models.domain import (
     TestSession, ProteinResult, BiochemistryResult, UrinalysisResult,
     SessionMeasurement, PathologyFinding, SessionAsset, UnassignedReport
 )
-
-
-VET_HONORIFIC_RE = re.compile(
-    r"^(?:dr\s*\(?a\)?\.?|dra\.?|dr\.?|doutora?|prof(?:essora?)?\.?)\s+",
-    re.IGNORECASE,
-)
-
-
-def canonicalize_ordering_vet(value: Optional[str]) -> str:
-    text = re.sub(r"\s+", " ", (value or "").strip()).strip(" ,;:")
-    previous = None
-    while text and text != previous:
-        previous = text
-        text = VET_HONORIFIC_RE.sub("", text).strip(" ,;:")
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def ordering_vet_sql_normalized(column: str = "ts.ordering_vet") -> str:
-    expr = f"LOWER(TRIM({column}))"
-    for prefix in (
-        "dr(a). ",
-        "dr(a) ",
-        "dra. ",
-        "dra ",
-        "dr. ",
-        "dr ",
-        "doutora ",
-        "doutor ",
-        "professora ",
-        "professor ",
-        "prof. ",
-        "prof ",
-    ):
-        expr = f"REPLACE({expr}, '{prefix}', '')"
-    return f"TRIM({expr})"
+from vet_names import canonicalize_vet_name, ordering_vet_sql_normalized
 
 
 class SessionRepository:
@@ -75,6 +40,7 @@ class SessionRepository:
         Returns:
             ID of the created session
         """
+        ordering_vet = canonicalize_vet_name(session.ordering_vet) or None
         cursor = self.db.conn.execute("""
             INSERT INTO test_sessions (animal_id, report_number, test_date,
                                       closing_date, sample_type, lab_name,
@@ -89,7 +55,7 @@ class SessionRepository:
               session.source_system, session.report_type,
               session.external_report_id, session.report_source,
               session.reported_at, session.received_at, session.clinic_name,
-              session.ordering_vet,
+              ordering_vet,
               session.panel_name, session.raw_metadata_json,
               session.pdf_path, session.notes))
         self.db.conn.commit()
@@ -151,7 +117,7 @@ class SessionRepository:
 
         if responsible_vet:
             filters.append(f"{ordering_vet_sql_normalized()} = ?")
-            params.append(canonicalize_ordering_vet(responsible_vet).casefold())
+            params.append(canonicalize_vet_name(responsible_vet).casefold())
 
         if animal_id is not None:
             filters.append("ts.animal_id = ?")
@@ -283,6 +249,7 @@ class SessionRepository:
 
     def update_session(self, session_id: int, session: TestSession) -> bool:
         """Update a test session while keeping its primary key stable."""
+        ordering_vet = canonicalize_vet_name(session.ordering_vet) or None
         cursor = self.db.conn.execute("""
             UPDATE test_sessions
             SET animal_id = ?,
@@ -318,7 +285,7 @@ class SessionRepository:
             session.reported_at,
             session.received_at,
             session.clinic_name,
-            session.ordering_vet,
+            ordering_vet,
             session.panel_name,
             session.raw_metadata_json,
             session.pdf_path,

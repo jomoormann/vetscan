@@ -250,7 +250,7 @@ class ImportStatusTests(unittest.TestCase):
                 report_type="biochemistry",
                 panel_name="biochemistry",
                 clinic_name="Clínica Veterinária CVS SOS Animal",
-                ordering_vet="Dr Ordering",
+                ordering_vet="Dr. Maria Santos",
             ))
             service.db.conn.execute("""
                 INSERT INTO unassigned_reports (
@@ -296,7 +296,8 @@ class ImportStatusTests(unittest.TestCase):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertIn("31370/1611430", response.text)
-        self.assertIn("Dr Ordering", response.text)
+        self.assertIn("Maria Santos", response.text)
+        self.assertNotIn("Dr. Maria Santos", response.text)
         self.assertIn("Veterinário do pedido", response.text)
         self.assertNotIn("Comece pelo que precisa de ação", response.text)
         self.assertNotIn("<th>Resumo</th>", response.text)
@@ -308,7 +309,8 @@ class ImportStatusTests(unittest.TestCase):
 
         reports_response = self.client.get("/reports")
         self.assertEqual(reports_response.status_code, 200)
-        self.assertIn("Dr Ordering", reports_response.text)
+        self.assertIn("Maria Santos", reports_response.text)
+        self.assertNotIn("Dr. Maria Santos", reports_response.text)
         self.assertIn("Pesquise relatórios importados de toda a clínica de acordo com o animal, laboratório, tipo de relatório ou nome do veterinário responsável.", reports_response.text)
         self.assertIn("<td>DNATech</td>", reports_response.text)
         self.assertNotIn("Clínica Veterinária CVS SOS Animal", reports_response.text)
@@ -316,7 +318,8 @@ class ImportStatusTests(unittest.TestCase):
 
         animal_response = self.client.get(f"/animal/{animal_id}")
         self.assertEqual(animal_response.status_code, 200)
-        self.assertIn("Dr Ordering", animal_response.text)
+        self.assertIn("Maria Santos", animal_response.text)
+        self.assertNotIn("Dr. Maria Santos", animal_response.text)
         self.assertIn("DNATech", animal_response.text)
         self.assertNotIn("<th>Resumo</th>", animal_response.text)
 
@@ -325,7 +328,7 @@ class ImportStatusTests(unittest.TestCase):
         self.assertIn("Pesquise, filtre e abra os animais relevantes.", animals_response.text)
         self.assertNotIn("sem carregar a lista completa de uma vez", animals_response.text)
 
-    def test_reports_ordering_vet_filter_merges_title_variants(self):
+    def test_reports_ordering_vet_filter_merges_title_variants_for_all_vets(self):
         user = self._create_user()
         login_response = self._login(email=user.email)
         self.assertEqual(login_response.status_code, 302)
@@ -350,18 +353,41 @@ class ImportStatusTests(unittest.TestCase):
                 report_type="biochemistry",
                 ordering_vet="Sofia Castro",
             ))
+            service.db.create_test_session(TestSession(
+                animal_id=animal_two,
+                report_number="JOAO-1",
+                test_date=date.today(),
+                source_system="vedis",
+                report_type="histology",
+                ordering_vet="Dr. João Costa",
+            ))
+            service.db.create_test_session(TestSession(
+                animal_id=animal_one,
+                report_number="JOAO-2",
+                test_date=date.today(),
+                source_system="dnatech",
+                report_type="biochemistry",
+                ordering_vet="João Costa",
+            ))
         finally:
             service.close()
 
         reports_response = self.client.get("/reports")
         self.assertEqual(reports_response.status_code, 200)
         self.assertEqual(reports_response.text.count('<option value="Sofia Castro"'), 1)
+        self.assertEqual(reports_response.text.count('<option value="João Costa"'), 1)
         self.assertNotIn('<option value="Dra. Sofia Castro"', reports_response.text)
+        self.assertNotIn('<option value="Dr. João Costa"', reports_response.text)
 
         filtered_response = self.client.get("/reports?responsible_vet=Sofia%20Castro")
         self.assertEqual(filtered_response.status_code, 200)
         self.assertIn("SOFIA-1", filtered_response.text)
         self.assertIn("SOFIA-2", filtered_response.text)
+
+        joao_response = self.client.get("/reports?responsible_vet=Jo%C3%A3o%20Costa")
+        self.assertEqual(joao_response.status_code, 200)
+        self.assertIn("JOAO-1", joao_response.text)
+        self.assertIn("JOAO-2", joao_response.text)
 
     def test_animal_profile_updates_and_displays_neutered_status(self):
         user = self._create_user()

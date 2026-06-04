@@ -20,6 +20,7 @@ from models import (
     Symptom, Observation, AnimalMatchDecision, UnassignedReport
 )
 from pdf_parser import parse_lab_report, ParsedReport
+from vet_names import canonicalize_vet_name
 
 
 @dataclass
@@ -545,6 +546,13 @@ class VetProteinService:
                 self.db.conn.execute(
                     "UPDATE test_sessions SET ordering_vet = NULL WHERE id = ?",
                     (row["id"],),
+                )
+                continue
+            canonical = canonicalize_vet_name(value)
+            if canonical and canonical != value:
+                self.db.conn.execute(
+                    "UPDATE test_sessions SET ordering_vet = ? WHERE id = ?",
+                    (canonical, row["id"]),
                 )
 
     def _queue_unassigned_report(self, parsed: ParsedReport,

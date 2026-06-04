@@ -41,7 +41,7 @@
                             <div class="table-title">{{ report.test_date|format_date if report.test_date else '--' }}</div>
                             <div class="table-meta text-truncate" style="max-width: 16rem;" title="{{ recent_label }}">{{ recent_label|short_report_label(24) }}</div>
                         </td>
-                        <td>{{ report.ordering_vet or '--' }}</td>
+                        <td>{{ report.ordering_vet_display or '--' }}</td>
                         <td><a href="/session/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
                     </tr>
                     {% endfor %}
