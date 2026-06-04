@@ -559,11 +559,17 @@ class DNAtechParser:
         # Parse additional sections
         biochemistry = self._parse_biochemistry(full_text)
         urinalysis = self._parse_urinalysis(full_text)
-        measurements = self._parse_generic_measurements(full_text, session.panel_name)
         pathology_findings = []
         if session.report_type == "cytology":
-            measurements.extend(self._parse_cytology_measurements(full_text))
+            measurements = self._parse_cytology_measurements(full_text)
+            measurements.extend(self._parse_generic_measurements(
+                full_text,
+                session.panel_name,
+                {measurement.measurement_code for measurement in measurements},
+            ))
             pathology_findings = self._parse_cytology_findings(full_text)
+        else:
+            measurements = self._parse_generic_measurements(full_text, session.panel_name)
         
         return ParsedReport(
             animal=animal,
@@ -775,7 +781,8 @@ class DNAtechParser:
         ))
 
     def _parse_generic_measurements(self, text: str,
-                                    default_panel_name: Optional[str]) -> List[SessionMeasurement]:
+                                    default_panel_name: Optional[str],
+                                    initial_existing_codes: Optional[set] = None) -> List[SessionMeasurement]:
         """Extract non-protein structured results that do not have dedicated tables."""
         measurements: List[SessionMeasurement] = []
         lines = [_normalize_space(line) for line in text.splitlines()]
@@ -921,7 +928,7 @@ class DNAtechParser:
             self._parse_flexible_result_lines(
                 lines,
                 default_panel_name,
-                {measurement.measurement_code for measurement in measurements},
+                set(initial_existing_codes or set()) | {measurement.measurement_code for measurement in measurements},
             )
         )
 
@@ -973,6 +980,8 @@ class DNAtechParser:
         ignored_codes = {
             "telefone",
             "fax",
+            "canideos",
+            "cachorros",
             "documento_procesado_electronicamente_e_deialab_slice_pagina",
             "documento_processado_electronicamente_e_deialab_slice_pagina",
             "dnatech_lda_estrada_do_paco_do_lumiar",
@@ -984,6 +993,20 @@ class DNAtechParser:
             "beta",
             "gama",
             "rel_albumina_globulina",
+        }
+        auricular_cytology_aliases = {
+            "celulas_epiteliais_pavimentosas_queratinizadas": "epithelial_cells",
+            "bacterias": "bacteria",
+            "malassezia_sp": "malassezia",
+            "acaros": "mites",
+            "neutrofilos": "neutrophils",
+        }
+        immunology_aliases = {
+            "anticorpos_anti_leishmania": "anti_leishmania_antibodies",
+            "titulacao_1_80": "leishmania_titer_1_80",
+            "titulacao_1_160": "leishmania_titer_1_160",
+            "titulacao_1_240": "leishmania_titer_1_240",
+            "titulacao_1_320": "leishmania_titer_1_320",
         }
         value_pattern = (
             r"(?:Aguarda\s+Resultado|"
@@ -1033,6 +1056,18 @@ class DNAtechParser:
 
             code = self._measurement_code(name)
             if code in ignored_codes:
+                continue
+            if name[:1].islower() and name not in {"pH", "nRBC", "tCO2"}:
+                continue
+            if (
+                default_panel_name == "auricular_cytology"
+                and auricular_cytology_aliases.get(code) in existing_codes
+            ):
+                continue
+            if (
+                default_panel_name == "immunology"
+                and immunology_aliases.get(code) in existing_codes
+            ):
                 continue
             if code in existing_codes or code in {item.measurement_code for item in measurements}:
                 continue
@@ -1195,7 +1230,10 @@ class DNAtechParser:
             ("neutrophils", "Neutrófilos"),
         ]
 
+        seen_codes = set()
         for code, label in metric_patterns:
+            if code in seen_codes:
+                continue
             for match in re.finditer(
                 rf'^{re.escape(label)}\s+(.+?)\s*$',
                 text,
@@ -1230,6 +1268,8 @@ class DNAtechParser:
                     flag=flag,
                     sort_order=len(measurements),
                 ))
+                seen_codes.add(code)
+                break
 
         return measurements
     

@@ -181,6 +181,10 @@ class NewReportFormatTests(unittest.TestCase):
 
         measurements = parser._parse_generic_measurements(text, "immunology")
 
+        codes = [measurement.measurement_code for measurement in measurements]
+        self.assertNotIn("anticorpos_anti_leishmania", codes)
+        self.assertNotIn("titulacao_1_80", codes)
+        self.assertEqual(len(codes), len(set(codes)))
         self.assertEqual(measurements[0].measurement_code, "anti_leishmania_antibodies")
         self.assertEqual(measurements[0].value_text, "Positivo (Fraco)")
         self.assertEqual(measurements[0].flag, "high")
@@ -213,6 +217,55 @@ class NewReportFormatTests(unittest.TestCase):
         self.assertEqual(copro[0].measurement_code, "fecal_parasites")
         self.assertEqual(copro[0].value_text, "Negativo")
         self.assertEqual(copro[1].measurement_code, "fecal_parasitology_observation")
+
+    def test_dnatech_fallback_rejects_species_headings_and_prose_fragments(self):
+        parser = DNAtechParser()
+        text = """
+        Canideos <15
+        Cachorros <17
+        tais como o ligeiro aumento da basofilia citoplasmática e discreta vacuolização
+        sanguíneo. O resultado negativo não
+        Hemoglobina 14,1 g/dL 8,0 -15,0
+        pH 6,5 5,0-7,0
+        """
+
+        measurements = parser._parse_generic_measurements(text, "hematology")
+        by_code = {measurement.measurement_code: measurement for measurement in measurements}
+
+        self.assertNotIn("canideos", by_code)
+        self.assertNotIn("cachorros", by_code)
+        self.assertNotIn("tais_como_o_ligeiro_aumento_da_basofilia_citoplasmatica_e", by_code)
+        self.assertNotIn("sanguineo_o_resultado", by_code)
+        self.assertEqual(by_code["hemoglobina"].value_numeric, 14.1)
+        self.assertEqual(by_code["ph"].value_text, "6,5")
+
+    def test_dnatech_auricular_cytology_does_not_duplicate_metric_aliases(self):
+        parser = DNAtechParser()
+        text = (
+            "CITOLOGIA\n"
+            "CITOLOGIA AURICULAR\n"
+            "Células epiteliais pavimentosas queratinizadas Presentes\n"
+            "Bactérias < 2 /campo 100x\n"
+            "Bactérias < 2 /campo 100x\n"
+            "Malassezia sp. < 5 /campo 100x\n"
+            "Ácaros Ausentes\n"
+            "Neutrófilos Presentes Ausentes\n"
+        )
+
+        specific = parser._parse_cytology_measurements(text)
+        generic = parser._parse_generic_measurements(
+            text,
+            "auricular_cytology",
+            {measurement.measurement_code for measurement in specific},
+        )
+        measurements = specific + generic
+        codes = [measurement.measurement_code for measurement in measurements]
+
+        self.assertIn("epithelial_cells", codes)
+        self.assertIn("bacteria", codes)
+        self.assertNotIn("celulas_epiteliais_pavimentosas_queratinizadas", codes)
+        self.assertNotIn("bacterias", codes)
+        self.assertEqual(codes.count("bacteria"), 1)
 
     def test_parses_new_dnatech_single_value_measurements(self):
         parser = DNAtechParser()
@@ -261,6 +314,8 @@ class NewReportFormatTests(unittest.TestCase):
         self.assertEqual(frutosamina.flag, "high")
         self.assertNotIn("telefone", by_code)
         self.assertNotIn("dnatech_lda_estrada_do_paco_do_lumiar", by_code)
+        self.assertNotIn("canideos", by_code)
+        self.assertNotIn("cachorros", by_code)
 
     def test_dnatech_generic_measurements_filter_noise_and_keep_urine_references(self):
         path = SAMPLE_DIR / "bolt58630_1500951.pdf"
