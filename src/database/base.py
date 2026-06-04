@@ -105,6 +105,9 @@ class Database:
         ensure_column("clinical_notes", "author_user_id", "INTEGER")
         ensure_column("clinical_notes", "updated_by_user_id", "INTEGER")
 
+        ensure_column("email_import_log", "acknowledged_at", "TIMESTAMP")
+        ensure_column("email_import_log", "acknowledged_by_user_id", "INTEGER")
+
         self._backfill_vet_assignment_history()
 
     def _backfill_vet_assignment_history(self):

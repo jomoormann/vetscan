@@ -101,11 +101,18 @@ class AnimalRepository:
 
     def _canonical_species(self, value: Optional[str]) -> str:
         normalized = self._normalize_text(value)
+        if normalized in {"", "unknown", "indeterminado", "indeterminada", "und"}:
+            return ""
         if "can" in normalized or "dog" in normalized:
             return "canine"
         if "fel" in normalized or "cat" in normalized:
             return "feline"
         return normalized
+
+    def _species_compatible(self, left: Optional[str], right: Optional[str]) -> bool:
+        left_norm = self._canonical_species(left)
+        right_norm = self._canonical_species(right)
+        return not left_norm or not right_norm or left_norm == right_norm
 
     def _owner_matches(self, left: Optional[str], right: Optional[str]) -> bool:
         left_norm = self._normalize_text(left)
@@ -117,6 +124,11 @@ class AnimalRepository:
             or left_norm in right_norm
             or right_norm in left_norm
         )
+
+    def _owner_conflicts(self, left: Optional[str], right: Optional[str]) -> bool:
+        left_norm = self._normalize_text(left)
+        right_norm = self._normalize_text(right)
+        return bool(left_norm and right_norm and not self._owner_matches(left, right))
 
     def _record_vet_assignment(self, animal_id: int, vet_name: Optional[str],
                                changed_by_user_id: Optional[int] = None,
@@ -269,7 +281,6 @@ class AnimalRepository:
                 )
 
         target_name = self._normalize_text(animal.name)
-        target_species = self._canonical_species(animal.species)
         target_owner = self._normalize_text(animal.owner_name)
 
         if not target_name:
@@ -287,7 +298,7 @@ class AnimalRepository:
         for candidate in candidates:
             if (
                 self._normalize_text(candidate.name) == target_name
-                and self._canonical_species(candidate.species) == target_species
+                and self._species_compatible(candidate.species, animal.species)
             ):
                 if target_owner:
                     candidate_owner = self._normalize_text(candidate.owner_name)
@@ -360,9 +371,56 @@ class AnimalRepository:
                 candidates=combined_exact[:5],
             )
 
+        near_exact_matches: List[AnimalMatchCandidate] = []
+        near_exact_conflicts: List[AnimalMatchCandidate] = []
+        for candidate in candidates:
+            if not self._species_compatible(candidate.species, animal.species):
+                continue
+
+            name_score = SequenceMatcher(
+                None,
+                self._normalize_text(candidate.name),
+                target_name,
+            ).ratio()
+            if name_score < 0.88 or name_score >= 1.0:
+                continue
+
+            reason = f"Near-exact name similarity {name_score:.0%}"
+            if self._owner_conflicts(candidate.owner_name, animal.owner_name):
+                near_exact_conflicts.append(self._candidate_from_animal(
+                    candidate,
+                    0.86,
+                    f"{reason}; owner differs",
+                ))
+                continue
+
+            confidence = 0.96 if self._owner_matches(candidate.owner_name, animal.owner_name) else 0.91
+            if self._owner_matches(candidate.owner_name, animal.owner_name):
+                reason = f"{reason}; owner match"
+            near_exact_matches.append(self._candidate_from_animal(candidate, confidence, reason))
+
+        if len(near_exact_matches) == 1 and not near_exact_conflicts:
+            best = near_exact_matches[0]
+            return AnimalMatchDecision(
+                action="match_existing",
+                animal_id=best.animal_id,
+                confidence=best.confidence,
+                reason="near_exact_name_match",
+                candidates=[best],
+            )
+        if near_exact_matches or near_exact_conflicts:
+            combined_near_exact = near_exact_matches + near_exact_conflicts
+            combined_near_exact.sort(key=lambda item: item.confidence, reverse=True)
+            return AnimalMatchDecision(
+                action="manual_review",
+                confidence=combined_near_exact[0].confidence,
+                reason="ambiguous_near_exact_name_match",
+                candidates=combined_near_exact[:5],
+            )
+
         scored: List[AnimalMatchCandidate] = []
         for candidate in candidates:
-            if self._canonical_species(candidate.species) != target_species:
+            if not self._species_compatible(candidate.species, animal.species):
                 continue
 
             name_score = SequenceMatcher(

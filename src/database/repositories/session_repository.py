@@ -222,6 +222,84 @@ class SessionRepository:
         """, (source_system, external_report_id))
         return cursor.fetchone() is not None
 
+    def find_session_by_report_number(self, report_number: str) -> Optional[TestSession]:
+        """Find a session by its display report number."""
+        cursor = self.db.conn.execute(
+            "SELECT * FROM test_sessions WHERE report_number = ?",
+            (report_number,),
+        )
+        row = cursor.fetchone()
+        return TestSession(**dict(row)) if row else None
+
+    def find_sessions_by_external_reference(self, source_system: str,
+                                            external_report_id: str) -> List[TestSession]:
+        """Find all sessions that share a source-system external report ID."""
+        cursor = self.db.conn.execute("""
+            SELECT *
+            FROM test_sessions
+            WHERE source_system = ? AND external_report_id = ?
+            ORDER BY id ASC
+        """, (source_system, external_report_id))
+        return [TestSession(**dict(row)) for row in cursor.fetchall()]
+
+    def update_session(self, session_id: int, session: TestSession) -> bool:
+        """Update a test session while keeping its primary key stable."""
+        cursor = self.db.conn.execute("""
+            UPDATE test_sessions
+            SET animal_id = ?,
+                report_number = ?,
+                test_date = ?,
+                closing_date = ?,
+                sample_type = ?,
+                lab_name = ?,
+                source_system = ?,
+                report_type = ?,
+                external_report_id = ?,
+                report_source = ?,
+                reported_at = ?,
+                received_at = ?,
+                clinic_name = ?,
+                panel_name = ?,
+                raw_metadata_json = ?,
+                pdf_path = ?,
+                notes = ?
+            WHERE id = ?
+        """, (
+            session.animal_id,
+            session.report_number,
+            session.test_date,
+            session.closing_date,
+            session.sample_type,
+            session.lab_name,
+            session.source_system,
+            session.report_type,
+            session.external_report_id,
+            session.report_source,
+            session.reported_at,
+            session.received_at,
+            session.clinic_name,
+            session.panel_name,
+            session.raw_metadata_json,
+            session.pdf_path,
+            session.notes,
+            session_id,
+        ))
+        self.db.conn.commit()
+        return cursor.rowcount > 0
+
+    def clear_session_results(self, session_id: int) -> None:
+        """Remove parsed child rows before re-importing an updated report."""
+        for table in (
+            "protein_results",
+            "biochemistry_results",
+            "urinalysis_results",
+            "session_measurements",
+            "pathology_findings",
+            "session_assets",
+        ):
+            self.db.conn.execute(f"DELETE FROM {table} WHERE session_id = ?", (session_id,))
+        self.db.conn.commit()
+
     def delete_session(self, session_id: int) -> bool:
         """Delete a test session (cascades to results)."""
         cursor = self.db.conn.execute(

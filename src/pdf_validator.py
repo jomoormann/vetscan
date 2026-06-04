@@ -69,6 +69,7 @@ class PDFValidator:
     REPORT_NUMBER_PATTERNS = [
         r'Folha\s+de\s+Trabalho\s+N[º°o]\s*[:\s]*(\d+/\d+)',  # Standard format
         r'N[º°o]\s*[:\s]*(\d+/\d+)',  # Shorter format
+        r'N[º°o]\s*[:\s]*(\d{3,})',  # Genevet/LDMV format
         r'bolt(\d+)_(\d+)\.pdf',  # From filename: bolt2257_1537496.pdf -> 2257/1537496
         r'Exam ID\s+(\d+)',
         r'ID exame\s+(\d+)',
@@ -84,12 +85,16 @@ class PDFValidator:
         config = get_email_config()
         self.max_size_bytes = (max_size_mb or config.pdf_max_size_mb) * 1024 * 1024
 
-    def validate(self, file_path: str) -> ValidationReport:
+    def validate(self, file_path: str,
+                 allow_unknown_report_type: bool = False) -> ValidationReport:
         """
         Perform full validation on a PDF file.
 
         Args:
             file_path: Path to the PDF file to validate
+            allow_unknown_report_type: If true, a PDF that passes security and
+                structure checks is accepted even when no known report markers
+                are detected.
 
         Returns:
             ValidationReport with validation result
@@ -157,9 +162,24 @@ class PDFValidator:
                 message=f"PDF parsing failed: {e}"
             )
 
+        report_number = self._extract_report_number(text_content, os.path.basename(file_path))
+
         # Check 7: supported report markers
         markers_result = self._check_supported_markers(text_content)
         if not markers_result['valid']:
+            if allow_unknown_report_type:
+                return ValidationReport(
+                    is_valid=True,
+                    result_code=ValidationResult.VALID,
+                    message="PDF passed security checks; report type not recognized",
+                    report_number=report_number,
+                    details={
+                        'file_size': file_size,
+                        'report_type': None,
+                        'unknown_report_type': True,
+                        'marker_message': markers_result['message'],
+                    }
+                )
             return ValidationReport(
                 is_valid=False,
                 result_code=ValidationResult.MISSING_DNATECH_MARKERS,
@@ -168,8 +188,6 @@ class PDFValidator:
             )
 
         # All checks passed
-        report_number = self._extract_report_number(text_content, os.path.basename(file_path))
-
         return ValidationReport(
             is_valid=True,
             result_code=ValidationResult.VALID,
@@ -237,14 +255,16 @@ class PDFValidator:
     def _extract_report_number(self, text: str, filename: str = None) -> Optional[str]:
         """Extract report number from PDF text or filename."""
         # Try text patterns first
-        for pattern in self.REPORT_NUMBER_PATTERNS[:4]:
+        for pattern in self.REPORT_NUMBER_PATTERNS:
+            if pattern.startswith('bolt'):
+                continue
             match = re.search(pattern, text)
             if match:
                 return match.group(1)
 
         # Try filename pattern as fallback
         if filename:
-            match = re.search(self.REPORT_NUMBER_PATTERNS[2], filename)
+            match = re.search(r'bolt(\d+)_(\d+)\.pdf', filename)
             if match:
                 return f"{match.group(1)}/{match.group(2)}"
 

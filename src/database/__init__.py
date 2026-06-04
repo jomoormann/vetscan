@@ -196,6 +196,25 @@ class Database(BaseDatabase):
             source_system, external_report_id
         )
 
+    def find_session_by_report_number(self, report_number: str) -> Optional[TestSession]:
+        """Find a session by its display report number."""
+        return self._session_repo.find_session_by_report_number(report_number)
+
+    def find_sessions_by_external_reference(self, source_system: str,
+                                            external_report_id: str) -> List[TestSession]:
+        """Find all sessions that share a source-system external report ID."""
+        return self._session_repo.find_sessions_by_external_reference(
+            source_system, external_report_id
+        )
+
+    def update_session(self, session_id: int, session: TestSession) -> bool:
+        """Update a test session in place."""
+        return self._session_repo.update_session(session_id, session)
+
+    def clear_session_results(self, session_id: int) -> None:
+        """Remove parsed child rows for a session."""
+        return self._session_repo.clear_session_results(session_id)
+
     # =========================================================================
     # RESULT OPERATIONS
     # =========================================================================
