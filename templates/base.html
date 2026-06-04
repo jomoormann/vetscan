@@ -153,13 +153,42 @@
         .nav-link {
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            justify-content: flex-start;
             gap: 0.75rem;
             padding: 0.8rem 0.95rem;
             border-radius: 14px;
             color: rgba(255,248,244,0.92);
             font-weight: 500;
             transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+        }
+
+        .nav-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.4rem;
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+
+        .nav-text {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .nav-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 1.35rem;
+            height: 1.35rem;
+            padding: 0 0.38rem;
+            border-radius: 999px;
+            background: var(--danger);
+            color: #fff;
+            font-size: 0.72rem;
+            font-weight: 700;
+            line-height: 1;
         }
 
         .nav-link:hover {
@@ -295,6 +324,17 @@
 
         .shell-search input::placeholder {
             color: var(--text-soft);
+        }
+
+        .search-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.6rem;
+            font-size: 2rem;
+            line-height: 1;
+            color: var(--text-soft);
+            flex-shrink: 0;
         }
 
         .search-kbd {
@@ -802,6 +842,86 @@
             gap: 0.9rem;
         }
 
+        .report-finding {
+            padding: 1.15rem;
+            border: 1px solid var(--line);
+            border-left: 4px solid var(--brand);
+            border-radius: 12px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,250,245,0.92));
+        }
+
+        .report-finding-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            padding-bottom: 0.85rem;
+            margin-bottom: 0.2rem;
+            border-bottom: 1px solid var(--surface-strong);
+        }
+
+        .report-field {
+            display: grid;
+            grid-template-columns: minmax(10rem, 14rem) minmax(0, 1fr);
+            gap: 1rem;
+            padding: 1rem 0;
+            border-top: 1px solid var(--surface-strong);
+        }
+
+        .report-finding-header + .report-field {
+            border-top: none;
+        }
+
+        .report-field-label {
+            color: var(--text-soft);
+            font-size: 0.76rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            line-height: 1.35;
+            text-transform: uppercase;
+        }
+
+        .report-text {
+            max-width: 82ch;
+            color: var(--text);
+            font-size: 0.96rem;
+            line-height: 1.72;
+            overflow-wrap: anywhere;
+        }
+
+        .report-text p + p {
+            margin-top: 0.9rem;
+        }
+
+        .report-text-diagnosis {
+            max-width: 82ch;
+            padding: 0.85rem 1rem;
+            border-radius: 12px;
+            background: var(--surface-muted);
+            border: 1px solid var(--line);
+            color: var(--text);
+            font-weight: 700;
+            line-height: 1.55;
+        }
+
+        .report-text-diagnosis p + p {
+            margin-top: 0.7rem;
+        }
+
+        .report-value {
+            overflow-wrap: anywhere;
+            line-height: 1.5;
+        }
+
+        .measurements-table td {
+            overflow-wrap: anywhere;
+        }
+
+        .measurements-table td:nth-child(2),
+        .measurements-table td:nth-child(3) {
+            max-width: 28rem;
+            line-height: 1.5;
+        }
+
         .list-item {
             display: flex;
             align-items: flex-start;
@@ -1114,6 +1234,12 @@
             .desktop-hide {
                 display: none !important;
             }
+
+            .report-field {
+                grid-template-columns: 1fr;
+                gap: 0.45rem;
+            }
+
         }
     </style>
 </head>
@@ -1131,40 +1257,51 @@
 
                 <div>
                     <div class="sidebar-section-label">{{ t(lang, 'app.workspace') }}</div>
+                    {% set unassigned_badge_count = pending_unassigned_count() if current_user else 0 %}
                     <ul class="nav-list">
                         <li>
                             <a href="/" class="nav-link {% if request.url.path == '/' %}is-active{% endif %}">
+                                <span class="nav-icon" aria-hidden="true">🏠</span>
                                 <span>{{ t(lang, 'nav.dashboard') }}</span>
                             </a>
                         </li>
                         <li>
                             <a href="/animals" class="nav-link {% if request.url.path.startswith('/animal') or request.url.path == '/animals' or request.url.path == '/animals/new' %}is-active{% endif %}">
+                                <span class="nav-icon" aria-hidden="true">🐾</span>
                                 <span>{{ t(lang, 'nav.animals') }}</span>
                             </a>
                         </li>
                         <li>
                             <a href="/reports" class="nav-link {% if request.url.path == '/reports' or request.url.path.startswith('/session/') %}is-active{% endif %}">
+                                <span class="nav-icon" aria-hidden="true">📋</span>
                                 <span>{{ t(lang, 'nav.reports') }}</span>
                             </a>
                         </li>
                         <li>
                             <a href="/upload" class="nav-link {% if request.url.path == '/upload' %}is-active{% endif %}">
+                                <span class="nav-icon" aria-hidden="true">📤</span>
                                 <span>{{ t(lang, 'nav.upload') }}</span>
                             </a>
                         </li>
                         <li>
                             <a href="/imports" class="nav-link {% if request.url.path == '/imports' %}is-active{% endif %}">
+                                <span class="nav-icon" aria-hidden="true">📬</span>
                                 <span>{{ t(lang, 'nav.imports') }}</span>
                             </a>
                         </li>
                         <li>
                             <a href="/unassigned-reports" class="nav-link {% if request.url.path == '/unassigned-reports' %}is-active{% endif %}">
-                                <span>{{ t(lang, 'nav.unassigned') }}</span>
+                                <span class="nav-icon" aria-hidden="true">⏳</span>
+                                <span class="nav-text">{{ t(lang, 'nav.unassigned') }}</span>
+                                {% if unassigned_badge_count > 0 %}
+                                <span class="nav-badge" aria-label="{{ t(lang, 'nav.unassigned') }}: {{ unassigned_badge_count }}">{{ unassigned_badge_count }}</span>
+                                {% endif %}
                             </a>
                         </li>
                         {% if current_user and current_user.is_superuser %}
                         <li>
                             <a href="/admin/users" class="nav-link {% if request.url.path.startswith('/admin') %}is-active{% endif %}">
+                                <span class="nav-icon" aria-hidden="true">👥</span>
                                 <span>{{ t(lang, 'nav.admin') }}</span>
                             </a>
                         </li>
@@ -1199,7 +1336,7 @@
 
                 <div class="shell-search">
                     <form action="/animals" method="get" autocomplete="off">
-                        <span aria-hidden="true">⌕</span>
+                        <span class="search-icon" aria-hidden="true">⌕</span>
                         <input
                             type="search"
                             name="q"

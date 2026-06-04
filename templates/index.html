@@ -11,86 +11,6 @@
     </div>
 </div>
 
-<div class="stats-grid" style="margin-bottom: 1.25rem;">
-    <div class="kpi-card">
-        <div class="kpi-value">{{ stats.total_animals or 0 }}</div>
-        <div class="kpi-label">{{ t(lang, 'dashboard.registered_animals') }}</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-value">{{ stats.total_reports or 0 }}</div>
-        <div class="kpi-label">{{ t(lang, 'dashboard.imported_reports') }}</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-value" style="color: var(--warning);">{{ stats.pending_reports or 0 }}</div>
-        <div class="kpi-label">{{ t(lang, 'dashboard.pending_reports') }}</div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-value" style="color: var(--danger);">{{ stats.failed_imports or 0 }}</div>
-        <div class="kpi-label">{{ t(lang, 'dashboard.failed_imports') }}</div>
-    </div>
-</div>
-
-{% if pending_reports or recent_failures %}
-<div class="grid-2">
-    {% if pending_reports %}
-    <section class="card">
-        <div class="card-header">
-            <div>
-                <div class="card-kicker">{{ t(lang, 'dashboard.needs_attention') }}</div>
-                <h2 class="card-title">{{ t(lang, 'dashboard.assignment_queue') }}</h2>
-            </div>
-        </div>
-        <div class="list-stack">
-            {% for item in pending_reports %}
-            {% set report = item.report %}
-            {% set summary = item.summary %}
-            <div class="list-item">
-                <div>
-                    <div class="table-title">{{ summary.animal_name or report.animal_name or t(lang, 'common.unknown_patient') }}</div>
-                    <div class="table-meta">
-                        {% set pending_label = report.report_number or report.external_report_id or report.filename %}
-                        <span class="text-truncate" style="max-width: 15rem;" title="{{ pending_label }}">{{ pending_label|short_report_label(20) }}</span>
-                        {% if item.report_type_label %} · {{ item.report_type_label }}{% endif %}
-                    </div>
-                    <div class="table-meta">
-                        {{ summary.clinic_name or report.clinic_name or '--' }}
-                    </div>
-                </div>
-                    <div class="inline-actions">
-                    <span class="badge badge-low">{{ t(lang, 'dashboard.needs_assignment') }}</span>
-                    <a href="/unassigned-reports" class="btn btn-secondary">{{ t(lang, 'common.review') }}</a>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-    </section>
-    {% endif %}
-
-    {% if recent_failures %}
-    <section class="card">
-        <div class="card-header">
-            <div>
-                <div class="card-kicker">{{ t(lang, 'dashboard.needs_attention') }}</div>
-                <h2 class="card-title">{{ t(lang, 'dashboard.import_failures') }}</h2>
-            </div>
-        </div>
-        <div class="list-stack">
-            {% for failure in recent_failures %}
-            <div class="list-item">
-                <div>
-                    <div class="table-title">{{ failure.attachment_name or t(lang, 'common.unknown_attachment') }}</div>
-                    <div class="table-meta">{{ failure.email_from or '--' }}</div>
-                    <div class="table-meta">{{ failure.error_message or t(lang, 'dashboard.import_failed_message') }}</div>
-                </div>
-                <span class="badge badge-high">{{ t(lang, 'common.failed') }}</span>
-            </div>
-            {% endfor %}
-        </div>
-    </section>
-    {% endif %}
-</div>
-{% endif %}
-
 <section class="card">
     <div class="card-header">
         <div>
@@ -137,80 +57,19 @@
         </div>
         <div class="pagination-links">
             {% if recent_reports_pagination.has_prev %}
-            <a href="{{ recent_reports_pagination.prev_url }}" class="pagination-link">{{ t(lang, 'common.previous') }}</a>
+            <a href="{{ recent_reports_pagination.prev_url }}" class="pagination-link"><span aria-hidden="true">←</span> {{ t(lang, 'common.previous') }}</a>
             {% endif %}
             {% for page in recent_reports_pagination.pages %}
             <a href="{{ page.url }}" class="pagination-link {% if page.current %}is-current{% endif %}">{{ page.number }}</a>
             {% endfor %}
             {% if recent_reports_pagination.has_next %}
-            <a href="{{ recent_reports_pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }}</a>
+            <a href="{{ recent_reports_pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }} <span aria-hidden="true">→</span></a>
             {% endif %}
         </div>
     </div>
     {% endif %}
     {% else %}
     <div class="empty-state">{{ t(lang, 'dashboard.no_reports') }}</div>
-    {% endif %}
-</section>
-
-<section class="card">
-    <div class="card-header">
-        <div>
-            <div class="card-kicker">{{ t(lang, 'dashboard.recent_activity') }}</div>
-            <h2 class="card-title">{{ t(lang, 'nav.animals') }}</h2>
-        </div>
-    </div>
-    {% if recent_animals %}
-    <div class="table-shell">
-        <div class="table-responsive">
-            <table>
-                <thead>
-                    <tr>
-                        <th>{{ t(lang, 'common.animal') }}</th>
-                        <th>{{ t(lang, 'animal.responsible_vet') }}</th>
-                        <th>{{ t(lang, 'nav.reports') }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in recent_animals %}
-                    <tr>
-                        <td>
-                            <a href="/animal/{{ item.animal.id }}" class="table-title">{{ item.animal.name }}</a>
-                            <div class="table-meta">{{ item.animal.species }}{% if item.animal.breed %} · {{ item.animal.breed }}{% endif %}</div>
-                        </td>
-                        <td>{{ item.animal.responsible_vet or '--' }}</td>
-                        <td>
-                            <span class="badge badge-info">{{ item.test_count }}</span>
-                            {% if item.last_test %}
-                            <div class="table-meta">{{ item.last_test|format_date }}</div>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    {% if recent_animals_pagination.total_items > recent_animals_pagination.page_size %}
-    <div class="pagination">
-        <div class="pagination-meta">
-            {{ t(lang, 'common.showing_range').format(start=recent_animals_pagination.range_start, end=recent_animals_pagination.range_end, total=recent_animals_pagination.total_items) }}
-        </div>
-        <div class="pagination-links">
-            {% if recent_animals_pagination.has_prev %}
-            <a href="{{ recent_animals_pagination.prev_url }}" class="pagination-link">{{ t(lang, 'common.previous') }}</a>
-            {% endif %}
-            {% for page in recent_animals_pagination.pages %}
-            <a href="{{ page.url }}" class="pagination-link {% if page.current %}is-current{% endif %}">{{ page.number }}</a>
-            {% endfor %}
-            {% if recent_animals_pagination.has_next %}
-            <a href="{{ recent_animals_pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }}</a>
-            {% endif %}
-        </div>
-    </div>
-    {% endif %}
-    {% else %}
-    <div class="empty-state">{{ t(lang, 'dashboard.no_animals') }}</div>
     {% endif %}
 </section>
 {% endblock %}

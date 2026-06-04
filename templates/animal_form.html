@@ -10,7 +10,7 @@
         <p class="page-subtitle">{{ t(lang, 'animal_form.subtitle') }}</p>
     </div>
     <div class="inline-actions">
-        <a href="/animals" class="btn btn-secondary">{{ t(lang, 'animal_form.back_to_animals') }}</a>
+        <a href="/animals" class="btn btn-secondary"><span aria-hidden="true">←</span> {{ t(lang, 'animal_form.back_to_animals') }}</a>
     </div>
 </div>
 
@@ -91,8 +91,8 @@
         </div>
 
         <div class="filters-actions">
-            <button type="submit" class="btn btn-primary">{{ t(lang, 'animal_form.create_animal') }}</button>
-            <a href="/animals" class="btn btn-secondary">{{ t(lang, 'common.cancel') }}</a>
+            <button type="submit" class="btn btn-primary"><span aria-hidden="true">+</span> {{ t(lang, 'animal_form.create_animal') }}</button>
+            <a href="/animals" class="btn btn-secondary"><span aria-hidden="true">✕</span> {{ t(lang, 'common.cancel') }}</a>
         </div>
     </form>
 </section>

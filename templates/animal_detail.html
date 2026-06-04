@@ -16,22 +16,18 @@
         </p>
     </div>
     <div class="inline-actions">
-        <a href="/upload" class="btn btn-secondary">{{ t(lang, 'dashboard.upload_report') }}</a>
+        <a href="/upload" class="btn btn-secondary"><span aria-hidden="true">📤</span> {{ t(lang, 'dashboard.upload_report') }}</a>
         {% if report_total >= 2 %}
-        <a href="/compare/{{ animal.id }}" class="btn btn-secondary">{{ t(lang, 'animal_detail.compare_reports') }}</a>
+        <a href="/compare/{{ animal.id }}" class="btn btn-secondary"><span aria-hidden="true">⇄</span> {{ t(lang, 'animal_detail.compare_reports') }}</a>
         {% endif %}
-        <button type="button" class="btn btn-primary" data-diagnosis-trigger onclick="triggerDiagnosis()">{{ t(lang, 'animal_detail.update_differential_diagnosis') }}</button>
     </div>
 </div>
 
-<div id="diagnosisJobNotice" class="alert alert-info" style="display: none;"></div>
-
 <div class="tabs" style="margin-bottom: 1.25rem;">
-    <a href="/animal/{{ animal.id }}?tab=overview" class="tab-link {% if active_tab == 'overview' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.overview') }}</a>
-    <a href="/animal/{{ animal.id }}?tab=reports" class="tab-link {% if active_tab == 'reports' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.reports') }}</a>
-    <a href="/animal/{{ animal.id }}?tab=notes" class="tab-link {% if active_tab == 'notes' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.notes') }}</a>
-    <a href="/animal/{{ animal.id }}?tab=diagnostics" class="tab-link {% if active_tab == 'diagnostics' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.diagnostics') }}</a>
-    <a href="/animal/{{ animal.id }}?tab=profile" class="tab-link {% if active_tab == 'profile' %}is-active{% endif %}">{{ t(lang, 'animal_detail.tabs.profile') }}</a>
+    <a href="/animal/{{ animal.id }}?tab=overview" class="tab-link {% if active_tab == 'overview' %}is-active{% endif %}"><span aria-hidden="true">📊</span> {{ t(lang, 'animal_detail.tabs.overview') }}</a>
+    <a href="/animal/{{ animal.id }}?tab=reports" class="tab-link {% if active_tab == 'reports' %}is-active{% endif %}"><span aria-hidden="true">📋</span> {{ t(lang, 'animal_detail.tabs.reports') }}</a>
+    <a href="/animal/{{ animal.id }}?tab=notes" class="tab-link {% if active_tab == 'notes' %}is-active{% endif %}"><span aria-hidden="true">📝</span> {{ t(lang, 'animal_detail.tabs.notes') }}</a>
+    <a href="/animal/{{ animal.id }}?tab=profile" class="tab-link {% if active_tab == 'profile' %}is-active{% endif %}"><span aria-hidden="true">👤</span> {{ t(lang, 'animal_detail.tabs.profile') }}</a>
 </div>
 
 <div class="detail-layout">
@@ -80,69 +76,35 @@
             {% endif %}
         </section>
 
-        <div class="grid-2">
-            <section class="card">
-                <div class="card-header">
-                    <div>
-                        <div class="card-kicker">{{ t(lang, 'animal_detail.clinical_context') }}</div>
-                        <h2 class="card-title">{{ t(lang, 'animal_detail.recent_notes') }}</h2>
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-kicker">{{ t(lang, 'animal_detail.clinical_context') }}</div>
+                    <h2 class="card-title">{{ t(lang, 'animal_detail.recent_notes') }}</h2>
+                </div>
+            </div>
+            {% if clinical_notes %}
+            <div class="list-stack">
+                {% for note in clinical_notes[:4] %}
+                <div class="list-item" style="display: block;">
+                    <div class="table-title">{{ note.title or t(lang, 'animal_detail.clinical_note') }}</div>
+                    <div class="table-meta">
+                        {{ note.note_date|format_date if note.note_date else '--' }}
+                        · {{ note.author_name or t(lang, 'animal_detail.unknown_author') }}
+                        {% if note.updated_at and note.updated_at != note.created_at and note.updated_by_name %}
+                        · {{ t(lang, 'animal_detail.edited_by').format(user=note.updated_by_name) }}
+                        {% endif %}
+                    </div>
+                    <div style="margin-top: 0.7rem; color: var(--text-muted); line-height: 1.55;">
+                        {{ note.content|truncate(220) }}
                     </div>
                 </div>
-                {% if clinical_notes %}
-                <div class="list-stack">
-                    {% for note in clinical_notes[:4] %}
-                    <div class="list-item" style="display: block;">
-                        <div class="table-title">{{ note.title or t(lang, 'animal_detail.clinical_note') }}</div>
-                        <div class="table-meta">
-                            {{ note.note_date|format_date if note.note_date else '--' }}
-                            · {{ note.author_name or t(lang, 'animal_detail.unknown_author') }}
-                            {% if note.updated_at and note.updated_at != note.created_at and note.updated_by_name %}
-                            · {{ t(lang, 'animal_detail.edited_by').format(user=note.updated_by_name) }}
-                            {% endif %}
-                        </div>
-                        <div style="margin-top: 0.7rem; color: var(--text-muted); line-height: 1.55;">
-                            {{ note.content|truncate(220) }}
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <div class="empty-state">{{ t(lang, 'animal_detail.no_clinical_notes_yet') }}</div>
-                {% endif %}
-            </section>
-
-            <section class="card">
-                <div class="card-header">
-                    <div>
-                        <div class="card-kicker">{{ t(lang, 'animal_detail.clinical_context') }}</div>
-                        <h2 class="card-title">{{ t(lang, 'animal_detail.signals_for_review') }}</h2>
-                    </div>
-                </div>
-                <div class="list-stack">
-                    <div class="list-item">
-                        <div>
-                            <div class="table-title">{{ t(lang, 'animal_detail.active_symptoms') }}</div>
-                            <div class="table-meta">{{ t(lang, 'animal_detail.currently_recorded').format(count=symptoms|length) }}</div>
-                        </div>
-                        <span class="badge badge-info">{{ symptoms|length }}</span>
-                    </div>
-                    <div class="list-item">
-                        <div>
-                            <div class="table-title">{{ t(lang, 'animal_detail.observations') }}</div>
-                            <div class="table-meta">{{ t(lang, 'animal_detail.longitudinal_entries').format(count=observations|length) }}</div>
-                        </div>
-                        <span class="badge badge-info">{{ observations|length }}</span>
-                    </div>
-                    <div class="list-item">
-                        <div>
-                            <div class="table-title">{{ t(lang, 'animal_detail.ai_diagnosis_reports') }}</div>
-                            <div class="table-meta">{{ t(lang, 'animal_detail.generated_reports').format(count=diagnosis_reports|length) }}</div>
-                        </div>
-                        <span class="badge {% if diagnosis_reports %}badge-normal{% else %}badge-low{% endif %}">{{ diagnosis_reports|length }}</span>
-                    </div>
-                </div>
-            </section>
-        </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">{{ t(lang, 'animal_detail.no_clinical_notes_yet') }}</div>
+            {% endif %}
+        </section>
         {% endif %}
 
         {% if active_tab == 'reports' %}
@@ -167,7 +129,7 @@
                     </select>
                 </div>
                 <div class="inline-actions">
-                    <a href="/animal/{{ animal.id }}?tab=reports" class="btn btn-secondary">{{ t(lang, 'common.clear') }}</a>
+                    <a href="/animal/{{ animal.id }}?tab=reports" class="btn btn-secondary"><span aria-hidden="true">✕</span> {{ t(lang, 'common.clear') }}</a>
                 </div>
             </form>
 
@@ -177,10 +139,10 @@
                     <table>
                         <thead>
                             <tr>
-                                <th><a class="sort-link" href="{{ report_sort_links.date.url }}">{{ t(lang, 'common.date') }}{% if report_sort_links.date.state %}<span class="sort-state">{{ '^' if report_sort_links.date.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
-                                <th><a class="sort-link" href="{{ report_sort_links.report.url }}">{{ t(lang, 'common.report') }}{% if report_sort_links.report.state %}<span class="sort-state">{{ '^' if report_sort_links.report.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
+                                <th><a class="sort-link" href="{{ report_sort_links.date.url }}">{{ t(lang, 'common.date') }}{% if report_sort_links.date.state %}<span class="sort-state">{{ '↑' if report_sort_links.date.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
+                                <th><a class="sort-link" href="{{ report_sort_links.report.url }}">{{ t(lang, 'common.report') }}{% if report_sort_links.report.state %}<span class="sort-state">{{ '↑' if report_sort_links.report.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
                                 <th>{{ t(lang, 'animal_detail.type') }}</th>
-                                <th><a class="sort-link" href="{{ report_sort_links.source.url }}">{{ t(lang, 'common.source') }}{% if report_sort_links.source.state %}<span class="sort-state">{{ '^' if report_sort_links.source.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
+                                <th><a class="sort-link" href="{{ report_sort_links.source.url }}">{{ t(lang, 'common.source') }}{% if report_sort_links.source.state %}<span class="sort-state">{{ '↑' if report_sort_links.source.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
                                 <th>{{ t(lang, 'common.summary') }}</th>
                                 <th>{{ t(lang, 'common.actions') }}</th>
                             </tr>
@@ -212,13 +174,13 @@
                 <div class="pagination-meta">{{ t(lang, 'common.showing_range').format(start=report_pagination.range_start, end=report_pagination.range_end, total=report_pagination.total_items) }}</div>
                 <div class="pagination-links">
                     {% if report_pagination.has_prev %}
-                    <a href="{{ report_pagination.prev_url }}" class="pagination-link">{{ t(lang, 'common.previous') }}</a>
+                    <a href="{{ report_pagination.prev_url }}" class="pagination-link"><span aria-hidden="true">←</span> {{ t(lang, 'common.previous') }}</a>
                     {% endif %}
                     {% for page in report_pagination.pages %}
                     <a href="{{ page.url }}" class="pagination-link {% if page.current %}is-current{% endif %}">{{ page.number }}</a>
                     {% endfor %}
                     {% if report_pagination.has_next %}
-                    <a href="{{ report_pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }}</a>
+                    <a href="{{ report_pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }} <span aria-hidden="true">→</span></a>
                     {% endif %}
                 </div>
             </div>
@@ -254,8 +216,8 @@
                     <textarea id="note-content" required placeholder="{{ t(lang, 'animal_detail.note_content_placeholder') }}"></textarea>
                 </div>
                 <div class="filters-actions">
-                    <button type="submit" class="btn btn-primary" id="noteSubmitBtn">{{ t(lang, 'animal_detail.save_note') }}</button>
-                    <button type="button" class="btn btn-secondary" id="noteResetBtn">{{ t(lang, 'common.clear') }}</button>
+                    <button type="submit" class="btn btn-primary" id="noteSubmitBtn"><span aria-hidden="true">💾</span> {{ t(lang, 'animal_detail.save_note') }}</button>
+                    <button type="button" class="btn btn-secondary" id="noteResetBtn"><span aria-hidden="true">✕</span> {{ t(lang, 'common.clear') }}</button>
                 </div>
             </form>
 
@@ -275,8 +237,8 @@
                             </div>
                         </div>
                         <div class="inline-actions">
-                            <button type="button" class="btn btn-secondary" onclick="editClinicalNote({{ note.id }})">{{ t(lang, 'common.edit') }}</button>
-                            <button type="button" class="btn btn-danger" onclick="deleteClinicalNote({{ note.id }})">{{ t(lang, 'common.delete') }}</button>
+                            <button type="button" class="btn btn-secondary" onclick="editClinicalNote({{ note.id }})"><span aria-hidden="true">✎</span> {{ t(lang, 'common.edit') }}</button>
+                            <button type="button" class="btn btn-danger" onclick="deleteClinicalNote({{ note.id }})"><span aria-hidden="true">🗑</span> {{ t(lang, 'common.delete') }}</button>
                         </div>
                     </div>
                     <div class="collapsible-block">
@@ -290,89 +252,6 @@
             </div>
             {% else %}
             <div class="empty-state">{{ t(lang, 'animal_detail.no_notes_added') }}</div>
-            {% endif %}
-        </section>
-        {% endif %}
-
-        {% if active_tab == 'diagnostics' %}
-        <section class="card">
-            <div class="card-header">
-                <div>
-                    <div class="card-kicker">{{ t(lang, 'animal_detail.decision_support') }}</div>
-                    <h2 class="card-title">{{ t(lang, 'animal_detail.ai_differential_diagnosis') }}</h2>
-                </div>
-                <button type="button" class="btn btn-primary" data-diagnosis-trigger onclick="triggerDiagnosis()">{{ t(lang, 'animal_detail.generate_update') }}</button>
-            </div>
-
-            <div class="summary-grid" style="margin-bottom: 1rem;">
-                <div class="summary-block">
-                    <div class="summary-block-label">{{ t(lang, 'animal_detail.scope') }}</div>
-                    <div class="summary-block-value">{{ t(lang, 'animal_detail.scope_description') }}</div>
-                </div>
-                <div class="summary-block">
-                    <div class="summary-block-label">{{ t(lang, 'animal_detail.current_status') }}</div>
-                    <div class="summary-block-value">
-                        {% if active_diagnosis_job and active_diagnosis_job.is_active %}
-                        {{ t(lang, 'animal_detail.diagnosis_running') }}
-                        {% elif latest_diagnosis %}
-                        {{ t(lang, 'animal_detail.last_updated').format(date=latest_diagnosis.report_date|format_date if latest_diagnosis.report_date else '--') }}
-                        {% else %}
-                        {{ t(lang, 'animal_detail.no_diagnosis_generated') }}
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-
-            {% if latest_diagnosis %}
-            <div class="card" style="margin-bottom: 1rem;">
-                <div class="card-kicker">{{ t(lang, 'animal_detail.latest_result') }}</div>
-                <h3 style="margin-bottom: 0.6rem;">
-                    {% if latest_diagnosis.report_type in ['clinical_notes_only', 'comprehensive'] %}
-                    {{ t(lang, 'diagnosis.' ~ latest_diagnosis.report_type) }}
-                    {% else %}
-                    {{ latest_diagnosis.report_type|replace('_', ' ')|title }}
-                    {% endif %}
-                </h3>
-                <p class="text-muted" style="line-height: 1.6;">{{ (latest_diagnosis.executive_summary or latest_diagnosis.input_summary)|truncate(420) }}</p>
-                <div class="inline-actions" style="margin-top: 1rem;">
-                    <a href="/animal/{{ animal.id }}/diagnosis/{{ latest_diagnosis.id }}" class="btn btn-secondary">{{ t(lang, 'animal_detail.open_full_report') }}</a>
-                </div>
-            </div>
-            {% endif %}
-
-            {% if diagnosis_reports %}
-            <div class="table-shell">
-                <div class="table-responsive">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>{{ t(lang, 'common.date') }}</th>
-                                <th>{{ t(lang, 'animal_detail.type') }}</th>
-                                <th>{{ t(lang, 'common.summary') }}</th>
-                                <th>{{ t(lang, 'common.actions') }}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for report in diagnosis_reports %}
-                            <tr>
-                                <td>{{ report.report_date|format_date if report.report_date else '--' }}</td>
-                                <td>
-                                    {% if report.report_type in ['clinical_notes_only', 'comprehensive'] %}
-                                    {{ t(lang, 'diagnosis.' ~ report.report_type) }}
-                                    {% else %}
-                                    {{ report.report_type|replace('_', ' ')|title }}
-                                    {% endif %}
-                                </td>
-                                <td>{{ (report.executive_summary or report.input_summary)|truncate(180) }}</td>
-                                <td><a href="/animal/{{ animal.id }}/diagnosis/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            {% else %}
-            <div class="empty-state">{{ t(lang, 'animal_detail.no_diagnosis_reports') }}</div>
             {% endif %}
         </section>
         {% endif %}
@@ -450,7 +329,7 @@
                     <textarea id="profile-notes" name="notes">{{ animal.notes or '' }}</textarea>
                 </div>
                 <div class="filters-actions">
-                    <button type="submit" class="btn btn-primary">{{ t(lang, 'animal_detail.save_profile') }}</button>
+                    <button type="submit" class="btn btn-primary"><span aria-hidden="true">💾</span> {{ t(lang, 'animal_detail.save_profile') }}</button>
                 </div>
             </form>
         </section>
@@ -475,7 +354,7 @@
                 </div>
                 <div class="list-stack" id="merge-results" style="margin-bottom: 1rem;"></div>
                 <div class="filters-actions">
-                    <button type="submit" class="btn btn-danger" id="merge-submit" disabled>{{ t(lang, 'animal_detail.merge_into_selected') }}</button>
+                    <button type="submit" class="btn btn-danger" id="merge-submit" disabled><span aria-hidden="true">⇆</span> {{ t(lang, 'animal_detail.merge_into_selected') }}</button>
                 </div>
             </form>
         </section>
@@ -554,20 +433,12 @@
 {% block scripts %}
 <script>
     const csrfToken = "{{ csrf_token }}";
-    let activeDiagnosisJob = {{ active_diagnosis_job|tojson }};
-    let diagnosisPollTimer = null;
     const animalDetailTranslations = {
         saveNote: {{ t(lang, 'animal_detail.save_note')|tojson }},
         updateNote: {{ t(lang, 'animal_detail.update_note')|tojson }},
         loadNoteError: {{ t(lang, 'animal_detail.load_note_error')|tojson }},
         deleteNoteConfirm: {{ t(lang, 'animal_detail.delete_note_confirm')|tojson }},
         deleteNoteError: {{ t(lang, 'animal_detail.delete_note_error')|tojson }},
-        diagnosisError: {{ t(lang, 'animal_detail.diagnosis_error')|tojson }},
-        diagnosisQueued: {{ t(lang, 'animal_detail.diagnosis_queued')|tojson }},
-        diagnosisRunning: {{ t(lang, 'animal_detail.diagnosis_running')|tojson }},
-        diagnosisAlreadyRunning: {{ t(lang, 'animal_detail.diagnosis_already_running')|tojson }},
-        diagnosisReady: {{ t(lang, 'animal_detail.diagnosis_ready')|tojson }},
-        diagnosisGenerating: {{ t(lang, 'animal_detail.diagnosis_generating_button')|tojson }},
         saveNoteError: {{ t(lang, 'animal_detail.save_note_error')|tojson }},
         saveProfileError: {{ t(lang, 'animal_detail.save_profile_error')|tojson }},
         profileUpdated: {{ t(lang, 'animal_detail.profile_updated')|tojson }},
@@ -596,38 +467,6 @@
         });
     }
 
-    function getDiagnosisButtons() {
-        return Array.from(document.querySelectorAll('[data-diagnosis-trigger]'));
-    }
-
-    function setDiagnosisButtonsBusy(isBusy) {
-        getDiagnosisButtons().forEach((button) => {
-            if (!button.dataset.defaultLabel) {
-                button.dataset.defaultLabel = button.textContent.trim();
-            }
-            button.disabled = isBusy;
-            button.textContent = isBusy
-                ? animalDetailTranslations.diagnosisGenerating
-                : button.dataset.defaultLabel;
-        });
-    }
-
-    function renderDiagnosisNotice(message, type) {
-        const notice = document.getElementById('diagnosisJobNotice');
-        if (!notice) return;
-
-        if (!message) {
-            notice.style.display = 'none';
-            notice.textContent = '';
-            notice.className = 'alert alert-info';
-            return;
-        }
-
-        notice.textContent = message;
-        notice.className = `alert alert-${type || 'info'}`;
-        notice.style.display = 'block';
-    }
-
     function initializeCollapsibles() {
         document.querySelectorAll('.collapsible-block').forEach((block) => {
             const content = block.querySelector('.collapsible-content');
@@ -647,65 +486,6 @@
                 toggle.textContent = expanded ? collapsibleTranslations.less : collapsibleTranslations.more;
             };
         });
-    }
-
-    function getDiagnosisStatusMessage(job) {
-        if (!job) return '';
-        if (job.status === 'running') return animalDetailTranslations.diagnosisRunning;
-        if (job.status === 'pending') return animalDetailTranslations.diagnosisQueued;
-        return '';
-    }
-
-    async function pollDiagnosisJob(jobId) {
-        try {
-            const response = await fetch(`/api/diagnosis-jobs/${jobId}`);
-            const data = await response.json();
-            if (!data.success) throw new Error(data.message || animalDetailTranslations.diagnosisError);
-
-            activeDiagnosisJob = data.job;
-
-            if (activeDiagnosisJob.status === 'completed' && activeDiagnosisJob.redirect_url) {
-                renderDiagnosisNotice(animalDetailTranslations.diagnosisReady, 'success');
-                setDiagnosisButtonsBusy(false);
-                if (diagnosisPollTimer) {
-                    window.clearInterval(diagnosisPollTimer);
-                    diagnosisPollTimer = null;
-                }
-                window.location.href = activeDiagnosisJob.redirect_url;
-                return;
-            }
-
-            if (activeDiagnosisJob.status === 'failed') {
-                renderDiagnosisNotice(activeDiagnosisJob.error_message || animalDetailTranslations.diagnosisError, 'error');
-                setDiagnosisButtonsBusy(false);
-                if (diagnosisPollTimer) {
-                    window.clearInterval(diagnosisPollTimer);
-                    diagnosisPollTimer = null;
-                }
-                return;
-            }
-
-            setDiagnosisButtonsBusy(true);
-            renderDiagnosisNotice(getDiagnosisStatusMessage(activeDiagnosisJob), 'info');
-        } catch (error) {
-            renderDiagnosisNotice(error.message || animalDetailTranslations.diagnosisError, 'error');
-            setDiagnosisButtonsBusy(false);
-            if (diagnosisPollTimer) {
-                window.clearInterval(diagnosisPollTimer);
-                diagnosisPollTimer = null;
-            }
-        }
-    }
-
-    function startDiagnosisPolling(jobId, message) {
-        if (!jobId) return;
-        if (diagnosisPollTimer) {
-            window.clearInterval(diagnosisPollTimer);
-        }
-        setDiagnosisButtonsBusy(true);
-        renderDiagnosisNotice(message || animalDetailTranslations.diagnosisQueued, 'info');
-        pollDiagnosisJob(jobId);
-        diagnosisPollTimer = window.setInterval(() => pollDiagnosisJob(jobId), 3000);
     }
 
     function resetNoteForm() {
@@ -746,46 +526,6 @@
         } catch (error) {
             showAlert(error.message || animalDetailTranslations.deleteNoteError, 'error');
         }
-    }
-
-    async function triggerDiagnosis() {
-        if (activeDiagnosisJob && activeDiagnosisJob.is_active) {
-            startDiagnosisPolling(
-                activeDiagnosisJob.id,
-                animalDetailTranslations.diagnosisAlreadyRunning
-            );
-            return;
-        }
-
-        try {
-            setDiagnosisButtonsBusy(true);
-            renderDiagnosisNotice(animalDetailTranslations.diagnosisQueued, 'info');
-            const formData = new FormData();
-            formData.append('csrf_token', csrfToken);
-            formData.append('report_type', 'comprehensive');
-            const response = await fetch('/animal/{{ animal.id }}/diagnosis', {
-                method: 'POST',
-                headers: { 'X-CSRF-Token': csrfToken },
-                body: formData
-            });
-            const data = await response.json();
-            if (!data.success) throw new Error(data.message || animalDetailTranslations.diagnosisError);
-            activeDiagnosisJob = data.job || null;
-            startDiagnosisPolling(
-                activeDiagnosisJob && activeDiagnosisJob.id,
-                data.already_running
-                    ? animalDetailTranslations.diagnosisAlreadyRunning
-                    : animalDetailTranslations.diagnosisQueued
-            );
-        } catch (error) {
-            setDiagnosisButtonsBusy(false);
-            renderDiagnosisNotice(error.message || animalDetailTranslations.diagnosisError, 'error');
-            showAlert(error.message || animalDetailTranslations.diagnosisError, 'error');
-        }
-    }
-
-    if (activeDiagnosisJob && activeDiagnosisJob.is_active) {
-        startDiagnosisPolling(activeDiagnosisJob.id, getDiagnosisStatusMessage(activeDiagnosisJob));
     }
 
     initializeCollapsibles();
