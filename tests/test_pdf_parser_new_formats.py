@@ -156,6 +156,54 @@ class NewReportFormatTests(unittest.TestCase):
             detect_report_type("Folha de Trabalho Nº 26561/1598712\nDados do Animal\nCITOLOGIA\nCITOLOGIA AURICULAR"),
             "dnatech_cytology",
         )
+        self.assertEqual(
+            detect_report_type("Folha de Trabalho Nº 31371/1611462\nDados do Animal\nCITOLOGIA GERAL\nRelatório citológico"),
+            "dnatech_cytology",
+        )
+
+    def test_parses_dnatech_narrative_cytology_as_pathology_findings(self):
+        parser = DNAtechParser()
+        text = (
+            "Folha de Trabalho Nº 31371/1611462\n"
+            "Dados do Animal\n"
+            "Animal Amendoim\n"
+            "Amostra Lamina | Pelos\n"
+            "CITOLOGIA GERAL\n"
+            "Relatório citológico\n"
+            "Lâminas recebidas:\n"
+            "Três lâminas não coradas com discreto material.\n"
+            "Tipo de Amostra:\n"
+            "Citologia geral. Sem mais informação. Esfregaço directo.\n"
+            "Celularidade:\n"
+            "Ao exame microscópico das lâminas recebida foi observada discreta hemodiluição.\n"
+            "Conclusão:\n"
+            "A imagem microscópica acima descrita não é suficiente para uma aproximação diagnóstica fiável.\n"
+            "O Analista\n"
+            "CITOLOGIA DERMATOLOGICA\n"
+            "Relatório citológico\n"
+            "Lâminas recebidas:\n"
+            "Duas lâminas não coradas com discreto material (uma das quais com fita-cola).\n"
+            "Tipo de Amostra:\n"
+            "Citologia dermatológica. Sem informação. Esfregaço direto.\n"
+            "Celularidade:\n"
+            "Ao exame microscópico das lâminas recebidas verifica-se a presença de discreta componente inflamatória.\n"
+            "Conclusão:\n"
+            "A imagem microscópica acima descrita é compatível com inflamação supurativa séptica.\n"
+            "O Analista\n"
+        )
+
+        self.assertEqual(parser._infer_report_classification(text), ("cytology", "cytology"))
+        self.assertEqual(parser._parse_cytology_measurements(text), [])
+        findings = parser._parse_cytology_findings(text)
+
+        self.assertEqual(len(findings), 2)
+        self.assertEqual(findings[0].title, "Citologia geral")
+        self.assertEqual(findings[0].specimen_label, "Três lâminas não coradas com discreto material.")
+        self.assertIn("discreta hemodiluição", findings[0].microscopic_description)
+        self.assertIn("não é suficiente", findings[0].diagnosis)
+        self.assertEqual(findings[1].title, "Citologia dermatológica")
+        self.assertIn("fita-cola", findings[1].specimen_label)
+        self.assertIn("inflamação supurativa", findings[1].diagnosis)
 
     def test_detects_dnatech_general_lab_reports(self):
         text = """

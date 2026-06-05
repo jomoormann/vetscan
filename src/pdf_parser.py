@@ -561,12 +561,11 @@ class DNAtechParser:
         urinalysis = self._parse_urinalysis(full_text)
         pathology_findings = []
         if session.report_type == "cytology":
-            measurements = self._parse_cytology_measurements(full_text)
-            measurements.extend(self._parse_generic_measurements(
-                full_text,
-                session.panel_name,
-                {measurement.measurement_code for measurement in measurements},
-            ))
+            measurements = (
+                self._parse_cytology_measurements(full_text)
+                if session.panel_name == "auricular_cytology"
+                else []
+            )
             pathology_findings = self._parse_cytology_findings(full_text)
         else:
             measurements = self._parse_generic_measurements(full_text, session.panel_name)
@@ -693,6 +692,9 @@ class DNAtechParser:
             return "dnatech_proteinogram", "protein_electrophoresis"
         if "COPROLOGIA" in upper_text or "FLUTUAÇÃO" in upper_text or "FLUTUACAO" in _fold_for_detection(text):
             return "coprology", "fecal_parasitology"
+        if self._is_cytology_report(text):
+            panel = "auricular_cytology" if "CITOLOGIA AURICULAR" in upper_text else "cytology"
+            return "cytology", panel
 
         has_biochemistry = (
             "BIOQUIMICA" in upper_text
@@ -725,10 +727,23 @@ class DNAtechParser:
             if "COPROCULTURA" in upper_text:
                 return "microbiology", "fecal_culture"
             return "microbiology", "microbiology"
-        if "CITOLOGIA AURICULAR" in upper_text or "MATERIAL RECEBIDO" in upper_text:
-            panel = "auricular_cytology" if "AURICULAR" in upper_text else "cytology"
-            return "cytology", panel
         return "dnatech_proteinogram", "protein_electrophoresis"
+
+    def _is_cytology_report(self, text: str) -> bool:
+        upper_text = text.upper()
+        folded_text = _fold_for_detection(text)
+        if "CITOLOGIA FLUTUACAO" in folded_text or "FLUTUAÇÃO" in upper_text:
+            return False
+        return (
+            "CITOLOGIA AURICULAR" in upper_text
+            or "CITOLOGIA GERAL" in upper_text
+            or "CITOLOGIA DERMATOLOGICA" in folded_text
+            or "RELATORIO CITOLOGICO" in folded_text
+            or (
+                "CITOLOGIA" in upper_text
+                and any(label in upper_text for label in ("LÂMINAS RECEBIDAS", "CELULARIDADE", "CONCLUSÃO"))
+            )
+        )
 
     def _measurement_code(self, value: str) -> str:
         folded = _fold_for_detection(value).lower()
@@ -1157,6 +1172,21 @@ class DNAtechParser:
 
         return text[start:end].strip()
 
+    def _extract_labeled_section(self, text: str, start_label: str,
+                                 end_labels: Tuple[str, ...]) -> str:
+        start_match = re.search(rf'{re.escape(start_label)}\s*:?', text, re.IGNORECASE)
+        if not start_match:
+            return ""
+
+        start = start_match.end()
+        end = len(text)
+        for label in end_labels:
+            end_match = re.search(rf'{re.escape(label)}\s*:?', text[start:], re.IGNORECASE)
+            if end_match:
+                end = min(end, start + end_match.start())
+
+        return text[start:end].strip(" \n\r\t:")
+
     def _clean_dnatech_narrative(self, value: Optional[str]) -> str:
         if not value:
             return ""
@@ -1166,12 +1196,26 @@ class DNAtechParser:
             "O Analista",
             "Data de fecho",
             "VkrokGuur",
+            "VkVkrrookkGGuuuurr",
             "Folha de Trabalho",
             "Nome ",
+            "Dados do Animal",
+            "ID Animal",
+            "Animal ",
             "Localidade ",
             "Telefone ",
             "Fax",
             "Envio ",
+            "Espécie ",
+            "Raça ",
+            "Microchip ",
+            "Idade ",
+            "Amostra ",
+            "Relatório",
+            "Documento procesado",
+            "Documento processado",
+            "DNAtech",
+            "Rkurk",
             "*Escala",
         )
         for raw_line in value.splitlines():
@@ -1187,38 +1231,99 @@ class DNAtechParser:
         if "CITOLOGIA" not in text.upper():
             return []
 
-        title = self._extract_single_line_value(text, "CITOLOGIA") or "Citologia"
-        material = self._extract_single_line_value(text, "Material Recebido")
-        sample_sites = re.findall(
-            r'^Amostra Analisada\s+(.+?)\s*$',
-            text,
+        sections = self._split_cytology_sections(text)
+        if not sections:
+            sections = [("Citologia", text)]
+
+        findings: List[PathologyFinding] = []
+        for sort_order, (title, block) in enumerate(sections):
+            material = self._clean_dnatech_narrative(
+                self._extract_labeled_section(
+                    block,
+                    "Lâminas recebidas",
+                    ("Tipo de Amostra", "Celularidade", "Conclusão", "O Analista", "Data de fecho"),
+                )
+            )
+            sample_method = self._clean_dnatech_narrative(
+                self._extract_labeled_section(
+                    block,
+                    "Tipo de Amostra",
+                    ("Celularidade", "CARACTERES GERAIS", "Conclusão", "O Analista", "Data de fecho"),
+                )
+            )
+            if not material:
+                material = self._extract_single_line_value(block, "Material Recebido") or ""
+
+            sample_sites = re.findall(
+                r'^Amostra Analisada\s+(.+?)\s*$',
+                block,
+                re.IGNORECASE | re.MULTILINE,
+            )
+            microscopic_description = self._clean_dnatech_narrative(
+                self._extract_labeled_section(
+                    block,
+                    "Celularidade",
+                    ("Conclusão", "Observações", "O Analista", "Data de fecho"),
+                )
+            ) or self._clean_dnatech_narrative(
+                self._extract_labeled_section(
+                    block,
+                    "CARACTERES GERAIS",
+                    ("Conclusão", "Observações", "O Analista", "Data de fecho"),
+                )
+            )
+            observations = self._clean_dnatech_narrative(
+                self._extract_labeled_section(block, "Observações", ("Conclusão", "O Analista", "Data de fecho"))
+            )
+            conclusion = self._clean_dnatech_narrative(
+                self._extract_labeled_section(block, "Conclusão", ("*Escala", "O Analista", "Data de fecho"))
+            )
+
+            findings.append(PathologyFinding(
+                section_type="cytology",
+                title=title,
+                specimen_label=material or None,
+                sample_site="; ".join(_normalize_space(site) for site in sample_sites) or None,
+                sample_method=sample_method or None,
+                microscopic_description=microscopic_description or None,
+                diagnosis=conclusion or None,
+                comment=observations or None,
+                sort_order=sort_order,
+            ))
+
+        return findings
+
+    def _split_cytology_sections(self, text: str) -> List[Tuple[str, str]]:
+        title_pattern = re.compile(
+            r'^(CITOLOGIA(?:\s+(?:AURICULAR|GERAL|DERMATOL[ÓO]GICA|DERMATOLOGICA))?)\s*$',
             re.IGNORECASE | re.MULTILINE,
         )
+        specific_matches = [
+            match for match in title_pattern.finditer(text)
+            if _fold_for_detection(match.group(1)) != "CITOLOGIA"
+        ]
+        matches = specific_matches or list(title_pattern.finditer(text))
+        if not matches:
+            return []
 
-        microscopic_description = self._clean_dnatech_narrative(
-            self._extract_until_any(
-                text,
-                "CARACTERES GERAIS",
-                ("Conclusão", "Observações", "O Analista", "Data de fecho"),
-            )
-        )
-        observations = self._clean_dnatech_narrative(
-            self._extract_until_any(text, "Observações", ("Conclusão", "O Analista", "Data de fecho"))
-        )
-        conclusion = self._clean_dnatech_narrative(
-            self._extract_until_any(text, "Conclusão", ("*Escala", "O Analista", "Data de fecho"))
-        )
+        sections: List[Tuple[str, str]] = []
+        for index, match in enumerate(matches):
+            start = match.start()
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+            title = self._format_cytology_title(match.group(1))
+            block = text[start:end]
+            sections.append((title, block))
+        return sections
 
-        return [PathologyFinding(
-            section_type="cytology",
-            title=title,
-            sample_site="; ".join(_normalize_space(site) for site in sample_sites) or None,
-            sample_method=material,
-            microscopic_description=microscopic_description or None,
-            diagnosis=conclusion or None,
-            comment=observations or None,
-            sort_order=0,
-        )]
+    def _format_cytology_title(self, value: str) -> str:
+        folded = _fold_for_detection(value)
+        if "AURICULAR" in folded:
+            return "Citologia auricular"
+        if "GERAL" in folded:
+            return "Citologia geral"
+        if "DERMATOLOGICA" in folded:
+            return "Citologia dermatológica"
+        return "Citologia"
 
     def _parse_cytology_measurements(self, text: str) -> List[SessionMeasurement]:
         if "CITOLOGIA" not in text.upper():
