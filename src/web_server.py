@@ -117,8 +117,8 @@ LOGIN_EMAIL_WINDOW = timedelta(minutes=15)
 LOGIN_IP_WINDOW_LIMIT = 20
 LOGIN_IP_WINDOW = timedelta(hours=1)
 AUTH_LOCKOUT_MINUTES = 15
-SESSION_IDLE_TIMEOUT = timedelta(hours=24)
-SESSION_ABSOLUTE_TIMEOUT = timedelta(days=7)
+SESSION_IDLE_TIMEOUT = timedelta(days=30)
+SESSION_ABSOLUTE_TIMEOUT = timedelta(days=30)
 
 
 def normalize_email(value: Optional[str]) -> Optional[str]:
@@ -951,7 +951,9 @@ def _init_global_service():
             uploads_dir=str(UPLOADS_DIR)
         )
         _global_service.initialize()
-        expired_sessions = _global_service.db.cleanup_expired_user_sessions()
+        expired_sessions = _global_service.db.cleanup_expired_user_sessions(
+            idle_timeout_hours=int(SESSION_IDLE_TIMEOUT.total_seconds() // 3600)
+        )
         old_auth_events = _global_service.db.cleanup_old_auth_events()
         if expired_sessions:
             logger.warning(f"Revoked {expired_sessions} expired sessions during startup")

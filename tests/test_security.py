@@ -102,9 +102,11 @@ class SecurityHardeningTests(unittest.TestCase):
 
     def test_login_logout_and_persistent_lockout(self):
         user = self._create_user()
+        login_started_at = datetime.utcnow()
         login_response = self._login(email=user.email)
         self.assertEqual(login_response.status_code, 302)
         self.assertEqual(login_response.headers["location"], "/")
+        self.assertIn("Max-Age=2592000", login_response.headers["set-cookie"])
 
         service = web_server.get_service()
         try:
@@ -112,6 +114,12 @@ class SecurityHardeningTests(unittest.TestCase):
                 "SELECT COUNT(*) FROM user_sessions WHERE revoked_at IS NULL"
             ).fetchone()[0]
             self.assertEqual(active_sessions, 1)
+            expires_at = service.db.conn.execute(
+                "SELECT expires_at FROM user_sessions WHERE revoked_at IS NULL"
+            ).fetchone()["expires_at"]
+            if isinstance(expires_at, str):
+                expires_at = datetime.fromisoformat(expires_at)
+            self.assertGreaterEqual((expires_at - login_started_at).days, 29)
         finally:
             service.close()
 
