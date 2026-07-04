@@ -63,7 +63,7 @@
                         <td>
                             <div class="table-title">{{ item.animal.name }}</div>
                             <div class="table-meta">
-                                {{ item.animal.species }}{% if item.animal.breed %} · {{ item.animal.breed }}{% endif %}
+                                {{ item.animal.species }}{% if item.animal.breed %} · {{ item.animal.breed }}{% endif %}{% if item.animal.owner_name %} · {{ item.animal.owner_name }}{% endif %}
                             </div>
                         </td>
                         <td>
