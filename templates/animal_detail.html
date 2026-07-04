@@ -277,14 +277,6 @@
                         <input id="profile-breed" name="breed" value="{{ animal.breed or '' }}">
                     </div>
                     <div class="field">
-                        <label for="profile-vet">{{ t(lang, 'animal.responsible_vet') }}</label>
-                        <input id="profile-vet" name="responsible_vet" value="{{ animal.responsible_vet or '' }}">
-                    </div>
-                    <div class="field">
-                        <label for="profile-assignment-reason">{{ t(lang, 'animal_detail.vet_change_reason') }}</label>
-                        <input id="profile-assignment-reason" name="assignment_reason" placeholder="{{ t(lang, 'animal_detail.vet_change_reason_placeholder') }}">
-                    </div>
-                    <div class="field">
                         <label for="profile-owner">{{ t(lang, 'common.pet_owner') }}</label>
                         <input id="profile-owner" name="owner_name" value="{{ animal.owner_name or '' }}">
                     </div>
@@ -364,40 +356,6 @@
             </form>
         </section>
 
-        <section class="card">
-            <div class="card-header">
-                <div>
-                    <div class="card-kicker">{{ t(lang, 'animal_detail.ownership_history') }}</div>
-                    <h2 class="card-title">{{ t(lang, 'animal_detail.responsible_vet_changes') }}</h2>
-                </div>
-            </div>
-            {% if vet_history %}
-            <div class="list-stack">
-                {% for item in vet_history %}
-                <div class="list-item">
-                    <div>
-                        <div class="table-title">{{ item.vet_name }}</div>
-                        <div class="table-meta">
-                            {{ item.start_date|format_date if item.start_date else '--' }}
-                            {% if item.end_date %} → {{ item.end_date|format_date }}{% else %} → {{ t(lang, 'animal_detail.current_lower') }}{% endif %}
-                        </div>
-                        <div class="table-meta">
-                            {% if item.changed_by_name %}{{ t(lang, 'animal_detail.changed_by').format(user=item.changed_by_name) }}{% else %}{{ t(lang, 'animal_detail.change_source_not_recorded') }}{% endif %}
-                            {% if item.change_reason %} · {{ item.change_reason }}{% endif %}
-                        </div>
-                    </div>
-                    {% if not item.end_date %}
-                    <span class="badge badge-info">{{ t(lang, 'common.current') }}</span>
-                    {% else %}
-                    <span class="badge badge-normal">{{ t(lang, 'common.past') }}</span>
-                    {% endif %}
-                </div>
-                {% endfor %}
-            </div>
-            {% else %}
-            <div class="empty-state">{{ t(lang, 'animal_detail.no_vet_history') }}</div>
-            {% endif %}
-        </section>
         {% endif %}
     </section>
 
@@ -405,10 +363,6 @@
         <section class="card">
             <h2 class="card-title" style="margin-bottom: 1rem;">{{ animal.name }}</h2>
             <div class="summary-grid">
-                <div class="summary-block">
-                    <div class="summary-block-label">{{ t(lang, 'animal.responsible_vet') }}</div>
-                    <div class="summary-block-value">{{ animal.responsible_vet or '--' }}</div>
-                </div>
                 <div class="summary-block">
                     <div class="summary-block-label">{{ t(lang, 'common.age') }}</div>
                     <div class="summary-block-value">{{ animal.age_display }}</div>
@@ -628,7 +582,7 @@
                 <button type="button" class="list-item" style="width: 100%; text-align: left; background: var(--surface-muted);" data-target-id="${item.id}">
                     <div>
                         <div class="table-title">${escapeHtml(item.name)}</div>
-                        <div class="table-meta">${escapeHtml(item.species || '--')}${item.responsible_vet ? ` · ${escapeHtml(item.responsible_vet)}` : ''}</div>
+                        <div class="table-meta">${escapeHtml(item.species || '--')}</div>
                         <div class="table-meta">${reportLabel.replace('{count}', reportCount)}</div>
                     </div>
                 </button>

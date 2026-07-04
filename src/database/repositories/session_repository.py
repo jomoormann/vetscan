@@ -152,7 +152,6 @@ class SessionRepository:
                 a.name AS animal_name,
                 a.species AS animal_species,
                 a.owner_name AS owner_name,
-                a.responsible_vet AS responsible_vet,
                 ts.ordering_vet AS ordering_vet,
                 (
                     SELECT COUNT(*)

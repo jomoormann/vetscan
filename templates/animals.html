@@ -22,15 +22,6 @@
             <input id="animal-search" type="search" name="q" value="{{ filters.q }}" placeholder="{{ t(lang, 'animals.search_placeholder') }}">
         </div>
         <div class="field">
-            <label for="animal-vet" class="sr-only">{{ t(lang, 'animal.responsible_vet') }}</label>
-            <select id="animal-vet" name="responsible_vet" onchange="this.form.submit()">
-                <option value="">{{ t(lang, 'animals.all_vets') }}</option>
-                {% for vet in responsible_vets %}
-                <option value="{{ vet }}" {% if filters.responsible_vet == vet %}selected{% endif %}>{{ vet }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="field">
             <label for="animal-species" class="sr-only">{{ t(lang, 'common.species') }}</label>
             <select id="animal-species" name="species" onchange="this.form.submit()">
                 <option value="">{{ t(lang, 'animals.all_species') }}</option>
@@ -61,7 +52,6 @@
                 <thead>
                     <tr>
                         <th><a class="sort-link" href="{{ sort_links.animal.url }}">{{ t(lang, 'common.animal') }}{% if sort_links.animal.state %}<span class="sort-state">{{ '↑' if sort_links.animal.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
-                        <th><a class="sort-link" href="{{ sort_links.vet.url }}">{{ t(lang, 'animal.responsible_vet') }}{% if sort_links.vet.state %}<span class="sort-state">{{ '↑' if sort_links.vet.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
                         <th><a class="sort-link" href="{{ sort_links.last_report.url }}">{{ t(lang, 'animals.last_report') }}{% if sort_links.last_report.state %}<span class="sort-state">{{ '↑' if sort_links.last_report.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
                         <th><a class="sort-link" href="{{ sort_links.reports.url }}">{{ t(lang, 'nav.reports') }}{% if sort_links.reports.state %}<span class="sort-state">{{ '↑' if sort_links.reports.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
                         <th>{{ t(lang, 'common.actions') }}</th>
@@ -76,7 +66,6 @@
                                 {{ item.animal.species }}{% if item.animal.breed %} · {{ item.animal.breed }}{% endif %}
                             </div>
                         </td>
-                        <td>{{ item.animal.responsible_vet or '--' }}</td>
                         <td>
                             {% if item.last_test %}
                             {{ item.last_test|format_date }}
@@ -109,7 +98,6 @@
         <div class="pagination-tools">
             <form method="get" action="/animals" class="page-size-form">
                 <input type="hidden" name="q" value="{{ filters.q }}">
-                <input type="hidden" name="responsible_vet" value="{{ filters.responsible_vet }}">
                 <input type="hidden" name="species" value="{{ filters.species }}">
                 <input type="hidden" name="sort" value="{{ filters.sort }}">
                 <input type="hidden" name="page" value="1">

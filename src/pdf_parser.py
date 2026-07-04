@@ -567,6 +567,13 @@ class DNAtechParser:
                 else []
             )
             pathology_findings = self._parse_cytology_findings(full_text)
+            # Mixed report: a cytology PDF that also carries a "Urina Tipo II"
+            # section (e.g. a vaginal cytology bundled with a urinalysis). Parse
+            # the urine block's parameters so the full urinalysis panel shows as
+            # usual instead of only the 4-field summary.
+            urine_block = self._extract_urinalysis_block(full_text)
+            if urine_block:
+                measurements += self._parse_generic_measurements(urine_block, "urinalysis_upc")
         else:
             measurements = self._parse_generic_measurements(full_text, session.panel_name)
         
@@ -830,34 +837,13 @@ class DNAtechParser:
                     measurement_code="sdma",
                 )
 
-            leish_match = re.match(
-                r"^ANTICORPOS ANTI-LEISHMANIA\s+(.+)$",
-                line,
-                re.IGNORECASE,
-            )
-            if leish_match:
-                self._add_measurement(
-                    measurements,
-                    "immunology",
-                    "Anticorpos anti-Leishmania",
-                    value_text=leish_match.group(1),
-                    measurement_code="anti_leishmania_antibodies",
-                )
-
-            titer_match = re.match(
-                r"^Titula[çc][ãa]o\s+(1/\d+)\s+(.+)$",
-                line,
-                re.IGNORECASE,
-            )
-            if titer_match:
-                dilution = titer_match.group(1)
-                self._add_measurement(
-                    measurements,
-                    "immunology",
-                    f"Titulação {dilution}",
-                    value_text=titer_match.group(2),
-                    measurement_code=f"leishmania_titer_{dilution.replace('/', '_')}",
-                )
+            # NOTE: immunology serology (disease antibody subtitles + their IFI
+            # "Titulação 1/N" ladders) is parsed generically in
+            # _parse_flexible_result_lines, which groups each ladder under the
+            # preceding "ANTICORPOS ANTI-<disease>" subtitle. The old hardcoded
+            # leishmania blocks were removed: they mislabelled every titration as
+            # a leishmania titer and invented a leishmania analysis on reports
+            # that never mentioned it.
 
             culture_match = re.match(
                 r"^Microrganismo isolado\s+(.+)$",
@@ -1019,13 +1005,6 @@ class DNAtechParser:
             "acaros": "mites",
             "neutrofilos": "neutrophils",
         }
-        immunology_aliases = {
-            "anticorpos_anti_leishmania": "anti_leishmania_antibodies",
-            "titulacao_1_80": "leishmania_titer_1_80",
-            "titulacao_1_160": "leishmania_titer_1_160",
-            "titulacao_1_240": "leishmania_titer_1_240",
-            "titulacao_1_320": "leishmania_titer_1_320",
-        }
         value_pattern = (
             r"(?:Aguarda\s+Resultado|"
             r"Positivo(?:\s*\([^)]+\))?|"
@@ -1046,6 +1025,13 @@ class DNAtechParser:
             "raras",
             "normal",
         }
+
+        # Immunology serology reports group an IFI "Titulação 1/N" ladder under
+        # each bold "ANTICORPOS ANTI-<disease>" subtitle. Track the current
+        # disease so each titration row is namespaced to it, instead of the old
+        # hardcoded "leishmania_titer_*" that invented a leishmania analysis on
+        # reports which never mentioned leishmania.
+        current_immuno_disease = None
 
         for line in lines:
             line = _normalize_space(line.replace("*", " "))
@@ -1073,6 +1059,15 @@ class DNAtechParser:
                 value_text = f"{value_text} {flag_text}"
 
             code = self._measurement_code(name)
+            # Immunology: attach each "Titulação 1/N" ladder to the antibody
+            # subtitle it sits under, so titres are grouped per disease and never
+            # relabelled as leishmania.
+            if default_panel_name == "immunology":
+                folded_name = _fold_for_detection(name)
+                if folded_name.startswith("ANTICORPOS"):
+                    current_immuno_disease = code
+                elif current_immuno_disease and folded_name.startswith("TITULA"):
+                    code = f"{current_immuno_disease}_{code}"
             if code in ignored_codes:
                 continue
             if name[:1].islower() and name not in {"pH", "nRBC", "tCO2"}:
@@ -1080,11 +1075,6 @@ class DNAtechParser:
             if (
                 default_panel_name == "auricular_cytology"
                 and auricular_cytology_aliases.get(code) in existing_codes
-            ):
-                continue
-            if (
-                default_panel_name == "immunology"
-                and immunology_aliases.get(code) in existing_codes
             ):
                 continue
             if code in existing_codes or code in {item.measurement_code for item in measurements}:
@@ -1098,10 +1088,17 @@ class DNAtechParser:
                 continue
 
             reference_text = None
+            # Serology valorisation criterion, e.g. "Criterio de valorização >1/40"
+            crit_match = re.match(
+                r"^Crit[ée]rio de valoriza[çc][ãa]o\s*(.+)$", rest, re.IGNORECASE
+            )
+            if crit_match:
+                reference_text = _normalize_space(crit_match.group(1))
+                rest = ""
             reference_match = re.search(
                 r"(<\s*[\d,\.]+(?:/[A-Za-zÀ-ÿ]+)?|[\d,\.]+\s*-\s*[\d,\.]+(?:/[A-Za-zÀ-ÿ]+)?)",
                 rest,
-            )
+            ) if reference_text is None else None
             if reference_match:
                 reference_text = _normalize_space(reference_match.group(1))
                 rest = _normalize_space(
@@ -1210,7 +1207,9 @@ class DNAtechParser:
             "Raça ",
             "Microchip ",
             "Idade ",
-            "Amostra ",
+            "Amostra Analisada",
+            "Amostra Recebida",
+            "Amostra Recebido",
             "Relatório",
             "Documento procesado",
             "Documento processado",
@@ -1226,6 +1225,30 @@ class DNAtechParser:
                 continue
             lines.append(line)
         return _normalize_space(" ".join(lines))
+
+    def _extract_urinalysis_block(self, text: str) -> Optional[str]:
+        """Return the 'Urina Tipo II' portion of a multi-section DNAtech report.
+
+        Lets the urinalysis parameters be extracted even when the report is
+        classified as another type (e.g. a vaginal cytology bundled with a
+        urinalysis), by isolating the urine section from the surrounding blocks.
+        """
+        if "URINA TIPO II" not in text.upper() and "URINAS" not in text.upper():
+            return None
+        start_match = re.search(
+            r'^\s*(URINA TIPO II|URINAS)\b', text, re.IGNORECASE | re.MULTILINE
+        )
+        if not start_match:
+            return None
+        start = start_match.start()
+        after = start + len(start_match.group(0))
+        end_match = re.search(
+            r'^\s*(CITOLOGIA|HISTOLOGIA|MICROBIOLOGIA|IMUNOLOGIA|PROTEINOGRAMA|COPROLOGIA)\b',
+            text[after:],
+            re.IGNORECASE | re.MULTILINE,
+        )
+        end = after + end_match.start() if end_match else len(text)
+        return text[start:end]
 
     def _parse_cytology_findings(self, text: str) -> List[PathologyFinding]:
         if "CITOLOGIA" not in text.upper():
@@ -1273,11 +1296,29 @@ class DNAtechParser:
                 )
             )
             observations = self._clean_dnatech_narrative(
-                self._extract_labeled_section(block, "Observações", ("Conclusão", "O Analista", "Data de fecho"))
+                self._extract_labeled_section(
+                    block, "Observações",
+                    ("Resultado", "Conclusão", "Notas", "*Escala", "O Analista", "Data de fecho"),
+                )
+            ) or self._clean_dnatech_narrative(
+                self._extract_labeled_section(
+                    block, "Observação",
+                    ("Resultado", "Conclusão", "Notas", "*Escala", "O Analista", "Data de fecho"),
+                )
             )
+            # Vaginal cytology (and newer DNAtech layouts) label the conclusion
+            # "Resultado"; classic auricular/dermatological reports use "Conclusão".
             conclusion = self._clean_dnatech_narrative(
-                self._extract_labeled_section(block, "Conclusão", ("*Escala", "O Analista", "Data de fecho"))
+                self._extract_labeled_section(block, "Conclusão", ("Notas", "*Escala", "O Analista", "Data de fecho"))
+            ) or self._clean_dnatech_narrative(
+                self._extract_labeled_section(block, "Resultado", ("Notas", "*Escala", "O Analista", "Data de fecho"))
             )
+            notes = self._clean_dnatech_narrative(
+                self._extract_labeled_section(block, "Notas", ("*Escala", "O Analista", "Data de fecho"))
+            )
+            comment = observations or ""
+            if notes:
+                comment = (comment + "\n\nNotas: " + notes).strip() if comment else ("Notas: " + notes)
 
             findings.append(PathologyFinding(
                 section_type="cytology",
@@ -1287,7 +1328,7 @@ class DNAtechParser:
                 sample_method=sample_method or None,
                 microscopic_description=microscopic_description or None,
                 diagnosis=conclusion or None,
-                comment=observations or None,
+                comment=comment or None,
                 sort_order=sort_order,
             ))
 
@@ -1295,7 +1336,7 @@ class DNAtechParser:
 
     def _split_cytology_sections(self, text: str) -> List[Tuple[str, str]]:
         title_pattern = re.compile(
-            r'^(CITOLOGIA(?:\s+(?:AURICULAR|GERAL|DERMATOL[ÓO]GICA|DERMATOLOGICA))?)\s*$',
+            r'^(CITOLOGIA(?:\s+(?:AURICULAR|GERAL|DERMATOL[ÓO]GICA|DERMATOLOGICA|VAGINAL))?)\s*$',
             re.IGNORECASE | re.MULTILINE,
         )
         specific_matches = [
@@ -1323,6 +1364,8 @@ class DNAtechParser:
             return "Citologia geral"
         if "DERMATOLOGICA" in folded:
             return "Citologia dermatológica"
+        if "VAGINAL" in folded:
+            return "Citologia Vaginal"
         return "Citologia"
 
     def _parse_cytology_measurements(self, text: str) -> List[SessionMeasurement]:

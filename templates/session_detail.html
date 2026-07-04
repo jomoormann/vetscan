@@ -38,7 +38,7 @@
                     <table class="measurements-table">
                         <thead>
                             <tr>
-                                <th>{{ t(lang, 'session_detail.code') }}</th>
+                                <th>{{ t(lang, 'session_detail.parameter') }}</th>
                                 <th>{{ t(lang, 'session_detail.value') }}</th>
                                 <th>{{ t(lang, 'session_detail.reference') }}</th>
                                 <th>{{ t(lang, 'session_detail.status') }}</th>
@@ -48,10 +48,10 @@
                             {% for measurement in measurements %}
                             <tr>
                                 <td>
-                                    <div class="table-title">{{ measurement.measurement_code }}</div>
-                                    {% if measurement.measurement_name and measurement.measurement_name != measurement.measurement_code %}
-                                    <div class="table-meta">{{ measurement.measurement_name }}</div>
-                                    {% endif %}
+                                    {% set _uname = (measurement.measurement_name or '')|upper %}
+                                    {% set _is_subtitle = 'ANTICORPOS' in _uname %}
+                                    {% set _is_titer = _uname[:6] == 'TITULA' %}
+                                    <div class="table-title"{% if _is_subtitle %} style="font-weight:700;"{% elif _is_titer %} style="padding-left:1.25rem; font-weight:400;"{% endif %}>{{ measurement.measurement_name or measurement.measurement_code }}</div>
                                 </td>
                                 <td>
                                     {% if measurement.value_text %}
@@ -299,10 +299,6 @@
                 <div class="summary-block">
                     <div class="summary-block-label">{{ t(lang, 'common.pet_owner') }}</div>
                     <div class="summary-block-value">{{ animal.owner_name or '--' }}</div>
-                </div>
-                <div class="summary-block">
-                    <div class="summary-block-label">{{ t(lang, 'animal.responsible_vet') }}</div>
-                    <div class="summary-block-value">{{ animal.responsible_vet or '--' }}</div>
                 </div>
             </div>
         </section>

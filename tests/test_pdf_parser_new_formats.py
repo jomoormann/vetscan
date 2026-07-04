@@ -230,14 +230,50 @@ class NewReportFormatTests(unittest.TestCase):
         measurements = parser._parse_generic_measurements(text, "immunology")
 
         codes = [measurement.measurement_code for measurement in measurements]
-        self.assertNotIn("anticorpos_anti_leishmania", codes)
-        self.assertNotIn("titulacao_1_80", codes)
+        # No duplicates, and each titration is grouped under its antibody subtitle.
         self.assertEqual(len(codes), len(set(codes)))
-        self.assertEqual(measurements[0].measurement_code, "anti_leishmania_antibodies")
+        self.assertEqual(measurements[0].measurement_code, "anticorpos_anti_leishmania")
         self.assertEqual(measurements[0].value_text, "Positivo (Fraco)")
         self.assertEqual(measurements[0].flag, "high")
-        self.assertEqual(measurements[1].measurement_code, "leishmania_titer_1_80")
+        self.assertEqual(
+            measurements[1].measurement_code,
+            "anticorpos_anti_leishmania_titulacao_1_80",
+        )
+        self.assertEqual(measurements[1].value_text, "Positivo")
+        self.assertEqual(measurements[-1].measurement_code,
+                         "anticorpos_anti_leishmania_titulacao_1_240")
         self.assertEqual(measurements[-1].flag, "normal")
+
+    def test_immunology_titers_never_mislabelled_as_leishmania(self):
+        """Regression: a report about other diseases must not invent leishmania."""
+        parser = DNAtechParser()
+        text = """
+        IMUNOLOGIA
+        ANTICORPOS ANTI-RICKETSIA CONORII Positivo Criterio de valorização >1/40
+        Imunofluorescência Indireta (IFI)
+        Titulação 1/40 Positivo
+        Titulação 1/80 Positivo
+        ANTICORPOS ANTI-EHRLICHIA CANIS Negativo Criterio de valorização >1/50
+        Imunofluorescência Indireta (IFI)
+        Titulação 1/50 Negativo
+        """
+
+        measurements = parser._parse_generic_measurements(text, "immunology")
+        codes = [m.measurement_code for m in measurements]
+
+        # No invented leishmania analysis anywhere.
+        self.assertFalse([c for c in codes if "leishmania" in c])
+        # No duplicated rows.
+        self.assertEqual(len(codes), len(set(codes)))
+        # Each disease's titres are namespaced to that disease.
+        self.assertIn("anticorpos_anti_ricketsia_conorii", codes)
+        self.assertIn("anticorpos_anti_ricketsia_conorii_titulacao_1_40", codes)
+        self.assertIn("anticorpos_anti_ehrlichia_canis_titulacao_1_50", codes)
+        # The valorisation criterion is captured as the reference, not a unit.
+        ricketsia = next(m for m in measurements
+                         if m.measurement_code == "anticorpos_anti_ricketsia_conorii")
+        self.assertEqual(ricketsia.reference_text, ">1/40")
+        self.assertIsNone(ricketsia.unit)
 
     def test_parses_dnatech_culture_and_coprology_measurements(self):
         parser = DNAtechParser()

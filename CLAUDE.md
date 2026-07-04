@@ -11,8 +11,8 @@
 │  ─────────────────                     ────────────────                 │
 │                                                                         │
 │  ┌─────────────────┐                   ┌─────────────────────────────┐  │
-│  │ Your Machine    │    deploy.sh      │ VPS: 76.13.5.89             │  │
-│  │                 │ ────────────────► │ srv1278248.hstgr.cloud      │  │
+│  │ Your Machine    │    deploy.sh      │ VPS: 72.62.188.233             │  │
+│  │                 │ ────────────────► │ srv1797730.hstgr.cloud      │  │
 │  │ Code: /vet_...  │                   │                             │  │
 │  │ DB: data/*.db   │                   │ ┌─────────────────────────┐ │  │
 │  └─────────────────┘                   │ │ nginx (port 443/80)     │ │  │
@@ -49,11 +49,11 @@
 | Property | Value |
 |----------|-------|
 | **Type** | Hostinger VPS |
-| **Hostname** | srv1278248.hstgr.cloud |
-| **IP Address** | 76.13.5.89 |
+| **Hostname** | srv1797730.hstgr.cloud |
+| **IP Address** | 72.62.188.233 |
 | **SSH User** | root |
 | **SSH Port** | 22 (default) |
-| **SSH Command** | `ssh root@76.13.5.89` |
+| **SSH Command** | `ssh root@72.62.188.233` |
 | **Domain** | vetscan.net |
 | **App Path** | /var/www/vetscan.net/app/ |
 | **Database** | /var/www/vetscan.net/app/data/vet_proteins.db |
@@ -150,31 +150,31 @@ Gunicorn uses SIGTERM/SIGHUP to manage workers. Custom signal handlers interfere
 
 ```bash
 # SSH into VPS
-ssh root@76.13.5.89
+ssh root@72.62.188.233
 
 # Check service status
-ssh root@76.13.5.89 'systemctl status vetscan'
+ssh root@72.62.188.233 'systemctl status vetscan'
 
 # View live logs
-ssh root@76.13.5.89 'journalctl -u vetscan -f'
+ssh root@72.62.188.233 'journalctl -u vetscan -f'
 
 # View error logs
-ssh root@76.13.5.89 'tail -50 /var/www/vetscan.net/app/logs/error.log'
+ssh root@72.62.188.233 'tail -50 /var/www/vetscan.net/app/logs/error.log'
 
 # Restart service
-ssh root@76.13.5.89 'systemctl restart vetscan'
+ssh root@72.62.188.233 'systemctl restart vetscan'
 
 # Check database
-ssh root@76.13.5.89 'cd /var/www/vetscan.net/app && source venv/bin/activate && python3 -c "import sqlite3; conn=sqlite3.connect(\"data/vet_proteins.db\"); print(\"Animals:\", conn.execute(\"SELECT COUNT(*) FROM animals\").fetchone()[0])"'
+ssh root@72.62.188.233 'cd /var/www/vetscan.net/app && source venv/bin/activate && python3 -c "import sqlite3; conn=sqlite3.connect(\"data/vet_proteins.db\"); print(\"Animals:\", conn.execute(\"SELECT COUNT(*) FROM animals\").fetchone()[0])"'
 
 # Check for zombie workers
-ssh root@76.13.5.89 'ps aux | grep gunicorn'
+ssh root@72.62.188.233 'ps aux | grep gunicorn'
 
 # Check slow request logs
-ssh root@76.13.5.89 'grep -i "slow" /var/www/vetscan.net/app/logs/error.log | tail -20'
+ssh root@72.62.188.233 'grep -i "slow" /var/www/vetscan.net/app/logs/error.log | tail -20'
 
 # Run server monitor manually
-ssh root@76.13.5.89 'python3 /opt/server-monitor/monitor.py'
+ssh root@72.62.188.233 'python3 /opt/server-monitor/monitor.py'
 ```
 
 ---
@@ -264,7 +264,11 @@ vet_protein_app/
 
 ### 2026-01-23: Migration to VPS
 
-**Reason:** Shared hosting (82.198.229.40) had unreliable process management. Migrated to dedicated VPS (76.13.5.89) with systemd for automatic restarts.
+**Reason:** Shared hosting (82.198.229.40) had unreliable process management. Migrated to dedicated VPS (76.13.5.89, srv1278248) with systemd for automatic restarts.
+
+### 2026-07: Migration to new VPS (current production)
+
+Production moved from 76.13.5.89 (srv1278248) to **72.62.188.233 (srv1797730)** — the server this document now points to throughout. The old 76.13.5.89 box is **decommissioned**: it holds stale data (stops ~session 113) and leftover `/tmp/vetscan-cutover` / `/tmp/vetscan-migration` snapshots. Do not deploy to or query it. `vetscan.net` DNS is the source of truth for the current server address.
 
 ### 2026-01-25/27: Zombie Worker Issue
 
@@ -281,8 +285,8 @@ vet_protein_app/
 
 **To investigate slow requests:**
 ```bash
-ssh root@76.13.5.89 'grep -i "slow" /var/www/vetscan.net/app/logs/error.log'
-ssh root@76.13.5.89 'journalctl -u vetscan | grep -i slow'
+ssh root@72.62.188.233 'grep -i "slow" /var/www/vetscan.net/app/logs/error.log'
+ssh root@72.62.188.233 'journalctl -u vetscan | grep -i slow'
 ```
 
 ---
@@ -315,16 +319,16 @@ A monitoring system runs on the VPS to detect and auto-fix service issues.
 **Useful commands:**
 ```bash
 # Check monitor timer status
-ssh root@76.13.5.89 'systemctl list-timers server-monitor.timer'
+ssh root@72.62.188.233 'systemctl list-timers server-monitor.timer'
 
 # Run monitor manually
-ssh root@76.13.5.89 'python3 /opt/server-monitor/monitor.py'
+ssh root@72.62.188.233 'python3 /opt/server-monitor/monitor.py'
 
 # View monitor logs
-ssh root@76.13.5.89 'journalctl -u server-monitor.service -n 20'
+ssh root@72.62.188.233 'journalctl -u server-monitor.service -n 20'
 
 # Check current swap usage
-ssh root@76.13.5.89 'free -h'
+ssh root@72.62.188.233 'free -h'
 ```
 
 ---
@@ -332,7 +336,7 @@ ssh root@76.13.5.89 'free -h'
 ## COMMON MISTAKES TO AVOID
 
 1. **Deploying to wrong server** - Always use `./deploy/deploy.sh` which targets the VPS
-2. **Using old SSH credentials** - VPS uses `root@76.13.5.89`, not the old shared hosting
+2. **Using old SSH credentials** - VPS uses `root@72.62.188.233`, not the old shared hosting
 3. **Overwriting production database** - Never copy local DB to server
 4. **Adding signal handlers** - Gunicorn manages signals, don't interfere
 5. **Manual deployment** - Always use the deployment script for backups

@@ -12,7 +12,7 @@ BACKUP_FILE="$BACKUP_DIR/vet_proteins_$TIMESTAMP.db"
 
 # VPS Server details
 SSH_USER="root"
-SSH_HOST="76.13.5.89"
+SSH_HOST="72.62.188.233"
 REMOTE_DB="/var/www/vetscan.net/app/data/vet_proteins.db"
 
 echo "=== VetScan Database Backup ==="

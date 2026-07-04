@@ -2588,13 +2588,11 @@ async def list_animals(request: Request):
         page = parse_positive_int(request.query_params.get("page"), default=1)
         page_size = parse_positive_int(request.query_params.get("page_size"), default=25, maximum=100)
         search = (request.query_params.get("q") or "").strip() or None
-        responsible_vet = (request.query_params.get("responsible_vet") or "").strip() or None
         species = (request.query_params.get("species") or "").strip() or None
         sort = (request.query_params.get("sort") or "updated_desc").strip()
 
         animals, total = service.db.list_animals_paginated(
             search=search,
-            responsible_vet=responsible_vet,
             species=species,
             sort=sort,
             page=page,
@@ -2617,18 +2615,15 @@ async def list_animals(request: Request):
             "pagination": pagination,
             "filters": {
                 "q": search or "",
-                "responsible_vet": responsible_vet or "",
                 "species": species or "",
                 "sort": sort,
                 "page_size": page_size,
             },
             "sort_links": {
                 "animal": build_sort_toggle(request, sort, "name", "asc"),
-                "vet": build_sort_toggle(request, sort, "vet", "asc"),
                 "last_report": build_sort_toggle(request, sort, "last_report", "desc"),
                 "reports": build_sort_toggle(request, sort, "reports", "desc"),
             },
-            "responsible_vets": service.db.list_responsible_vets(),
             "species_options": species_options,
             "current_user": current_user,
         })
@@ -2678,7 +2673,6 @@ async def create_animal_page(
     age_months: int = Form(None),
     sex: str = Form("U"),
     neutered: str = Form(None),
-    responsible_vet: str = Form(None),
     microchip: str = Form(None),
     patient_since: str = Form(None),
     weight_kg: float = Form(None),
@@ -2703,7 +2697,6 @@ async def create_animal_page(
             age_months=age_months,
             sex=sex,
             neutered=parse_optional_bool(neutered),
-            responsible_vet=responsible_vet.strip() if responsible_vet else None,
             microchip=microchip.strip() if microchip else None,
             patient_since=parse_date_value(patient_since.strip()) if patient_since and patient_since.strip() else None,
             weight_kg=weight_kg,
@@ -2728,7 +2721,6 @@ async def create_animal_page(
                 "age_years": age_years,
                 "age_months": age_months,
                 "sex": sex,
-                "responsible_vet": responsible_vet,
                 "microchip": microchip,
                 "patient_since": patient_since,
                 "weight_kg": weight_kg,
@@ -2868,7 +2860,6 @@ async def view_animal(request: Request, animal_id: int):
             enrich_report_row(row, lang)
 
         clinical_notes = db.get_clinical_notes_for_animal(animal_id)
-        vet_history = db.get_vet_assignment_history(animal_id)
         report_type_options = []
         for row in db.conn.execute("""
             SELECT DISTINCT report_type, panel_name
@@ -2908,7 +2899,6 @@ async def view_animal(request: Request, animal_id: int):
             },
             "report_type_options": report_type_options,
             "clinical_notes": clinical_notes,
-            "vet_history": vet_history,
             "current_user": current_user,
             "csrf_token": signed_csrf,
             "today": date.today().isoformat(),
@@ -2944,13 +2934,11 @@ async def update_animal(
     age_months: int = Form(None),
     sex: str = Form("U"),
     neutered: str = Form(None),
-    responsible_vet: str = Form(None),
     microchip: str = Form(None),
     patient_since: str = Form(None),
     weight_kg: float = Form(None),
     medical_history: str = Form(None),
     notes: str = Form(None),
-    assignment_reason: str = Form(None),
     csrf_token: str = Form(None)
 ):
     """Update animal profile information"""
@@ -2981,8 +2969,6 @@ async def update_animal(
             update_fields["age_years"] = age_years
         if age_months is not None:
             update_fields["age_months"] = age_months
-        if responsible_vet is not None:
-            update_fields["responsible_vet"] = responsible_vet if responsible_vet.strip() else None
         if microchip is not None:
             update_fields["microchip"] = microchip if microchip.strip() else None
         if patient_since is not None:
@@ -2999,7 +2985,6 @@ async def update_animal(
         success = service.db.update_animal(
             animal_id,
             changed_by_user_id=current_user.id if current_user else None,
-            assignment_reason=assignment_reason.strip() if assignment_reason else None,
             **update_fields,
         )
 
@@ -3010,7 +2995,6 @@ async def update_animal(
                 "id": updated_animal.id if updated_animal else animal_id,
                 "name": updated_animal.name if updated_animal else name,
                 "owner_name": updated_animal.owner_name if updated_animal else owner_name,
-                "responsible_vet": updated_animal.responsible_vet if updated_animal else responsible_vet,
             }
         })
     except Exception as e:
@@ -3804,6 +3788,10 @@ async def compare_sessions_page(request: Request, animal_id: int):
                 "comparison_data": [],
                 "urinalysis_data": [],
                 "has_urinalysis": False,
+                "biochemistry_data": [],
+                "has_biochemistry": False,
+                "measurement_rows": [],
+                "has_measurements": False,
                 "error": get_text(lang, "compare.need_two_tests"),
                 "current_user": current_user
             })
@@ -3851,6 +3839,55 @@ async def compare_sessions_page(request: Request, animal_id: int):
             if urin:
                 has_urinalysis = True
 
+        # Get biochemistry (UPC ratio / renal markers) for each session
+        biochemistry_data = []
+        has_biochemistry = False
+        for session in sessions:
+            bio = service.db.get_biochemistry_for_session(session.id)
+            biochemistry_data.append(bio)
+            if bio and (bio.upc_ratio is not None
+                        or bio.urine_total_protein is not None
+                        or bio.urine_creatinine is not None
+                        or bio.iris_stage):
+                has_biochemistry = True
+
+        # Get generic measurements (analyzer panels, immunology, cultures, ...)
+        # for each session, aligned by measurement code across sessions. Panels
+        # already rendered by the dedicated proteinogram / urinalysis tables are
+        # excluded so those parameters are not shown twice.
+        measurement_excluded_panels = {"urinalysis_upc", "protein_electrophoresis"}
+        measurement_labels = {}
+        measurement_order = []
+        measurement_by_session = {}
+        for session in sessions:
+            measurement_by_session[session.id] = {}
+            for m in service.db.get_measurements_for_session(session.id):
+                if m.panel_name in measurement_excluded_panels:
+                    continue
+                code = m.measurement_code or m.measurement_name
+                measurement_by_session[session.id][code] = m
+                if code not in measurement_labels:
+                    measurement_labels[code] = m.measurement_name
+                    measurement_order.append(code)
+
+        measurement_rows = []
+        for code in measurement_order:
+            row = {"name": measurement_labels[code], "values": []}
+            for session in sessions:
+                m = measurement_by_session[session.id].get(code)
+                if m:
+                    row["values"].append({
+                        "value_text": m.value_text,
+                        "value_numeric": m.value_numeric,
+                        "unit": m.unit,
+                        "reference_text": m.reference_text,
+                        "flag": m.flag,
+                    })
+                else:
+                    row["values"].append(None)
+            measurement_rows.append(row)
+        has_measurements = len(measurement_rows) > 0
+
         response = templates.TemplateResponse(request, "compare.html", {
             "request": request,
             "lang": lang,
@@ -3859,6 +3896,10 @@ async def compare_sessions_page(request: Request, animal_id: int):
             "comparison_data": comparison_data,
             "urinalysis_data": urinalysis_data,
             "has_urinalysis": has_urinalysis,
+            "biochemistry_data": biochemistry_data,
+            "has_biochemistry": has_biochemistry,
+            "measurement_rows": measurement_rows,
+            "has_measurements": has_measurements,
             "error": None,
             "current_user": current_user
         })
@@ -3903,7 +3944,6 @@ async def api_list_animals(q: Optional[str] = None, limit: int = 50):
                 "species": row["species"],
                 "breed": row["breed"],
                 "owner_name": row.get("owner_name"),
-                "responsible_vet": row.get("responsible_vet"),
                 "latest_report_at": row.get("latest_report_at"),
                 "test_count": row.get("test_count", 0),
             } for row in rows]
@@ -3936,7 +3976,6 @@ async def api_animal_lookup(q: str, limit: int = 8, exclude_id: Optional[int] = 
             "name": row["name"],
             "species": row["species"],
             "owner_name": row.get("owner_name"),
-            "responsible_vet": row.get("responsible_vet"),
             "microchip": row.get("microchip"),
             "test_count": row.get("test_count", 0),
             "latest_report_at": row.get("latest_report_at"),
@@ -3969,7 +4008,6 @@ async def api_global_search(request: Request, q: str):
                 "name": row["name"],
                 "species": row["species"],
                 "owner_name": row.get("owner_name"),
-                "responsible_vet": row.get("responsible_vet"),
                 "href": f"/animal/{row['id']}",
             } for row in animals],
             "reports": [{

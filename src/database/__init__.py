@@ -133,14 +133,6 @@ class Database(BaseDatabase):
         """Search animals for global search and typeahead."""
         return self._animal_repo.search_animals(search, limit, exclude_id)
 
-    def list_responsible_vets(self) -> List[str]:
-        """List distinct responsible vets for filtering."""
-        return self._animal_repo.list_responsible_vets()
-
-    def get_vet_assignment_history(self, animal_id: int) -> List[AnimalVetAssignment]:
-        """Get responsible-vet assignment history for an animal."""
-        return self._animal_repo.get_vet_assignment_history(animal_id)
-
     def merge_animals(self, source_animal_id: int, target_animal_id: int) -> bool:
         """Merge a duplicate animal into an existing animal."""
         return self._animal_repo.merge_into(source_animal_id, target_animal_id)
