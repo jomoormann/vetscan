@@ -99,11 +99,15 @@ class Database:
         ensure_column("test_sessions", "reported_at", "TIMESTAMP")
         ensure_column("test_sessions", "received_at", "TIMESTAMP")
         ensure_column("test_sessions", "clinic_name", "TEXT")
+        ensure_column("test_sessions", "ordering_vet", "TEXT")
         ensure_column("test_sessions", "panel_name", "TEXT")
         ensure_column("test_sessions", "raw_metadata_json", "TEXT")
 
         ensure_column("clinical_notes", "author_user_id", "INTEGER")
         ensure_column("clinical_notes", "updated_by_user_id", "INTEGER")
+
+        ensure_column("email_import_log", "acknowledged_at", "TIMESTAMP")
+        ensure_column("email_import_log", "acknowledged_by_user_id", "INTEGER")
 
         self._backfill_vet_assignment_history()
 

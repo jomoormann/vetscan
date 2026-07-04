@@ -102,9 +102,11 @@ class SecurityHardeningTests(unittest.TestCase):
 
     def test_login_logout_and_persistent_lockout(self):
         user = self._create_user()
+        login_started_at = datetime.utcnow()
         login_response = self._login(email=user.email)
         self.assertEqual(login_response.status_code, 302)
         self.assertEqual(login_response.headers["location"], "/")
+        self.assertIn("Max-Age=2592000", login_response.headers["set-cookie"])
 
         service = web_server.get_service()
         try:
@@ -112,6 +114,12 @@ class SecurityHardeningTests(unittest.TestCase):
                 "SELECT COUNT(*) FROM user_sessions WHERE revoked_at IS NULL"
             ).fetchone()[0]
             self.assertEqual(active_sessions, 1)
+            expires_at = service.db.conn.execute(
+                "SELECT expires_at FROM user_sessions WHERE revoked_at IS NULL"
+            ).fetchone()["expires_at"]
+            if isinstance(expires_at, str):
+                expires_at = datetime.fromisoformat(expires_at)
+            self.assertGreaterEqual((expires_at - login_started_at).days, 29)
         finally:
             service.close()
 
@@ -207,9 +215,31 @@ class SecurityHardeningTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.json()["success"])
+        payload = response.json()
+        self.assertTrue(payload["success"])
         self.assertEqual(sorted(path.name for path in self.uploads_dir.iterdir()), ["Finn.pdf"])
         self.assertEqual(list(self.tmp_uploads_dir.iterdir()), [])
+
+        session_id = payload["session_id"]
+        raw_response = self.client.get(f"/reports/{session_id}/raw-pdf")
+        self.assertEqual(raw_response.status_code, 200)
+        self.assertEqual(raw_response.headers["content-type"], "application/pdf")
+        self.assertTrue(raw_response.content.startswith(b"%PDF-"))
+
+        download_response = self.client.get(f"/reports/{session_id}/raw-pdf?download=true")
+        self.assertEqual(download_response.status_code, 200)
+        self.assertIn("attachment", download_response.headers["content-disposition"])
+
+        public_response = self.client.get("/uploads/Finn.pdf")
+        self.assertEqual(public_response.status_code, 404)
+
+        with TestClient(web_server.app) as anonymous_client:
+            anonymous_response = anonymous_client.get(
+                f"/reports/{session_id}/raw-pdf",
+                follow_redirects=False,
+            )
+        self.assertEqual(anonymous_response.status_code, 302)
+        self.assertEqual(anonymous_response.headers["location"], "/login")
 
     def test_email_import_rate_limit_reads_database_history(self):
         service = web_server.get_service()
@@ -240,6 +270,37 @@ class SecurityHardeningTests(unittest.TestCase):
         limiter = RateLimiter(1, str(web_server.DB_PATH))
         self.assertFalse(limiter.can_proceed())
         self.assertEqual(limiter.remaining, 0)
+
+    def test_email_import_rate_limit_ignores_backfill_audit_rows(self):
+        service = web_server.get_service()
+        try:
+            for index in range(3):
+                service.db.conn.execute("""
+                    INSERT INTO email_import_log (
+                        email_uid, email_subject, email_from, attachment_name,
+                        validation_result, import_success, error_message,
+                        report_number, animal_id, session_id, import_timestamp
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    f"backfill-{index}",
+                    "manual backfill",
+                    "system@vetscan.net",
+                    f"report-{index}.pdf",
+                    "backfill_updated",
+                    1,
+                    "Manual backfill audit row",
+                    f"R{index}",
+                    None,
+                    None,
+                    datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+                ))
+            service.db.conn.commit()
+        finally:
+            service.close()
+
+        limiter = RateLimiter(1, str(web_server.DB_PATH))
+        self.assertTrue(limiter.can_proceed())
+        self.assertEqual(limiter.remaining, 1)
 
 
 if __name__ == "__main__":

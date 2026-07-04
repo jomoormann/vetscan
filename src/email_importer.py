@@ -77,6 +77,7 @@ class RateLimiter:
                             OR validation_result = 'queued_manual_assignment'
                       )
                       AND COALESCE(validation_result, '') NOT IN ('duplicate', 'rate_limited')
+                      AND COALESCE(validation_result, '') NOT LIKE 'backfill_%'
                 """, (cutoff,)).fetchone()
                 return row[0] if row else 0
             finally:
@@ -340,7 +341,10 @@ class EmailImporter:
 
         try:
             # Validate PDF
-            validation = self.validator.validate(tmp_path)
+            validation = self.validator.validate(
+                tmp_path,
+                allow_unknown_report_type=True,
+            )
 
             if not validation.is_valid:
                 return ImportResult(
@@ -371,6 +375,8 @@ class EmailImporter:
                         upload_path,
                         copy_to_uploads=False,  # Already in uploads
                         report_source=f"email uid {email_uid} | from {email_from} | attachment {filename}",
+                        allow_update_existing=True,
+                        allow_generic_report=True,
                     )
 
                     keep_upload = True
@@ -388,13 +394,32 @@ class EmailImporter:
                             unassigned_report_id=outcome.unassigned_report_id,
                         )
 
+                    if outcome.status == "updated":
+                        return ImportResult(
+                            success=True,
+                            email_uid=email_uid,
+                            email_subject=email_subject,
+                            email_from=email_from,
+                            attachment_name=filename,
+                            validation_result="updated_existing",
+                            report_number=outcome.parsed.session.report_number,
+                            animal_id=outcome.animal_id,
+                            session_id=outcome.session_id
+                        )
+
+                    validation_code = (
+                        "valid_unrecognized_report"
+                        if (validation.details or {}).get("unknown_report_type")
+                        else ValidationResult.VALID.value
+                    )
+
                     return ImportResult(
                         success=True,
                         email_uid=email_uid,
                         email_subject=email_subject,
                         email_from=email_from,
                         attachment_name=filename,
-                        validation_result=ValidationResult.VALID.value,
+                        validation_result=validation_code,
                         report_number=outcome.parsed.session.report_number,
                         animal_id=outcome.animal_id,
                         session_id=outcome.session_id

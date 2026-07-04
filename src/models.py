@@ -107,6 +107,7 @@ class TestSession:
     closing_date: Optional[date] = None  # Data de fecho
     sample_type: str = "Soro"        # Amostra (Serum)
     lab_name: str = "DNAtech"
+    ordering_vet: Optional[str] = None
     pdf_path: Optional[str] = None
     notes: Optional[str] = None
     created_at: Optional[datetime] = None
@@ -496,6 +497,7 @@ CREATE TABLE IF NOT EXISTS test_sessions (
     closing_date DATE,
     sample_type TEXT DEFAULT 'Soro',
     lab_name TEXT DEFAULT 'DNAtech',
+    ordering_vet TEXT,
     pdf_path TEXT,
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -669,7 +671,9 @@ CREATE TABLE IF NOT EXISTS email_import_log (
     error_message TEXT,
     report_number TEXT,
     animal_id INTEGER,
-    session_id INTEGER
+    session_id INTEGER,
+    acknowledged_at TIMESTAMP,
+    acknowledged_by_user_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_import_log_timestamp ON email_import_log(import_timestamp);
 
@@ -775,6 +779,12 @@ class Database:
     # -------------------------------------------------------------------------
     # Animal CRUD
     # -------------------------------------------------------------------------
+
+    def _animal_from_row(self, row) -> Animal:
+        data = dict(row)
+        if data.get("neutered") is not None:
+            data["neutered"] = bool(data["neutered"])
+        return Animal(**data)
     
     def create_animal(self, animal: Animal) -> int:
         """Insert a new animal and return its ID"""
@@ -796,14 +806,14 @@ class Database:
             "SELECT * FROM animals WHERE id = ?", (animal_id,))
         row = cursor.fetchone()
         if row:
-            return Animal(**dict(row))
+            return self._animal_from_row(row)
         return None
     
     def find_animal_by_name(self, name: str) -> List[Animal]:
         """Find animals by name (partial match)"""
         cursor = self.conn.execute(
             "SELECT * FROM animals WHERE name LIKE ?", (f"%{name}%",))
-        return [Animal(**dict(row)) for row in cursor.fetchall()]
+        return [self._animal_from_row(row) for row in cursor.fetchall()]
     
     def find_or_create_animal(self, animal: Animal) -> int:
         """Find existing animal or create new one"""
@@ -836,7 +846,7 @@ class Database:
     def list_animals(self) -> List[Animal]:
         """List all animals"""
         cursor = self.conn.execute("SELECT * FROM animals ORDER BY name")
-        return [Animal(**dict(row)) for row in cursor.fetchall()]
+        return [self._animal_from_row(row) for row in cursor.fetchall()]
     
     # -------------------------------------------------------------------------
     # Test Session CRUD
@@ -847,11 +857,11 @@ class Database:
         cursor = self.conn.execute("""
             INSERT INTO test_sessions (animal_id, report_number, test_date,
                                       closing_date, sample_type, lab_name,
-                                      pdf_path, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                      ordering_vet, pdf_path, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (session.animal_id, session.report_number, session.test_date,
               session.closing_date, session.sample_type, session.lab_name,
-              session.pdf_path, session.notes))
+              session.ordering_vet, session.pdf_path, session.notes))
         self.conn.commit()
         return cursor.lastrowid
     

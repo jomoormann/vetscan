@@ -16,14 +16,15 @@ import base64
 import hmac
 import hashlib
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
+import mimetypes
+import re
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Optional, List
 from pathlib import Path
-from urllib.parse import quote_plus, urlencode, urlparse
+from urllib.parse import quote_plus, urlencode, urlparse, quote
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Form, status
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -39,7 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from models import (
     Database, Animal, Symptom, Observation, TestSession,
-    ClinicalNote, DiagnosisReport, User, AuthEvent
+    ClinicalNote, User, AuthEvent
 )
 from app import VetProteinService
 from i18n import get_text, get_language_from_request, SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE
@@ -50,19 +51,10 @@ from auth import (
 from email_sender import email_service
 from logging_config import get_logger, setup_logging
 from pdf_validator import PDFValidator, ValidationResult
+from vet_names import canonicalize_vet_name
 
 # Initialize logger for this module
 logger = get_logger("web_server")
-
-
-
-
-# Import diagnosis service (optional - may not be installed)
-try:
-    from diagnosis_service import DiagnosisService, create_diagnosis_report
-    DIAGNOSIS_AVAILABLE = True
-except ImportError:
-    DIAGNOSIS_AVAILABLE = False
 
 # =============================================================================
 # APP CONFIGURATION
@@ -125,8 +117,8 @@ LOGIN_EMAIL_WINDOW = timedelta(minutes=15)
 LOGIN_IP_WINDOW_LIMIT = 20
 LOGIN_IP_WINDOW = timedelta(hours=1)
 AUTH_LOCKOUT_MINUTES = 15
-SESSION_IDLE_TIMEOUT = timedelta(hours=24)
-SESSION_ABSOLUTE_TIMEOUT = timedelta(days=7)
+SESSION_IDLE_TIMEOUT = timedelta(days=30)
+SESSION_ABSOLUTE_TIMEOUT = timedelta(days=30)
 
 
 def normalize_email(value: Optional[str]) -> Optional[str]:
@@ -388,7 +380,9 @@ def enrich_import_audit_rows(service: VetProteinService,
     for imp in imports:
         display_status = "failed"
 
-        if imp.get("validation_result") == "queued_manual_assignment":
+        if imp.get("acknowledged_at") and not imp.get("import_success"):
+            display_status = "acknowledged"
+        elif imp.get("validation_result") == "queued_manual_assignment":
             assigned_entry = None
             if imp.get("session_id") or imp.get("animal_id"):
                 display_status = "assigned"
@@ -407,6 +401,10 @@ def enrich_import_audit_rows(service: VetProteinService,
                     display_status = "assigned"
                 else:
                     display_status = "queued"
+        elif imp.get("import_success") and str(imp.get("validation_result") or "").startswith("backfill_"):
+            display_status = "backfilled"
+        elif imp.get("import_success") and imp.get("validation_result") == "updated_existing":
+            display_status = "updated"
         elif imp.get("import_success"):
             display_status = "success"
         elif imp.get("validation_result") == "duplicate":
@@ -415,6 +413,14 @@ def enrich_import_audit_rows(service: VetProteinService,
             display_status = "rate_limited"
 
         imp["display_status"] = display_status
+
+
+def is_actionable_import_failure(row: Dict[str, Any]) -> bool:
+    return (
+        not row.get("import_success")
+        and row.get("validation_result") not in ("duplicate", "rate_limited", "queued_manual_assignment")
+        and not row.get("acknowledged_at")
+    )
 
 
 def add_csrf_cookie(response: Response, request: Request, csrf_raw: Optional[str] = None) -> str:
@@ -664,7 +670,6 @@ STATIC_DIR.mkdir(exist_ok=True)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 
 # =============================================================================
@@ -698,6 +703,18 @@ def parse_date_value(d):
                     except:
                         return None
     return None
+
+
+def parse_optional_bool(value: Optional[str]) -> Optional[bool]:
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "y", "sim"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "nao", "não"}:
+        return False
+    return None
+
 
 def format_date_filter(d) -> str:
     """Format date for display in templates"""
@@ -798,6 +815,69 @@ def sanitize_html_filter(content: str) -> Markup:
     return Markup(cleaned)
 
 
+def normalize_report_text(value: Optional[str]) -> str:
+    """Normalize extracted report prose without changing the stored source text."""
+    if not value:
+        return ""
+
+    text = str(value).replace("\r\n", "\n").replace("\r", "\n").strip()
+    text = re.sub(
+        r"E\s+s\s+t\s+á\s+p\s+r\s+e\s+s\s+e\s+n\s+te\s+u\s+m\s+a\s+"
+        r"p\s+o\s+p\s+u\s+la\s+ç\s+ão\s+i\s+n\s+f\s+la\s+m\s+a\s+t\s+ó\s+r\s+i\s+a\s+"
+        r"c\s+o\s+n\s+s\s+ti\s+tu\s+íd\s+a\s+p\s+o\s+r\s+n\s+e\s+u\s+tr\s+ó\s+f\s+il\s+o\s+s\s+"
+        r"d\s+e\s+g\s+e\s+n\s+e\s+r\s+a\s+d\s+o\s+s\s+\(\s*c\s+ar\s+io\s+li\s+se\s*\)\s+"
+        r"c\s+o\s+m\s+o\s+c\s+a\s+s\s+io\s+n\s+a\s+l\s+f\s+a\s+g\s+o\s+c\s+i\s+to\s+s\s+e\s+"
+        r"b\s+a\s+ct\s+e\s+ri\s+a\s+n\s+a\s+\(\s*c\s+o\s+c\s+o\s+s\s*\)",
+        "Está presente uma população inflamatória constituída por neutrófilos degenerados "
+        "(cariolise) com ocasional fagocitose bacteriana (cocos)",
+        text,
+    )
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\s+([,.;:!?%)])", r"\1", text)
+    text = re.sub(r"([(])\s+", r"\1", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _paragraph_chunks(text: str) -> List[str]:
+    chunks = [chunk.strip() for chunk in re.split(r"\n\s*\n", text) if chunk.strip()]
+    paragraphs: List[str] = []
+
+    for chunk in chunks or [text]:
+        if len(chunk) <= 720:
+            paragraphs.append(chunk)
+            continue
+
+        sentences = re.split(r"(?<=[.!?])\s+(?=[A-ZÀ-ÖØ-Þ])", chunk)
+        current = ""
+        for sentence in sentences:
+            if current and len(current) + len(sentence) > 560:
+                paragraphs.append(current.strip())
+                current = sentence
+            else:
+                current = f"{current} {sentence}".strip()
+        if current:
+            paragraphs.append(current.strip())
+
+    return paragraphs
+
+
+def report_text_filter(value: Optional[str]) -> Markup:
+    """Render long report prose as escaped, readable paragraphs."""
+    text = normalize_report_text(value)
+    if not text:
+        return Markup("")
+
+    paragraphs = _paragraph_chunks(text)
+    html = "".join(f"<p>{bleach.clean(paragraph, tags=[], strip=True)}</p>" for paragraph in paragraphs)
+    return Markup(html)
+
+
+def report_inline_text_filter(value: Optional[str]) -> str:
+    """Normalize short extracted report strings for inline/table display."""
+    return normalize_report_text(value)
+
+
 # Register filters with Jinja2
 templates.env.filters["format_date"] = format_date_filter
 templates.env.filters["format_date_short"] = format_date_short_filter
@@ -805,6 +885,8 @@ templates.env.filters["format_number"] = format_number_filter
 templates.env.filters["format_datetime"] = format_datetime_filter
 templates.env.filters["short_report_label"] = short_report_label_filter
 templates.env.filters["sanitize_html"] = sanitize_html_filter
+templates.env.filters["report_text"] = report_text_filter
+templates.env.filters["report_inline_text"] = report_inline_text_filter
 
 # Register translation function as Jinja2 global
 templates.env.globals["t"] = get_text
@@ -840,7 +922,6 @@ def validate_csrf(request: Request, form_token: Optional[str] = None) -> bool:
 
 # Global service instance - initialized once at startup, reused for all requests
 _global_service: Optional[VetProteinService] = None
-DIAGNOSIS_JOB_EXECUTOR = ThreadPoolExecutor(max_workers=2)
 
 
 class ServiceProxy:
@@ -870,15 +951,14 @@ def _init_global_service():
             uploads_dir=str(UPLOADS_DIR)
         )
         _global_service.initialize()
-        expired_sessions = _global_service.db.cleanup_expired_user_sessions()
+        expired_sessions = _global_service.db.cleanup_expired_user_sessions(
+            idle_timeout_hours=int(SESSION_IDLE_TIMEOUT.total_seconds() // 3600)
+        )
         old_auth_events = _global_service.db.cleanup_old_auth_events()
-        stale_jobs = _global_service.db.mark_stale_diagnosis_jobs_failed()
         if expired_sessions:
             logger.warning(f"Revoked {expired_sessions} expired sessions during startup")
         if old_auth_events:
             logger.info(f"Pruned {old_auth_events} old auth events during startup")
-        if stale_jobs:
-            logger.warning(f"Marked {stale_jobs} stale diagnosis jobs as failed during startup")
         logger.info("Global database service initialized")
 
 
@@ -893,86 +973,26 @@ def get_service() -> VetProteinService:
     return ServiceProxy(_global_service)
 
 
+def pending_unassigned_count() -> int:
+    """Return the number of reports still waiting for animal assignment."""
+    try:
+        service = get_service()
+        row = service.db.conn.execute(
+            "SELECT COUNT(*) AS count FROM unassigned_reports WHERE status = 'pending'"
+        ).fetchone()
+        return int(row["count"] or 0) if row else 0
+    except Exception:
+        logger.exception("Error counting pending unassigned reports")
+        return 0
+
+
+templates.env.globals["pending_unassigned_count"] = pending_unassigned_count
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize database on app startup."""
     _init_global_service()
-
-
-def serialize_diagnosis_job(job: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """Prepare a diagnosis job dict for JSON responses and templates."""
-    if not job:
-        return None
-
-    payload = dict(job)
-    for field in ("created_at", "started_at", "completed_at"):
-        value = payload.get(field)
-        if isinstance(value, (date, datetime)):
-            payload[field] = value.isoformat()
-        elif value is not None:
-            payload[field] = str(value)
-
-    payload["is_active"] = payload.get("status") in {"pending", "running"}
-    report_id = payload.get("report_id")
-    animal_id = payload.get("animal_id")
-    payload["redirect_url"] = (
-        f"/animal/{animal_id}/diagnosis/{report_id}"
-        if animal_id and report_id else None
-    )
-    return payload
-
-
-def run_diagnosis_job(job_id: int, animal_id: int, report_type: str,
-                      anthropic_api_key: str,
-                      openai_api_key: Optional[str]) -> None:
-    """Run diagnosis generation in a worker thread with its own DB connection."""
-    service = VetProteinService(db_path=str(DB_PATH), uploads_dir=str(UPLOADS_DIR))
-    started_at = datetime.utcnow().isoformat(timespec="seconds")
-    completed_at = None
-
-    try:
-        service.initialize()
-        service.db.update_diagnosis_job(
-            job_id,
-            status="running",
-            started_at=started_at,
-            error_message=None,
-        )
-
-        report = create_diagnosis_report(
-            db=service.db,
-            animal_id=animal_id,
-            report_type=report_type,
-            anthropic_api_key=anthropic_api_key,
-            openai_api_key=openai_api_key,
-        )
-
-        completed_at = datetime.utcnow().isoformat(timespec="seconds")
-        service.db.update_diagnosis_job(
-            job_id,
-            status="completed",
-            report_id=report.id,
-            error_message=None,
-            completed_at=completed_at,
-        )
-        logger.info(
-            f"Completed diagnosis job {job_id} for animal {animal_id} with report {report.id}"
-        )
-    except Exception as exc:
-        completed_at = datetime.utcnow().isoformat(timespec="seconds")
-        logger.exception(f"Diagnosis job {job_id} failed for animal {animal_id}")
-        try:
-            if service.db.conn:
-                service.db.update_diagnosis_job(
-                    job_id,
-                    status="failed",
-                    error_message=str(exc),
-                    completed_at=completed_at,
-                )
-        except Exception:
-            logger.exception(f"Failed to persist diagnosis job failure state for job {job_id}")
-    finally:
-        service.close()
 
 
 def format_date(d) -> str:
@@ -1027,21 +1047,109 @@ def allocate_upload_path(filename: Optional[str]) -> Path:
     return destination
 
 
-def build_upload_url(file_path: Optional[str]) -> Optional[str]:
-    """Convert an absolute uploads path to a static /uploads URL when possible."""
+def build_session_pdf_url(session: TestSession) -> Optional[str]:
+    """Return the authenticated raw-PDF route for an imported session."""
+    if not session or not session.id or not session.pdf_path:
+        return None
+    return f"/reports/{session.id}/raw-pdf"
+
+
+def build_unassigned_pdf_url(report) -> Optional[str]:
+    """Return the authenticated raw-PDF route for a queued report."""
+    if not report or not report.id or not report.pdf_path:
+        return None
+    return f"/unassigned-reports/{report.id}/raw-pdf"
+
+
+def build_session_asset_url(session_id: Optional[int], asset) -> Optional[str]:
+    """Return the authenticated route for a stored report asset."""
+    if not session_id or not asset or not asset.id or not asset.file_path:
+        return None
+    return f"/reports/{session_id}/assets/{asset.id}"
+
+
+def _path_is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _private_storage_roots() -> List[Path]:
+    """Roots containing imported report artifacts that may be served by auth routes."""
+    roots = [UPLOADS_DIR, DATA_DIR]
+    unique_roots = []
+    for root in roots:
+        resolved = root.resolve()
+        if resolved not in unique_roots:
+            unique_roots.append(resolved)
+    return unique_roots
+
+
+def resolve_private_report_file(file_path: Optional[str]) -> Optional[Path]:
+    """
+    Resolve a stored report artifact path without allowing arbitrary filesystem reads.
+
+    The database stores absolute paths for current imports and may contain legacy
+    paths under an older app checkout. For legacy uploads paths, fall back to the
+    same relative path under the current private uploads directory.
+    """
     if not file_path:
         return None
 
-    try:
-        relative_path = Path(file_path).resolve().relative_to(UPLOADS_DIR.resolve())
-        return f"/uploads/{relative_path.as_posix()}"
-    except Exception:
-        normalized = file_path.replace("\\", "/")
-        if normalized.startswith("uploads/"):
-            return f"/{normalized}"
-        if "/uploads/" in normalized:
-            return f"/uploads/{normalized.split('/uploads/', 1)[1]}"
-        return None
+    normalized = file_path.replace("\\", "/")
+    raw_candidate = Path(file_path)
+    candidates: List[Path] = []
+
+    if raw_candidate.is_absolute():
+        candidates.append(raw_candidate)
+    else:
+        candidates.append(UPLOADS_DIR / raw_candidate)
+        candidates.append(BASE_DIR / raw_candidate)
+
+    if normalized.startswith("uploads/"):
+        candidates.append(UPLOADS_DIR / normalized.split("uploads/", 1)[1])
+    if "/uploads/" in normalized:
+        candidates.append(UPLOADS_DIR / normalized.split("/uploads/", 1)[1])
+
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if not resolved.is_file():
+            continue
+        if any(_path_is_relative_to(resolved, root) for root in _private_storage_roots()):
+            return resolved
+
+    return None
+
+
+def private_file_response(path: Path, media_type: Optional[str] = None,
+                          download: bool = False) -> FileResponse:
+    """Build a no-store response for an authenticated private file."""
+    disposition = "attachment" if download else "inline"
+    filename = path.name.replace('"', "")
+    ascii_filename = filename.encode("ascii", "ignore").decode("ascii") or "download"
+    ascii_filename = ascii_filename.replace("\\", "_").replace(";", "_")
+    encoded_filename = quote(filename)
+    response = FileResponse(
+        str(path),
+        media_type=media_type or mimetypes.guess_type(path.name)[0] or "application/octet-stream",
+    )
+    response.headers["Content-Disposition"] = (
+        f"{disposition}; filename=\"{ascii_filename}\"; filename*=UTF-8''{encoded_filename}"
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+def require_authenticated_file_access(request: Request):
+    """Raw report files require an established auth session, even in bootstrap mode."""
+    if not getattr(request.state, "session", None):
+        raise HTTPException(status_code=401, detail="Authentication required")
 
 
 def parse_positive_int(raw_value: Optional[str], default: int, minimum: int = 1,
@@ -1132,6 +1240,8 @@ def humanize_report_type(report_type: Optional[str], panel_name: Optional[str] =
         return get_text(lang, "report_types.cvs_analyzer")
     if normalized == "cytology":
         return get_text(lang, "report_types.cytology")
+    if normalized == "histology":
+        return get_text(lang, "report_types.histology")
     if normalized == "immunocytochemistry":
         return get_text(lang, "report_types.immunocytochemistry")
     if normalized == "biochemistry":
@@ -1232,6 +1342,48 @@ def build_session_groups(sessions_with_results: List[dict],
         grouped[key]["rows"].append(item)
 
     return sorted(grouped.values(), key=lambda group: group["sort_order"])
+
+
+def list_ordering_vet_options(conn) -> List[str]:
+    """Return unique ordering-vet filter options without title-only duplicates."""
+    options: Dict[str, str] = {}
+    rows = conn.execute("""
+        SELECT DISTINCT ordering_vet
+        FROM test_sessions
+        WHERE ordering_vet IS NOT NULL AND TRIM(ordering_vet) != ''
+        ORDER BY ordering_vet COLLATE NOCASE ASC
+    """).fetchall()
+    for row in rows:
+        canonical = canonicalize_vet_name(row["ordering_vet"])
+        if not canonical:
+            continue
+        key = canonical.casefold()
+        options.setdefault(key, canonical)
+    return sorted(options.values(), key=lambda name: name.casefold())
+
+
+def display_lab_name(source_system: Optional[str], lab_name: Optional[str]) -> str:
+    """Display only the lab identity for report source columns."""
+    source_key = re.sub(r"[^a-z0-9]+", "", (source_system or "").casefold())
+    lab_key = re.sub(r"[^a-z0-9]+", "", (lab_name or "").casefold())
+    combined = source_key or lab_key
+    if combined == "dnatech" or lab_key == "dnatech":
+        return "DNATech"
+    if combined == "vedis" or lab_key == "vedis":
+        return "Vedis"
+    if "genevet" in {source_key, lab_key} or "genevet" in (lab_name or "").casefold():
+        return "Genevet"
+    if combined == "cvsanalyzer" or "cvs" in lab_key:
+        return "CVS"
+    return (lab_name or source_system or "").strip()
+
+
+def enrich_report_row(row: Dict[str, Any], lang: str) -> None:
+    row["display_type"] = humanize_report_type(
+        row.get("report_type"), row.get("panel_name"), lang
+    )
+    row["lab_display"] = display_lab_name(row.get("source_system"), row.get("lab_name"))
+    row["ordering_vet_display"] = canonicalize_vet_name(row.get("ordering_vet")) or None
 
 
 def get_lang(request: Request) -> str:
@@ -2386,7 +2538,7 @@ async def admin_enable_user(request: Request, user_id: int, csrf_token: str = Fo
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    """Practice-wide inbox and overview."""
+    """Practice-wide recent report activity."""
     lang = get_lang(request)
     current_user = getattr(request.state, 'user', None)
     service = get_service()
@@ -2397,64 +2549,18 @@ async def home(request: Request):
             request.query_params.get("reports_page"),
             default=1,
         )
-        animals_page = parse_positive_int(
-            request.query_params.get("animals_page"),
-            default=1,
-        )
-        stats_row = db.conn.execute("""
-            SELECT
-                (SELECT COUNT(*) FROM animals) AS total_animals,
-                (SELECT COUNT(*) FROM test_sessions) AS total_reports,
-                (SELECT COUNT(*) FROM unassigned_reports WHERE status = 'pending') AS pending_reports,
-                (
-                    SELECT COUNT(*)
-                    FROM email_import_log
-                    WHERE import_success = 0
-                      AND COALESCE(validation_result, '') NOT IN (
-                          'duplicate', 'rate_limited', 'queued_manual_assignment'
-                      )
-                ) AS failed_imports
-        """).fetchone()
 
         recent_reports, recent_reports_total = db.list_reports_paginated(
             page=reports_page,
             page_size=dashboard_page_size,
         )
-        recent_animals, recent_animals_total = db.list_animals_paginated(
-            page=animals_page,
-            page_size=dashboard_page_size,
-        )
-        pending_rows, _ = db.list_unassigned_reports(status="pending", page=1, page_size=6)
-        pending_reports = []
-        for report in pending_rows:
-            pending_reports.append({
-                "report": report,
-                "summary": json.loads(report.parsed_summary_json or "{}"),
-                "report_type_label": humanize_report_type(report.report_type, None, lang),
-            })
-        recent_failures = [
-            dict(row) for row in db.conn.execute("""
-                SELECT import_timestamp, email_from, attachment_name, error_message
-                FROM email_import_log
-                WHERE import_success = 0
-                  AND COALESCE(validation_result, '') NOT IN (
-                      'duplicate', 'rate_limited', 'queued_manual_assignment'
-                  )
-                ORDER BY import_timestamp DESC
-                LIMIT 5
-            """).fetchall()
-        ]
         for row in recent_reports:
-            row["display_type"] = humanize_report_type(
-                row.get("report_type"), row.get("panel_name"), lang
-            )
-            row["summary"] = summarize_report_overview(row, lang)
+            enrich_report_row(row, lang)
 
         response = templates.TemplateResponse(request, "index.html", {
             "request": request,
             "lang": lang,
             "current_user": current_user,
-            "stats": dict(stats_row) if stats_row else {},
             "recent_reports": recent_reports,
             "recent_reports_pagination": build_pagination(
                 request,
@@ -2463,16 +2569,6 @@ async def home(request: Request):
                 dashboard_page_size,
                 param_name="reports_page",
             ),
-            "recent_animals": recent_animals,
-            "recent_animals_pagination": build_pagination(
-                request,
-                recent_animals_total,
-                animals_page,
-                dashboard_page_size,
-                param_name="animals_page",
-            ),
-            "pending_reports": pending_reports,
-            "recent_failures": recent_failures,
         })
         return set_lang_cookie(response, lang)
     except Exception:
@@ -2492,13 +2588,11 @@ async def list_animals(request: Request):
         page = parse_positive_int(request.query_params.get("page"), default=1)
         page_size = parse_positive_int(request.query_params.get("page_size"), default=25, maximum=100)
         search = (request.query_params.get("q") or "").strip() or None
-        responsible_vet = (request.query_params.get("responsible_vet") or "").strip() or None
         species = (request.query_params.get("species") or "").strip() or None
         sort = (request.query_params.get("sort") or "updated_desc").strip()
 
         animals, total = service.db.list_animals_paginated(
             search=search,
-            responsible_vet=responsible_vet,
             species=species,
             sort=sort,
             page=page,
@@ -2521,18 +2615,15 @@ async def list_animals(request: Request):
             "pagination": pagination,
             "filters": {
                 "q": search or "",
-                "responsible_vet": responsible_vet or "",
                 "species": species or "",
                 "sort": sort,
                 "page_size": page_size,
             },
             "sort_links": {
                 "animal": build_sort_toggle(request, sort, "name", "asc"),
-                "vet": build_sort_toggle(request, sort, "vet", "asc"),
                 "last_report": build_sort_toggle(request, sort, "last_report", "desc"),
                 "reports": build_sort_toggle(request, sort, "reports", "desc"),
             },
-            "responsible_vets": service.db.list_responsible_vets(),
             "species_options": species_options,
             "current_user": current_user,
         })
@@ -2581,7 +2672,7 @@ async def create_animal_page(
     age_years: float = Form(None),
     age_months: int = Form(None),
     sex: str = Form("U"),
-    responsible_vet: str = Form(None),
+    neutered: str = Form(None),
     microchip: str = Form(None),
     patient_since: str = Form(None),
     weight_kg: float = Form(None),
@@ -2605,7 +2696,7 @@ async def create_animal_page(
             age_years=age_years,
             age_months=age_months,
             sex=sex,
-            responsible_vet=responsible_vet.strip() if responsible_vet else None,
+            neutered=parse_optional_bool(neutered),
             microchip=microchip.strip() if microchip else None,
             patient_since=parse_date_value(patient_since.strip()) if patient_since and patient_since.strip() else None,
             weight_kg=weight_kg,
@@ -2630,7 +2721,6 @@ async def create_animal_page(
                 "age_years": age_years,
                 "age_months": age_months,
                 "sex": sex,
-                "responsible_vet": responsible_vet,
                 "microchip": microchip,
                 "patient_since": patient_since,
                 "weight_kg": weight_kg,
@@ -2663,7 +2753,7 @@ async def list_reports(request: Request):
         search = (request.query_params.get("q") or "").strip() or None
         source_system = (request.query_params.get("source_system") or "").strip() or None
         report_type = (request.query_params.get("report_type") or "").strip() or None
-        responsible_vet = (request.query_params.get("responsible_vet") or "").strip() or None
+        responsible_vet = canonicalize_vet_name(request.query_params.get("responsible_vet")) or None
         sort = (request.query_params.get("sort") or "date_desc").strip()
 
         rows, total = service.db.list_reports_paginated(
@@ -2676,10 +2766,7 @@ async def list_reports(request: Request):
             page_size=page_size,
         )
         for row in rows:
-            row["display_type"] = humanize_report_type(
-                row.get("report_type"), row.get("panel_name"), lang
-            )
-            row["summary"] = summarize_report_overview(row, lang)
+            enrich_report_row(row, lang)
 
         pagination = build_pagination(request, total, page, page_size)
         report_types = [{
@@ -2722,7 +2809,7 @@ async def list_reports(request: Request):
             },
             "source_systems": source_systems,
             "report_types": report_types,
-            "responsible_vets": service.db.list_responsible_vets(),
+            "responsible_vets": list_ordering_vet_options(service.db.conn),
             "total_reports": total,
         })
         return set_lang_cookie(response, lang)
@@ -2735,7 +2822,7 @@ async def list_reports(request: Request):
 
 @app.get("/animal/{animal_id}", response_class=HTMLResponse)
 async def view_animal(request: Request, animal_id: int):
-    """Animal workspace with tabs for overview, reports, notes, diagnostics, and profile."""
+    """Animal workspace with tabs for overview, reports, notes, and profile."""
     lang = get_lang(request)
     current_user = getattr(request.state, 'user', None)
     service = get_service()
@@ -2746,7 +2833,7 @@ async def view_animal(request: Request, animal_id: int):
             raise HTTPException(status_code=404, detail="Animal not found")
 
         active_tab = (request.query_params.get("tab") or "overview").strip().lower()
-        if active_tab not in {"overview", "reports", "notes", "diagnostics", "profile"}:
+        if active_tab not in {"overview", "reports", "notes", "profile"}:
             active_tab = "overview"
 
         report_page = parse_positive_int(request.query_params.get("report_page"), default=1)
@@ -2762,10 +2849,7 @@ async def view_animal(request: Request, animal_id: int):
             page_size=report_page_size,
         )
         for row in report_rows:
-            row["display_type"] = humanize_report_type(
-                row.get("report_type"), row.get("panel_name"), lang
-            )
-            row["summary"] = summarize_report_overview(row, lang)
+            enrich_report_row(row, lang)
 
         overview_reports, _ = db.list_reports_paginated(
             animal_id=animal_id,
@@ -2773,17 +2857,9 @@ async def view_animal(request: Request, animal_id: int):
             page_size=5,
         )
         for row in overview_reports:
-            row["display_type"] = humanize_report_type(
-                row.get("report_type"), row.get("panel_name"), lang
-            )
-            row["summary"] = summarize_report_overview(row, lang)
+            enrich_report_row(row, lang)
 
         clinical_notes = db.get_clinical_notes_for_animal(animal_id)
-        diagnosis_reports = db.get_diagnosis_reports_for_animal(animal_id)
-        active_diagnosis_job = db.get_active_diagnosis_job_for_animal(animal_id)
-        vet_history = db.get_vet_assignment_history(animal_id)
-        symptoms = db.get_symptoms_for_animal(animal_id, active_only=True)
-        observations = db.get_observations_for_animal(animal_id)
         report_type_options = []
         for row in db.conn.execute("""
             SELECT DISTINCT report_type, panel_name
@@ -2822,14 +2898,7 @@ async def view_animal(request: Request, animal_id: int):
                 "source": build_sort_toggle(request, report_sort, "source", "asc", param_name="report_sort", page_param="report_page"),
             },
             "report_type_options": report_type_options,
-            "symptoms": symptoms,
-            "observations": observations,
             "clinical_notes": clinical_notes,
-            "diagnosis_reports": diagnosis_reports,
-            "latest_diagnosis": diagnosis_reports[0] if diagnosis_reports else None,
-            "active_diagnosis_job": serialize_diagnosis_job(active_diagnosis_job),
-            "vet_history": vet_history,
-            "diagnosis_available": DIAGNOSIS_AVAILABLE,
             "current_user": current_user,
             "csrf_token": signed_csrf,
             "today": date.today().isoformat(),
@@ -2864,13 +2933,12 @@ async def update_animal(
     age_years: float = Form(None),
     age_months: int = Form(None),
     sex: str = Form("U"),
-    responsible_vet: str = Form(None),
+    neutered: str = Form(None),
     microchip: str = Form(None),
     patient_since: str = Form(None),
     weight_kg: float = Form(None),
     medical_history: str = Form(None),
     notes: str = Form(None),
-    assignment_reason: str = Form(None),
     csrf_token: str = Form(None)
 ):
     """Update animal profile information"""
@@ -2891,6 +2959,7 @@ async def update_animal(
             "name": name,
             "species": species,
             "sex": sex,
+            "neutered": parse_optional_bool(neutered),
         }
         if owner_name is not None:
             update_fields["owner_name"] = owner_name if owner_name.strip() else None
@@ -2900,8 +2969,6 @@ async def update_animal(
             update_fields["age_years"] = age_years
         if age_months is not None:
             update_fields["age_months"] = age_months
-        if responsible_vet is not None:
-            update_fields["responsible_vet"] = responsible_vet if responsible_vet.strip() else None
         if microchip is not None:
             update_fields["microchip"] = microchip if microchip.strip() else None
         if patient_since is not None:
@@ -2918,7 +2985,6 @@ async def update_animal(
         success = service.db.update_animal(
             animal_id,
             changed_by_user_id=current_user.id if current_user else None,
-            assignment_reason=assignment_reason.strip() if assignment_reason else None,
             **update_fields,
         )
 
@@ -2929,7 +2995,6 @@ async def update_animal(
                 "id": updated_animal.id if updated_animal else animal_id,
                 "name": updated_animal.name if updated_animal else name,
                 "owner_name": updated_animal.owner_name if updated_animal else owner_name,
-                "responsible_vet": updated_animal.responsible_vet if updated_animal else responsible_vet,
             }
         })
     except Exception as e:
@@ -2975,6 +3040,70 @@ async def merge_animal(
         service.close()
 
 
+@app.get("/reports/{session_id}/raw-pdf")
+async def view_raw_session_pdf(request: Request, session_id: int,
+                               download: bool = False):
+    """Serve an imported raw PDF report through authenticated access only."""
+    require_authenticated_file_access(request)
+    service = get_service()
+    try:
+        session = service.db.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        path = resolve_private_report_file(session.pdf_path)
+        if not path:
+            raise HTTPException(status_code=404, detail="Raw report file not found")
+
+        return private_file_response(path, media_type="application/pdf", download=download)
+    finally:
+        service.close()
+
+
+@app.get("/reports/{session_id}/assets/{asset_id}")
+async def view_session_asset(request: Request, session_id: int, asset_id: int):
+    """Serve extracted report assets through authenticated access only."""
+    require_authenticated_file_access(request)
+    service = get_service()
+    try:
+        session = service.db.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        assets = service.db.get_assets_for_session(session_id)
+        asset = next((item for item in assets if item.id == asset_id), None)
+        if not asset:
+            raise HTTPException(status_code=404, detail="Asset not found")
+
+        path = resolve_private_report_file(asset.file_path)
+        if not path:
+            raise HTTPException(status_code=404, detail="Asset file not found")
+
+        return private_file_response(path)
+    finally:
+        service.close()
+
+
+@app.get("/unassigned-reports/{report_id}/raw-pdf")
+async def view_raw_unassigned_pdf(request: Request, report_id: int,
+                                  download: bool = False):
+    """Serve a queued report PDF through authenticated access only."""
+    require_authenticated_file_access(request)
+    service = get_service()
+    try:
+        report = service.db.get_unassigned_report(report_id)
+        if not report:
+            raise HTTPException(status_code=404, detail="Queued report not found")
+
+        path = resolve_private_report_file(report.pdf_path)
+        if not path:
+            raise HTTPException(status_code=404, detail="Raw report file not found")
+
+        return private_file_response(path, media_type="application/pdf", download=download)
+    finally:
+        service.close()
+
+
 @app.get("/session/{session_id}", response_class=HTMLResponse)
 async def view_session(request: Request, session_id: int):
     """View detailed test session results"""
@@ -2986,6 +3115,7 @@ async def view_session(request: Request, session_id: int):
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
         animal = service.db.get_animal(session.animal_id)
+        ordering_vet_display = canonicalize_vet_name(session.ordering_vet) or None
 
         # Get all results
         results = service.db.get_results_for_session(session_id)
@@ -2995,7 +3125,7 @@ async def view_session(request: Request, session_id: int):
         pathology_findings = service.db.get_pathology_findings_for_session(session_id)
         session_assets = service.db.get_assets_for_session(session_id)
         for asset in session_assets:
-            asset.url = build_upload_url(asset.file_path)
+            asset.url = build_session_asset_url(session.id, asset)
 
         # Get previous session for comparison
         all_sessions = service.db.get_sessions_for_animal(session.animal_id)
@@ -3026,8 +3156,9 @@ async def view_session(request: Request, session_id: int):
             "previous_session": previous_session,
             "comparison": comparison,
             "current_user": current_user,
-            "pdf_url": build_upload_url(session.pdf_path),
+            "pdf_url": build_session_pdf_url(session),
             "report_type_label": humanize_report_type(session.report_type, session.panel_name, lang),
+            "ordering_vet_display": ordering_vet_display,
         })
         return set_lang_cookie(response, lang)
     except HTTPException:
@@ -3080,9 +3211,11 @@ async def view_imports(request: Request):
         cursor = service.db.conn.execute("""
             SELECT
                 eil.*,
-                a.name as animal_name
+                a.name AS animal_name,
+                COALESCE(ack.display_name, ack.email) AS acknowledged_by_name
             FROM email_import_log eil
             LEFT JOIN animals a ON eil.animal_id = a.id
+            LEFT JOIN users ack ON eil.acknowledged_by_user_id = ack.id
             ORDER BY eil.import_timestamp DESC
             LIMIT 100
         """)
@@ -3128,8 +3261,9 @@ async def view_imports(request: Request):
         stats = {
             'total': len(imports),
             'successful': sum(1 for i in imports if i.get('import_success')),
-            'failed': sum(1 for i in imports if not i.get('import_success') and i.get('validation_result') not in ('duplicate', 'rate_limited')),
-            'skipped': sum(1 for i in imports if i.get('validation_result') in ('duplicate', 'rate_limited'))
+            'failed': sum(1 for i in imports if is_actionable_import_failure(i)),
+            'skipped': sum(1 for i in imports if i.get('validation_result') in ('duplicate', 'rate_limited')),
+            'acknowledged': sum(1 for i in imports if i.get('display_status') == 'acknowledged')
         }
 
         response = templates.TemplateResponse(request, "imports.html", {
@@ -3146,6 +3280,41 @@ async def view_imports(request: Request):
         raise HTTPException(status_code=500, detail=internal_error_detail())
     finally:
         service.close()
+
+
+@app.post("/imports/{import_id}/acknowledge")
+async def acknowledge_import_failure(request: Request, import_id: int,
+                                     csrf_token: str = Form(None)):
+    """Acknowledge a failed email import so it no longer needs dashboard attention."""
+    current_user = require_superuser(request)
+
+    if not validate_csrf(request, csrf_token):
+        logger.warning(f"CSRF validation failed for import acknowledgement by {current_user.email}")
+        return RedirectResponse(url="/imports?error=csrf", status_code=302)
+
+    service = get_service()
+    try:
+        row = service.db.conn.execute("""
+            SELECT id, import_success, validation_result, acknowledged_at
+            FROM email_import_log
+            WHERE id = ?
+        """, (import_id,)).fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Import log entry not found")
+
+        if is_actionable_import_failure(dict(row)):
+            service.db.conn.execute("""
+                UPDATE email_import_log
+                SET acknowledged_at = CURRENT_TIMESTAMP,
+                    acknowledged_by_user_id = ?
+                WHERE id = ?
+            """, (current_user.id, import_id))
+            service.db.conn.commit()
+    finally:
+        service.close()
+
+    return RedirectResponse(url="/imports", status_code=302)
 
 
 @app.get("/unassigned-reports", response_class=HTMLResponse)
@@ -3167,12 +3336,13 @@ async def view_unassigned_reports(request: Request, error: Optional[str] = None)
         report_items = []
         for report in pending_reports:
             summary = json.loads(report.parsed_summary_json or "{}")
+            summary["ordering_vet"] = canonicalize_vet_name(summary.get("ordering_vet")) or None
             candidates = json.loads(report.candidate_matches_json or "[]")
             report_items.append({
                 "report": report,
                 "summary": summary,
                 "candidates": candidates,
-                "pdf_url": build_upload_url(report.pdf_path),
+                "pdf_url": build_unassigned_pdf_url(report),
                 "report_type_label": humanize_report_type(report.report_type, None, lang),
             })
 
@@ -3596,204 +3766,6 @@ async def get_clinical_note(note_id: int):
         service.close()
 
 
-# =============================================================================
-# DIAGNOSIS ROUTES
-# =============================================================================
-
-@app.post("/animal/{animal_id}/diagnosis")
-async def generate_diagnosis(
-    request: Request,
-    animal_id: int,
-    report_type: str = Form("clinical_notes_only"),
-    csrf_token: str = Form(None)
-):
-    """Queue a new AI diagnosis report for background generation."""
-    # Validate CSRF token
-    if not validate_csrf(request, csrf_token):
-        return JSONResponse({"success": False, "message": "Invalid request"}, status_code=403)
-
-    if not DIAGNOSIS_AVAILABLE:
-        return JSONResponse({
-            "success": False,
-            "message": "Diagnosis service not available. Please install: pip install anthropic openai python-dotenv"
-        }, status_code=503)
-
-    service = get_service()
-    try:
-        animal = service.db.get_animal(animal_id)
-        if not animal:
-            return JSONResponse({
-                "success": False,
-                "message": "Animal not found"
-            }, status_code=404)
-
-        # Check for API keys
-        anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-
-        if not anthropic_api_key:
-            return JSONResponse({
-                "success": False,
-                "message": "ANTHROPIC_API_KEY not configured"
-            }, status_code=400)
-
-        # Validate report type
-        if report_type not in ["clinical_notes_only", "comprehensive"]:
-            report_type = "clinical_notes_only"
-
-        service.db.mark_stale_diagnosis_jobs_failed()
-        active_job = service.db.get_active_diagnosis_job_for_animal(animal_id)
-        if active_job:
-            job_payload = serialize_diagnosis_job(active_job)
-            return JSONResponse({
-                "success": True,
-                "queued": True,
-                "already_running": True,
-                "job": job_payload,
-                "message": "Diagnosis generation is already in progress"
-            }, status_code=202)
-
-        current_user = getattr(request.state, "user", None)
-        job_id = service.db.create_diagnosis_job(
-            animal_id=animal_id,
-            report_type=report_type,
-            requested_by_user_id=current_user.id if current_user else None,
-        )
-        DIAGNOSIS_JOB_EXECUTOR.submit(
-            run_diagnosis_job,
-            job_id,
-            animal_id,
-            report_type,
-            anthropic_api_key,
-            openai_api_key,
-        )
-
-        return JSONResponse({
-            "success": True,
-            "queued": True,
-            "job": serialize_diagnosis_job(service.db.get_diagnosis_job(job_id)),
-            "message": "Diagnosis generation started"
-        }, status_code=202)
-    except Exception:
-        logger.exception(f"Error generating diagnosis for animal {animal_id}")
-        return internal_error_json()
-    finally:
-        service.close()
-
-
-@app.get("/api/diagnosis-jobs/{job_id}")
-async def get_diagnosis_job_status(job_id: int):
-    """Return the latest status for a diagnosis background job."""
-    service = get_service()
-    try:
-        service.db.mark_stale_diagnosis_jobs_failed()
-        job = service.db.get_diagnosis_job(job_id)
-        if not job:
-            return JSONResponse({
-                "success": False,
-                "message": "Diagnosis job not found"
-            }, status_code=404)
-
-        return JSONResponse({
-            "success": True,
-            "job": serialize_diagnosis_job(job),
-        })
-    finally:
-        service.close()
-
-
-@app.get("/animal/{animal_id}/diagnosis/{report_id}", response_class=HTMLResponse)
-async def view_diagnosis_report(request: Request, animal_id: int, report_id: int):
-    """View a diagnosis report"""
-    lang = get_lang(request)
-    current_user = getattr(request.state, 'user', None)
-    service = get_service()
-    try:
-        animal = service.db.get_animal(animal_id)
-        if not animal:
-            raise HTTPException(status_code=404, detail="Animal not found")
-
-        report = service.db.get_diagnosis_report(report_id)
-        if not report or report.animal_id != animal_id:
-            raise HTTPException(status_code=404, detail="Report not found")
-
-        response = templates.TemplateResponse(request, "diagnosis_report.html", {
-            "request": request,
-            "lang": lang,
-            "animal": animal,
-            "report": report,
-            "current_user": current_user
-        })
-        return set_lang_cookie(response, lang)
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception(f"Error viewing diagnosis report {report_id} for animal {animal_id}")
-        raise HTTPException(status_code=500, detail=internal_error_detail())
-    finally:
-        service.close()
-
-
-@app.delete("/animal/{animal_id}/diagnosis/{report_id}")
-async def delete_diagnosis_report(request: Request, animal_id: int, report_id: int):
-    """Delete a diagnosis report"""
-    if not validate_csrf(request):
-        return JSONResponse({"success": False, "message": "Invalid request"}, status_code=403)
-
-    service = get_service()
-    try:
-        # Verify report belongs to animal
-        report = service.db.get_diagnosis_report(report_id)
-        if not report or report.animal_id != animal_id:
-            return JSONResponse({
-                "success": False,
-                "message": "Report not found"
-            }, status_code=404)
-
-        success = service.db.delete_diagnosis_report(report_id)
-        return JSONResponse({
-            "success": success
-        })
-    except Exception:
-        logger.exception(f"Error deleting diagnosis report {report_id} for animal {animal_id}")
-        return internal_error_json()
-    finally:
-        service.close()
-
-
-@app.get("/api/diagnosis/{report_id}")
-async def api_get_diagnosis_report(report_id: int):
-    """API: Get diagnosis report data (JSON)"""
-    service = get_service()
-    try:
-        report = service.db.get_diagnosis_report(report_id)
-        if not report:
-            raise HTTPException(status_code=404, detail="Report not found")
-
-        return JSONResponse({
-            "success": True,
-            "report": {
-                "id": report.id,
-                "animal_id": report.animal_id,
-                "report_date": str(report.report_date) if report.report_date else None,
-                "report_type": report.report_type,
-                "input_summary": report.input_summary,
-                "differential_diagnosis": report.differential_diagnosis,
-                "recommendations": report.recommendations,
-                "references": report.references,
-                "model_used": report.model_used,
-                "created_at": str(report.created_at) if report.created_at else None
-            }
-        })
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception(f"Error getting diagnosis report {report_id}")
-        return internal_error_json()
-    finally:
-        service.close()
-
-
 @app.get("/compare/{animal_id}", response_class=HTMLResponse)
 async def compare_sessions_page(request: Request, animal_id: int):
     """Compare multiple sessions for an animal"""
@@ -3816,6 +3788,10 @@ async def compare_sessions_page(request: Request, animal_id: int):
                 "comparison_data": [],
                 "urinalysis_data": [],
                 "has_urinalysis": False,
+                "biochemistry_data": [],
+                "has_biochemistry": False,
+                "measurement_rows": [],
+                "has_measurements": False,
                 "error": get_text(lang, "compare.need_two_tests"),
                 "current_user": current_user
             })
@@ -3839,7 +3815,15 @@ async def compare_sessions_page(request: Request, animal_id: int):
                     r = all_results[session.id][marker]
                     row['values'].append({
                         'value': r.value,
+                        'unit': r.unit,
+                        'value_absolute': r.value_absolute,
+                        'unit_absolute': r.unit_absolute,
+                        'reference_min': r.reference_min,
+                        'reference_max': r.reference_max,
+                        'reference_min_absolute': r.reference_min_absolute,
+                        'reference_max_absolute': r.reference_max_absolute,
                         'flag': r.flag,
+                        'flag_absolute': r.flag_absolute,
                         'date': session.test_date
                     })
                 else:
@@ -3855,6 +3839,55 @@ async def compare_sessions_page(request: Request, animal_id: int):
             if urin:
                 has_urinalysis = True
 
+        # Get biochemistry (UPC ratio / renal markers) for each session
+        biochemistry_data = []
+        has_biochemistry = False
+        for session in sessions:
+            bio = service.db.get_biochemistry_for_session(session.id)
+            biochemistry_data.append(bio)
+            if bio and (bio.upc_ratio is not None
+                        or bio.urine_total_protein is not None
+                        or bio.urine_creatinine is not None
+                        or bio.iris_stage):
+                has_biochemistry = True
+
+        # Get generic measurements (analyzer panels, immunology, cultures, ...)
+        # for each session, aligned by measurement code across sessions. Panels
+        # already rendered by the dedicated proteinogram / urinalysis tables are
+        # excluded so those parameters are not shown twice.
+        measurement_excluded_panels = {"urinalysis_upc", "protein_electrophoresis"}
+        measurement_labels = {}
+        measurement_order = []
+        measurement_by_session = {}
+        for session in sessions:
+            measurement_by_session[session.id] = {}
+            for m in service.db.get_measurements_for_session(session.id):
+                if m.panel_name in measurement_excluded_panels:
+                    continue
+                code = m.measurement_code or m.measurement_name
+                measurement_by_session[session.id][code] = m
+                if code not in measurement_labels:
+                    measurement_labels[code] = m.measurement_name
+                    measurement_order.append(code)
+
+        measurement_rows = []
+        for code in measurement_order:
+            row = {"name": measurement_labels[code], "values": []}
+            for session in sessions:
+                m = measurement_by_session[session.id].get(code)
+                if m:
+                    row["values"].append({
+                        "value_text": m.value_text,
+                        "value_numeric": m.value_numeric,
+                        "unit": m.unit,
+                        "reference_text": m.reference_text,
+                        "flag": m.flag,
+                    })
+                else:
+                    row["values"].append(None)
+            measurement_rows.append(row)
+        has_measurements = len(measurement_rows) > 0
+
         response = templates.TemplateResponse(request, "compare.html", {
             "request": request,
             "lang": lang,
@@ -3863,6 +3896,10 @@ async def compare_sessions_page(request: Request, animal_id: int):
             "comparison_data": comparison_data,
             "urinalysis_data": urinalysis_data,
             "has_urinalysis": has_urinalysis,
+            "biochemistry_data": biochemistry_data,
+            "has_biochemistry": has_biochemistry,
+            "measurement_rows": measurement_rows,
+            "has_measurements": has_measurements,
             "error": None,
             "current_user": current_user
         })
@@ -3907,7 +3944,6 @@ async def api_list_animals(q: Optional[str] = None, limit: int = 50):
                 "species": row["species"],
                 "breed": row["breed"],
                 "owner_name": row.get("owner_name"),
-                "responsible_vet": row.get("responsible_vet"),
                 "latest_report_at": row.get("latest_report_at"),
                 "test_count": row.get("test_count", 0),
             } for row in rows]
@@ -3940,7 +3976,6 @@ async def api_animal_lookup(q: str, limit: int = 8, exclude_id: Optional[int] = 
             "name": row["name"],
             "species": row["species"],
             "owner_name": row.get("owner_name"),
-            "responsible_vet": row.get("responsible_vet"),
             "microchip": row.get("microchip"),
             "test_count": row.get("test_count", 0),
             "latest_report_at": row.get("latest_report_at"),
@@ -3973,7 +4008,6 @@ async def api_global_search(request: Request, q: str):
                 "name": row["name"],
                 "species": row["species"],
                 "owner_name": row.get("owner_name"),
-                "responsible_vet": row.get("responsible_vet"),
                 "href": f"/animal/{row['id']}",
             } for row in animals],
             "reports": [{

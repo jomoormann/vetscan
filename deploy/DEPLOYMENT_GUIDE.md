@@ -2,8 +2,8 @@
 
 ## Server Information
 
-**VPS Server:** srv1278248.hstgr.cloud (Hostinger VPS)
-- **IP:** 76.13.5.89
+**VPS Server:** srv1797730.hstgr.cloud (Hostinger VPS)
+- **IP:** 72.62.188.233
 - **User:** root
 - **Domain:** vetscan.net
 - **App Path:** /var/www/vetscan.net/app/
@@ -69,7 +69,7 @@ This downloads the production database to `backups/vet_proteins_YYYYMMDD_HHMMSS.
 
 **On VPS (server-side backup):**
 ```bash
-ssh root@76.13.5.89
+ssh root@72.62.188.233
 cd /var/www/vetscan.net/app/data
 # List available backups
 ls -la vet_proteins.db.backup.*
@@ -81,9 +81,9 @@ systemctl restart vetscan
 **From local backup:**
 ```bash
 # Copy local backup to VPS
-scp backups/vet_proteins_YYYYMMDD_HHMMSS.db root@76.13.5.89:/var/www/vetscan.net/app/data/vet_proteins.db
+scp backups/vet_proteins_YYYYMMDD_HHMMSS.db root@72.62.188.233:/var/www/vetscan.net/app/data/vet_proteins.db
 # Restart service
-ssh root@76.13.5.89 'systemctl restart vetscan'
+ssh root@72.62.188.233 'systemctl restart vetscan'
 ```
 
 ### Backup Locations Summary
@@ -99,25 +99,25 @@ ssh root@76.13.5.89 'systemctl restart vetscan'
 
 ```bash
 # Check service status
-ssh root@76.13.5.89 'systemctl status vetscan'
+ssh root@72.62.188.233 'systemctl status vetscan'
 
 # View live systemd logs
-ssh root@76.13.5.89 'journalctl -u vetscan -f'
+ssh root@72.62.188.233 'journalctl -u vetscan -f'
 
 # View application error logs
-ssh root@76.13.5.89 'tail -50 /var/www/vetscan.net/app/logs/error.log'
+ssh root@72.62.188.233 'tail -50 /var/www/vetscan.net/app/logs/error.log'
 
 # View access logs
-ssh root@76.13.5.89 'tail -50 /var/www/vetscan.net/app/logs/access.log'
+ssh root@72.62.188.233 'tail -50 /var/www/vetscan.net/app/logs/access.log'
 
 # Restart service
-ssh root@76.13.5.89 'systemctl restart vetscan'
+ssh root@72.62.188.233 'systemctl restart vetscan'
 
 # Check database record count
-ssh root@76.13.5.89 'cd /var/www/vetscan.net/app && source venv/bin/activate && python3 -c "import sqlite3; conn=sqlite3.connect(\"data/vet_proteins.db\"); print(\"Animals:\", conn.execute(\"SELECT COUNT(*) FROM animals\").fetchone()[0])"'
+ssh root@72.62.188.233 'cd /var/www/vetscan.net/app && source venv/bin/activate && python3 -c "import sqlite3; conn=sqlite3.connect(\"data/vet_proteins.db\"); print(\"Animals:\", conn.execute(\"SELECT COUNT(*) FROM animals\").fetchone()[0])"'
 
 # SSH into VPS
-ssh root@76.13.5.89
+ssh root@72.62.188.233
 ```
 
 ---
@@ -155,14 +155,14 @@ ssh root@76.13.5.89
 
 To modify the service:
 ```bash
-ssh root@76.13.5.89 'nano /etc/systemd/system/vetscan.service'
-ssh root@76.13.5.89 'systemctl daemon-reload && systemctl restart vetscan'
+ssh root@72.62.188.233 'nano /etc/systemd/system/vetscan.service'
+ssh root@72.62.188.233 'systemctl daemon-reload && systemctl restart vetscan'
 ```
 
 After updating gunicorn settings or versions:
 ```bash
-ssh root@76.13.5.89 'cd /var/www/vetscan.net/app && source venv/bin/activate && pip install -r requirements.txt'
-ssh root@76.13.5.89 'systemctl daemon-reload && systemctl restart vetscan'
+ssh root@72.62.188.233 'cd /var/www/vetscan.net/app && source venv/bin/activate && pip install -r requirements.txt'
+ssh root@72.62.188.233 'systemctl daemon-reload && systemctl restart vetscan'
 ```
 
 ---
@@ -178,8 +178,8 @@ ssh root@76.13.5.89 'systemctl daemon-reload && systemctl restart vetscan'
 
 To modify nginx:
 ```bash
-ssh root@76.13.5.89 'nano /etc/nginx/sites-available/vetscan'
-ssh root@76.13.5.89 'nginx -t && systemctl reload nginx'
+ssh root@72.62.188.233 'nano /etc/nginx/sites-available/vetscan'
+ssh root@72.62.188.233 'nginx -t && systemctl reload nginx'
 ```
 
 ---
@@ -190,17 +190,17 @@ ssh root@76.13.5.89 'nginx -t && systemctl reload nginx'
 
 1. Check if service is running:
    ```bash
-   ssh root@76.13.5.89 'systemctl status vetscan'
+   ssh root@72.62.188.233 'systemctl status vetscan'
    ```
 
 2. Check logs for errors:
    ```bash
-   ssh root@76.13.5.89 'journalctl -u vetscan -n 50'
+   ssh root@72.62.188.233 'journalctl -u vetscan -n 50'
    ```
 
 3. Restart the service:
    ```bash
-   ssh root@76.13.5.89 'systemctl restart vetscan'
+   ssh root@72.62.188.233 'systemctl restart vetscan'
    ```
 
 ### Unhandled signal: cld / worker timeouts
@@ -219,7 +219,7 @@ ssh root@76.13.5.89 'nginx -t && systemctl reload nginx'
 
 1. Check server-side backups:
    ```bash
-   ssh root@76.13.5.89 'ls -la /var/www/vetscan.net/app/data/vet_proteins.db.backup.*'
+   ssh root@72.62.188.233 'ls -la /var/www/vetscan.net/app/data/vet_proteins.db.backup.*'
    ```
 
 2. Restore from most recent backup (see Restore from Backup section)
@@ -227,7 +227,7 @@ ssh root@76.13.5.89 'nginx -t && systemctl reload nginx'
 ### Cannot SSH to server
 
 - Verify your SSH key is set up: `ssh-add -l`
-- Check if VPS is reachable: `ping 76.13.5.89`
+- Check if VPS is reachable: `ping 72.62.188.233`
 - Contact Hostinger support if VPS is unreachable
 
 ---

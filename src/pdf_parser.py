@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 import subprocess
+import unicodedata
 from datetime import date, datetime
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Any
@@ -32,6 +33,7 @@ from models import (
     AnimalIdentifier, SessionMeasurement, PathologyFinding,
     parse_portuguese_date, parse_age
 )
+from vet_names import canonicalize_vet_name
 
 
 @dataclass
@@ -66,6 +68,12 @@ def _normalize_space(value: str) -> str:
     return " ".join((value or "").split())
 
 
+def _fold_for_detection(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value or "")
+    without_accents = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    return without_accents.upper()
+
+
 def _parse_decimal(value: Optional[str]) -> Optional[float]:
     if not value:
         return None
@@ -85,6 +93,59 @@ def _parse_species(value: Optional[str]) -> str:
     if "fel" in lowered or "cat" in lowered:
         return "Felídeo"
     return normalized or "Canídeo"
+
+
+def _extract_ordering_vet_from_text(text: str) -> Optional[str]:
+    patterns = (
+        r'Nome[ \t]+do[ \t]+Veterin[áa]rio[ \t]*:?[ \t]*([^\n\r]+)',
+        r'Veterin[áa]rio/a[ \t]*:?[ \t]*([^\n\r]+)',
+        r'Attending[ \t]+Vet[ \t]*:?[ \t]*([^\n\r]+)',
+        r'M[ée]dico[ \t]+Veterin[áa]rio[ \t]*:?[ \t]*(?:Nome:[ \t]*[^\n\r]+[ \t]*)?([^\n\r]+)',
+        r'Veterin[áa]rio(?!/a)[ \t]*:?[ \t]*([^\n\r]+)',
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text or "", re.IGNORECASE)
+        if not match:
+            continue
+        value = _normalize_space(match.group(1))
+        value = re.split(r'\s{2,}|Idade:|Esp[ée]cie:|Ra[çc]a:', value)[0].strip(" :-")
+        if _is_plausible_ordering_vet_value(value):
+            return canonicalize_vet_name(value)
+    return None
+
+
+def _is_plausible_ordering_vet_value(value: Optional[str]) -> bool:
+    if not value:
+        return False
+    raw = _normalize_space(value)
+    if raw.startswith("-"):
+        return False
+    normalized = raw.strip(" :-")
+    if not normalized:
+        return False
+    lowered = normalized.lower()
+    if lowered in {"dr(a).", "dr(a)", "dr.", "dra.", "dr", "dra", "desconhecido unknown"}:
+        return False
+    if normalized[:1].islower():
+        return False
+    blocked_fragments = (
+        "descrição",
+        "descricao",
+        "diagnosis",
+        "microscopic",
+        "turbididade",
+        "shrinkage",
+        "sample",
+        "general comment",
+        "size:",
+    )
+    if any(fragment in lowered for fragment in blocked_fragments):
+        return False
+    if re.search(r'\d+(?:[.,]\d+)?\s*x\s*\d+', lowered):
+        return False
+    if len(normalized.split()) > 5:
+        return False
+    return bool(re.search(r'[A-Za-zÀ-ÿ]', normalized))
 
 
 def _extract_pdf_text(pdf_path: str) -> str:
@@ -337,14 +398,57 @@ def _extract_word_layout_text(pdf_path: str) -> str:
 
 def detect_report_type(text: str) -> Optional[str]:
     upper_text = text.upper()
+    folded_text = _fold_for_detection(text)
     if "PROTEINOGRAMA" in upper_text or "ELECTROFORESE DE PROTEINAS" in upper_text:
         return "dnatech_proteinogram"
-    if "CYTOLOGY REPORT" in upper_text:
+    if (
+        "FOLHA DE TRABALHO" in upper_text
+        and ("BIOQUIMICA" in upper_text or "URINA TIPO II" in upper_text)
+        and (
+            "RACIO (P.TOTAIS/CREATININA) URINA" in upper_text
+            or "P.TOTAIS (URINA)" in upper_text
+            or "CREATININA (URINA)" in upper_text
+            or "URINA TIPO II" in upper_text
+        )
+    ):
+        return "dnatech_urine_biochemistry"
+    if "HISTOLOGY REPORT" in upper_text:
+        return "vedis_histology"
+    if "CYTOLOGY REPORT" in upper_text or (
+        "ID EXAME" in folded_text
+        and "PACIENTE" in folded_text
+        and "RELATORIO CITOLOGIA" in folded_text
+    ):
         return "vedis_cytology"
     if "RELATÓRIO IMUNOCITOQUÍMICA" in upper_text or "IMUNOCITOQUÍMICA" in upper_text:
         return "vedis_immunocytochemistry"
     if "ID PACIENTE" in upper_text and "RESULTADO" in upper_text:
         return "cvs_analyzer"
+    if (
+        "NEFROLOGIA E UROLOGIA" in upper_text
+        and "URINA TIPO II" in upper_text
+        and ("RÁCIO UPC" in upper_text or "RACIO UPC" in upper_text)
+    ):
+        return "genevet_urinalysis"
+    if (
+        "FOLHA DE TRABALHO" in upper_text
+        and "DADOS DO ANIMAL" in upper_text
+        and "CITOLOGIA" in upper_text
+    ):
+        return "dnatech_cytology"
+    if (
+        "FOLHA DE TRABALHO" in upper_text
+        and "DADOS DO ANIMAL" in upper_text
+        and (
+            "BIOQUIMICA" in upper_text
+            or "IMUNOLOGIA" in upper_text
+            or "MICROBIOLOGIA" in upper_text
+            or "COPROLOGIA" in upper_text
+            or "COPROCULTURA" in upper_text
+            or "UROCULTURA" in upper_text
+        )
+    ):
+        return "dnatech_lab_report"
     return None
 
 
@@ -371,10 +475,10 @@ class DNAtechParser:
         'animal_name': r'^Animal\s+([A-Za-zÀ-ÿ]+)',
         'species': r'Esp[ée]cie\s+([A-Za-zÀ-ÿ]+)',
         'breed': r'Ra[çc]a\s+([A-Za-zÀ-ÿ\s]+?)(?=\n|Microchip|$)',
-        'microchip': r'Microchip(?:\s+No Cliente:)?\s+([A-Za-z0-9\-]+)',
+        'microchip': r'^Microchip[ \t]*(?::[ \t]*|[ \t]+)(?!No Cliente\b)([A-Za-z0-9\-]+)(?:[ \t]+No Cliente:.*)?[ \t]*$',
         'owner_name': r'Propriet[áa]rio\s+([A-Za-zÀ-ÿ\s]+?)(?=\n|Amostra|$)',
         'client_ref': r'No Cliente:\s*([A-Za-z0-9\-]+)',
-        'age': r'Idade\s+(.+?)(?=\n|Amostra)',
+        'age': r'^Idade\s+(.+?)(?=\s+Propriet[áa]rio|\n|Amostra)',
         'sample': r'Amostra\s+([A-Za-zÀ-ÿ\s\|]+?)(?=\n|VrokGuur)',
     }
     
@@ -455,6 +559,23 @@ class DNAtechParser:
         # Parse additional sections
         biochemistry = self._parse_biochemistry(full_text)
         urinalysis = self._parse_urinalysis(full_text)
+        pathology_findings = []
+        if session.report_type == "cytology":
+            measurements = (
+                self._parse_cytology_measurements(full_text)
+                if session.panel_name == "auricular_cytology"
+                else []
+            )
+            pathology_findings = self._parse_cytology_findings(full_text)
+            # Mixed report: a cytology PDF that also carries a "Urina Tipo II"
+            # section (e.g. a vaginal cytology bundled with a urinalysis). Parse
+            # the urine block's parameters so the full urinalysis panel shows as
+            # usual instead of only the 4-field summary.
+            urine_block = self._extract_urinalysis_block(full_text)
+            if urine_block:
+                measurements += self._parse_generic_measurements(urine_block, "urinalysis_upc")
+        else:
+            measurements = self._parse_generic_measurements(full_text, session.panel_name)
         
         return ParsedReport(
             animal=animal,
@@ -462,6 +583,8 @@ class DNAtechParser:
             results=results,
             biochemistry=biochemistry,
             urinalysis=urinalysis,
+            measurements=measurements,
+            pathology_findings=pathology_findings,
             animal_identifiers=animal_identifiers,
             raw_text=full_text,
             parse_warnings=self.warnings
@@ -544,6 +667,7 @@ class DNAtechParser:
         date_str = self._extract_pattern(text, 'date')
         closing_date_str = self._extract_pattern(text, 'closing_date')
         sample_type = self._extract_pattern(text, 'sample') or "Soro"
+        report_type, panel_name = self._infer_report_classification(text)
         
         test_date = parse_portuguese_date(date_str)
         closing_date = parse_portuguese_date(closing_date_str)
@@ -558,24 +682,458 @@ class DNAtechParser:
             sample_type=sample_type.strip(),
             lab_name="DNAtech",
             source_system="dnatech",
-            report_type="dnatech_proteinogram",
+            report_type=report_type,
             external_report_id=report_number or None,
             report_source=pdf_path,
+            ordering_vet=_extract_ordering_vet_from_text(text),
+            panel_name=panel_name,
             pdf_path=pdf_path
         )
         
         return session
 
+    def _infer_report_classification(self, text: str) -> Tuple[str, Optional[str]]:
+        """Classify DNAtech reports that do not include a proteinogram."""
+        upper_text = text.upper()
+        if "PROTEINOGRAMA" in upper_text or "ELECTROFORESE DE PROTEINAS" in upper_text:
+            return "dnatech_proteinogram", "protein_electrophoresis"
+        if "COPROLOGIA" in upper_text or "FLUTUAÇÃO" in upper_text or "FLUTUACAO" in _fold_for_detection(text):
+            return "coprology", "fecal_parasitology"
+        if self._is_cytology_report(text):
+            panel = "auricular_cytology" if "CITOLOGIA AURICULAR" in upper_text else "cytology"
+            return "cytology", panel
+
+        has_biochemistry = (
+            "BIOQUIMICA" in upper_text
+            or "P.TOTAIS (URINA)" in upper_text
+            or "CREATININA (URINA)" in upper_text
+        )
+        has_urine_biochemistry = (
+            "P.TOTAIS (URINA)" in upper_text
+            or "CREATININA (URINA)" in upper_text
+            or "RACIO (P.TOTAIS/CREATININA) URINA" in upper_text
+        )
+        has_urinalysis = "URINA TIPO II" in upper_text
+        urinalysis_pending = "AGUARDA RESULTADO" in upper_text
+
+        if has_urinalysis and not urinalysis_pending:
+            panel = "urinalysis_upc" if has_biochemistry else "urinalysis"
+            return "urinalysis", panel
+        if has_urine_biochemistry:
+            return "biochemistry", "urine_protein_creatinine_ratio"
+        if has_biochemistry:
+            return "biochemistry", "biochemistry"
+        if has_urinalysis:
+            return "urinalysis", "urinalysis"
+
+        if "IMUNOLOGIA" in upper_text:
+            return "immunology", "immunology"
+        if "MICROBIOLOGIA" in upper_text or "UROCULTURA" in upper_text or "COPROCULTURA" in upper_text:
+            if "UROCULTURA" in upper_text:
+                return "microbiology", "urine_culture"
+            if "COPROCULTURA" in upper_text:
+                return "microbiology", "fecal_culture"
+            return "microbiology", "microbiology"
+        return "dnatech_proteinogram", "protein_electrophoresis"
+
+    def _is_cytology_report(self, text: str) -> bool:
+        upper_text = text.upper()
+        folded_text = _fold_for_detection(text)
+        if "CITOLOGIA FLUTUACAO" in folded_text or "FLUTUAÇÃO" in upper_text:
+            return False
+        return (
+            "CITOLOGIA AURICULAR" in upper_text
+            or "CITOLOGIA GERAL" in upper_text
+            or "CITOLOGIA DERMATOLOGICA" in folded_text
+            or "RELATORIO CITOLOGICO" in folded_text
+            or (
+                "CITOLOGIA" in upper_text
+                and any(label in upper_text for label in ("LÂMINAS RECEBIDAS", "CELULARIDADE", "CONCLUSÃO"))
+            )
+        )
+
+    def _measurement_code(self, value: str) -> str:
+        folded = _fold_for_detection(value).lower()
+        folded = re.sub(r"[^a-z0-9]+", "_", folded).strip("_")
+        return folded or "measurement"
+
+    def _infer_measurement_flag(self, value_text: Optional[str],
+                                value_numeric: Optional[float] = None,
+                                reference_text: Optional[str] = None) -> str:
+        folded_value = _fold_for_detection(value_text or "")
+        if any(marker in folded_value for marker in ("POSITIVO", "(A)", "ELEVADO")):
+            return "high"
+        if any(marker in folded_value for marker in ("NEGATIVO", "AUSENTE", "AUSENTES")):
+            return "normal"
+
+        if value_numeric is not None and reference_text:
+            less_than = re.search(r"<\s*([\d,\.]+)", reference_text)
+            if less_than:
+                threshold = self._parse_number(less_than.group(1))
+                if threshold is not None and value_numeric > threshold:
+                    return "high"
+            ref_min, ref_max = self._parse_reference_range(reference_text)
+            if ref_min is not None and value_numeric < ref_min:
+                return "low"
+            if ref_max is not None and value_numeric > ref_max:
+                return "high"
+
+        return "normal"
+
+    def _add_measurement(self, measurements: List[SessionMeasurement],
+                         panel_name: Optional[str],
+                         measurement_name: str,
+                         value_text: Optional[str] = None,
+                         value_numeric: Optional[float] = None,
+                         unit: Optional[str] = None,
+                         reference_text: Optional[str] = None,
+                         measurement_code: Optional[str] = None):
+        code = measurement_code or self._measurement_code(measurement_name)
+        flag = self._infer_measurement_flag(value_text, value_numeric, reference_text)
+        measurements.append(SessionMeasurement(
+            panel_name=panel_name,
+            measurement_code=code,
+            measurement_name=measurement_name,
+            value_numeric=value_numeric,
+            value_text=value_text,
+            unit=unit,
+            reference_text=reference_text,
+            flag=flag,
+            sort_order=len(measurements),
+        ))
+
+    def _parse_generic_measurements(self, text: str,
+                                    default_panel_name: Optional[str],
+                                    initial_existing_codes: Optional[set] = None) -> List[SessionMeasurement]:
+        """Extract non-protein structured results that do not have dedicated tables."""
+        measurements: List[SessionMeasurement] = []
+        lines = [_normalize_space(line) for line in text.splitlines()]
+        lines = [line for line in lines if line]
+        upper_text = text.upper()
+
+        previous_line = ""
+        for line in lines:
+            sdma_match = re.match(
+                r"^SDMA\s+([\d,\.]+)\s*(?:\(([^)]+)\))?\s*([A-Za-zµ/]+)?\s*(<\s*[\d,\.]+|[\d,\.]+\s*-\s*[\d,\.]+)?",
+                line,
+                re.IGNORECASE,
+            )
+            if sdma_match:
+                value = self._parse_number(sdma_match.group(1))
+                abnormal_flag = sdma_match.group(2)
+                unit = sdma_match.group(3)
+                reference = sdma_match.group(4)
+                value_text = sdma_match.group(1)
+                if abnormal_flag:
+                    value_text = f"{value_text} ({abnormal_flag})"
+                self._add_measurement(
+                    measurements,
+                    default_panel_name or "biochemistry",
+                    "SDMA",
+                    value_text=value_text,
+                    value_numeric=value,
+                    unit=unit,
+                    reference_text=reference,
+                    measurement_code="sdma",
+                )
+
+            # NOTE: immunology serology (disease antibody subtitles + their IFI
+            # "Titulação 1/N" ladders) is parsed generically in
+            # _parse_flexible_result_lines, which groups each ladder under the
+            # preceding "ANTICORPOS ANTI-<disease>" subtitle. The old hardcoded
+            # leishmania blocks were removed: they mislabelled every titration as
+            # a leishmania titer and invented a leishmania analysis on reports
+            # that never mentioned it.
+
+            culture_match = re.match(
+                r"^Microrganismo isolado\s+(.+)$",
+                line,
+                re.IGNORECASE,
+            )
+            if culture_match:
+                panel = "urine_culture" if "UROCULTURA" in upper_text else "fecal_culture"
+                self._add_measurement(
+                    measurements,
+                    panel,
+                    "Microrganismo isolado",
+                    value_text=culture_match.group(1),
+                    measurement_code="microorganism_isolated",
+                )
+
+            pending_match = re.match(
+                r"^(UROCULTURA|COPROCULTURA)\s+Aguarda Resultado$",
+                line,
+                re.IGNORECASE,
+            )
+            split_pending = (
+                _fold_for_detection(line) == "AGUARDA RESULTADO"
+                and _fold_for_detection(previous_line) in ("UROCULTURA", "COPROCULTURA")
+            )
+            if pending_match or split_pending:
+                culture_name = pending_match.group(1) if pending_match else previous_line
+                panel = "urine_culture" if culture_name.upper() == "UROCULTURA" else "fecal_culture"
+                self._add_measurement(
+                    measurements,
+                    panel,
+                    culture_name.upper(),
+                    value_text="Aguarda Resultado",
+                    measurement_code=self._measurement_code(culture_name),
+                )
+
+            previous_line = line
+
+        if "COPROLOGIA" in upper_text or "FLUTUAÇÃO" in upper_text:
+            result_match = re.search(
+                r"Resultado:\s*([^\n.]+)\.?",
+                text,
+                re.IGNORECASE,
+            )
+            if result_match:
+                self._add_measurement(
+                    measurements,
+                    "fecal_parasitology",
+                    "Pesquisa de parasitas fecais",
+                    value_text=_normalize_space(result_match.group(1)),
+                    measurement_code="fecal_parasites",
+                )
+
+            observation_match = re.search(
+                r"(Não foram observados.+?)(?:\nNota:|\nO Analista|$)",
+                text,
+                re.IGNORECASE | re.DOTALL,
+            )
+            if observation_match:
+                self._add_measurement(
+                    measurements,
+                    "fecal_parasitology",
+                    "Observação",
+                    value_text=_normalize_space(observation_match.group(1)),
+                    measurement_code="fecal_parasitology_observation",
+                )
+
+            note_match = re.search(
+                r"Nota:\s*(.+?)(?:\nO Analista|$)",
+                text,
+                re.IGNORECASE | re.DOTALL,
+            )
+            if note_match:
+                self._add_measurement(
+                    measurements,
+                    "fecal_parasitology",
+                    "Nota",
+                    value_text=_normalize_space(note_match.group(1)),
+                    measurement_code="fecal_parasitology_note",
+                )
+
+        measurements.extend(
+            self._parse_flexible_result_lines(
+                lines,
+                default_panel_name,
+                set(initial_existing_codes or set()) | {measurement.measurement_code for measurement in measurements},
+            )
+        )
+
+        return measurements
+
+    def _parse_flexible_result_lines(self, lines: List[str],
+                                     default_panel_name: Optional[str],
+                                     existing_codes: set) -> List[SessionMeasurement]:
+        """Catch new DNAtech single-value result rows without format-specific code."""
+        measurements: List[SessionMeasurement] = []
+        ignored_prefixes = (
+            "FOLHA DE TRABALHO",
+            "DADOS DO ANIMAL",
+            "ANIMAL",
+            "ESPÉCIE",
+            "ESPECIE",
+            "RAÇA",
+            "RACA",
+            "MICROCHIP",
+            "IDADE",
+            "PROPRIETÁRIO",
+            "PROPRIETARIO",
+            "AMOSTRA",
+            "DATA",
+            "O ANALISTA",
+            "NOTA",
+            "OBSERVAÇÕES",
+            "OBSERVACOES",
+            "CONCLUSÃO",
+            "CONCLUSAO",
+            "CARACTERES GERAIS",
+            "BIOQUIMICA",
+            "BIOQUÍMICA",
+            "URINAS",
+            "EXAME",
+            "PESQUISA DE PARASITAS FECAIS",
+            "MATERIAL RECEBIDO",
+            "RESULTADO",
+            "TELEFONE",
+            "FAX",
+            "LOCALIDADE",
+            "ENVIO",
+            "DOCUMENTO PROCESADO",
+            "DOCUMENTO PROCESSADO",
+            "DNATECH",
+            "RKURK",
+            "VKROK",
+        )
+        ignored_codes = {
+            "telefone",
+            "fax",
+            "canideos",
+            "cachorros",
+            "documento_procesado_electronicamente_e_deialab_slice_pagina",
+            "documento_processado_electronicamente_e_deialab_slice_pagina",
+            "dnatech_lda_estrada_do_paco_do_lumiar",
+            "proteinas_totais",
+            "albumina",
+            "alfa",
+            "alfa_1",
+            "alfa_2",
+            "beta",
+            "gama",
+            "rel_albumina_globulina",
+            "2_bacterias_leveduras_ou_celulas_inflamatorias",
+            "3_bacterias_leveduras_ou_celulas_inflamatorias",
+            "4_massiva_quantidade_de_bacterias_leveduras_ou_celulas_inflamatorias",
+        }
+        auricular_cytology_aliases = {
+            "celulas_epiteliais_pavimentosas_queratinizadas": "epithelial_cells",
+            "bacterias": "bacteria",
+            "malassezia_sp": "malassezia",
+            "acaros": "mites",
+            "neutrofilos": "neutrophils",
+        }
+        value_pattern = (
+            r"(?:Aguarda\s+Resultado|"
+            r"Positivo(?:\s*\([^)]+\))?|"
+            r"Negativo(?:\s*\([^)]+\))?|"
+            r"Ausentes?|Presentes?|Rar[ao]s?|Rar[ao]|Discret[ao]s?|"
+            r"[<>]?\s*\d+(?:[,.]\d+)?)"
+        )
+        textual_reference_values = {
+            "negativo",
+            "negativa",
+            "ausente",
+            "ausentes",
+            "presente",
+            "presentes",
+            "raro",
+            "rara",
+            "raros",
+            "raras",
+            "normal",
+        }
+
+        # Immunology serology reports group an IFI "Titulação 1/N" ladder under
+        # each bold "ANTICORPOS ANTI-<disease>" subtitle. Track the current
+        # disease so each titration row is namespaced to it, instead of the old
+        # hardcoded "leishmania_titer_*" that invented a leishmania analysis on
+        # reports which never mentioned leishmania.
+        current_immuno_disease = None
+
+        for line in lines:
+            line = _normalize_space(line.replace("*", " "))
+            folded_line = _fold_for_detection(line)
+            if any(folded_line.startswith(_fold_for_detection(prefix)) for prefix in ignored_prefixes):
+                continue
+
+            match = re.match(
+                rf"^(?P<name>[A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9 .,/()+%°º-]{{1,90}}?)\s+"
+                rf"(?P<value>{value_pattern})"
+                rf"(?:\s*(?P<flag>\([A-Z]\)))?"
+                rf"(?:\s+(?P<rest>.*))?$",
+                line,
+                re.IGNORECASE,
+            )
+            if not match:
+                continue
+
+            name = _normalize_space(match.group("name"))
+            raw_value = _normalize_space(match.group("value"))
+            value_text = raw_value
+            flag_text = match.group("flag")
+            rest = _normalize_space(match.group("rest") or "")
+            if flag_text:
+                value_text = f"{value_text} {flag_text}"
+
+            code = self._measurement_code(name)
+            # Immunology: attach each "Titulação 1/N" ladder to the antibody
+            # subtitle it sits under, so titres are grouped per disease and never
+            # relabelled as leishmania.
+            if default_panel_name == "immunology":
+                folded_name = _fold_for_detection(name)
+                if folded_name.startswith("ANTICORPOS"):
+                    current_immuno_disease = code
+                elif current_immuno_disease and folded_name.startswith("TITULA"):
+                    code = f"{current_immuno_disease}_{code}"
+            if code in ignored_codes:
+                continue
+            if name[:1].islower() and name not in {"pH", "nRBC", "tCO2"}:
+                continue
+            if (
+                default_panel_name == "auricular_cytology"
+                and auricular_cytology_aliases.get(code) in existing_codes
+            ):
+                continue
+            if code in existing_codes or code in {item.measurement_code for item in measurements}:
+                continue
+
+            if code in {
+                "racio_p_totais_creatinina_urina",
+                "p_totais_urina",
+                "creatinina_urina",
+            }:
+                continue
+
+            reference_text = None
+            # Serology valorisation criterion, e.g. "Criterio de valorização >1/40"
+            crit_match = re.match(
+                r"^Crit[ée]rio de valoriza[çc][ãa]o\s*(.+)$", rest, re.IGNORECASE
+            )
+            if crit_match:
+                reference_text = _normalize_space(crit_match.group(1))
+                rest = ""
+            reference_match = re.search(
+                r"(<\s*[\d,\.]+(?:/[A-Za-zÀ-ÿ]+)?|[\d,\.]+\s*-\s*[\d,\.]+(?:/[A-Za-zÀ-ÿ]+)?)",
+                rest,
+            ) if reference_text is None else None
+            if reference_match:
+                reference_text = _normalize_space(reference_match.group(1))
+                rest = _normalize_space(
+                    f"{rest[:reference_match.start()]} {rest[reference_match.end():]}"
+                )
+
+            unit = None
+            if rest and _fold_for_detection(rest).lower() in textual_reference_values:
+                reference_text = rest
+                rest = ""
+            else:
+                unit_match = re.match(r"([A-Za-zÀ-ÿµμ/%]+(?:/[A-Za-zÀ-ÿµμ]+)?)", rest)
+                if unit_match:
+                    unit = unit_match.group(1)
+                    rest = _normalize_space(rest[unit_match.end():])
+                if rest and _fold_for_detection(rest).lower() in textual_reference_values:
+                    reference_text = rest
+                elif not unit and raw_value.lower() in textual_reference_values and rest:
+                    reference_text = rest
+
+            self._add_measurement(
+                measurements,
+                default_panel_name or "dnatech_lab_report",
+                name,
+                value_text=value_text,
+                value_numeric=self._parse_number(raw_value),
+                unit=unit,
+                reference_text=reference_text,
+                measurement_code=code,
+            )
+
+        return measurements
+
     def _parse_animal_identifiers(self, text: str) -> List[AnimalIdentifier]:
         identifiers: List[AnimalIdentifier] = []
-
-        client_ref = self._extract_pattern(text, 'client_ref')
-        if client_ref:
-            identifiers.append(AnimalIdentifier(
-                source_system="dnatech",
-                identifier_type="client_ref",
-                identifier_value=client_ref,
-            ))
 
         microchip = self._extract_pattern(text, 'microchip')
         if microchip and microchip.isdigit():
@@ -586,6 +1144,285 @@ class DNAtechParser:
             ))
 
         return identifiers
+
+    def _extract_single_line_value(self, text: str, label: str) -> Optional[str]:
+        match = re.search(
+            rf'^{re.escape(label)}\s+(.+?)\s*$',
+            text,
+            re.IGNORECASE | re.MULTILINE,
+        )
+        if not match:
+            return None
+        return _normalize_space(match.group(1))
+
+    def _extract_until_any(self, text: str, start_label: str, end_labels: Tuple[str, ...]) -> str:
+        start_match = re.search(re.escape(start_label), text, re.IGNORECASE)
+        if not start_match:
+            return ""
+
+        start = start_match.end()
+        end = len(text)
+        for label in end_labels:
+            end_match = re.search(re.escape(label), text[start:], re.IGNORECASE)
+            if end_match:
+                end = min(end, start + end_match.start())
+
+        return text[start:end].strip()
+
+    def _extract_labeled_section(self, text: str, start_label: str,
+                                 end_labels: Tuple[str, ...]) -> str:
+        start_match = re.search(rf'{re.escape(start_label)}\s*:?', text, re.IGNORECASE)
+        if not start_match:
+            return ""
+
+        start = start_match.end()
+        end = len(text)
+        for label in end_labels:
+            end_match = re.search(rf'{re.escape(label)}\s*:?', text[start:], re.IGNORECASE)
+            if end_match:
+                end = min(end, start + end_match.start())
+
+        return text[start:end].strip(" \n\r\t:")
+
+    def _clean_dnatech_narrative(self, value: Optional[str]) -> str:
+        if not value:
+            return ""
+
+        lines = []
+        ignored_prefixes = (
+            "O Analista",
+            "Data de fecho",
+            "VkrokGuur",
+            "VkVkrrookkGGuuuurr",
+            "Folha de Trabalho",
+            "Nome ",
+            "Dados do Animal",
+            "ID Animal",
+            "Animal ",
+            "Localidade ",
+            "Telefone ",
+            "Fax",
+            "Envio ",
+            "Espécie ",
+            "Raça ",
+            "Microchip ",
+            "Idade ",
+            "Amostra Analisada",
+            "Amostra Recebida",
+            "Amostra Recebido",
+            "Relatório",
+            "Documento procesado",
+            "Documento processado",
+            "DNAtech",
+            "Rkurk",
+            "*Escala",
+        )
+        for raw_line in value.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if any(line.startswith(prefix) for prefix in ignored_prefixes):
+                continue
+            lines.append(line)
+        return _normalize_space(" ".join(lines))
+
+    def _extract_urinalysis_block(self, text: str) -> Optional[str]:
+        """Return the 'Urina Tipo II' portion of a multi-section DNAtech report.
+
+        Lets the urinalysis parameters be extracted even when the report is
+        classified as another type (e.g. a vaginal cytology bundled with a
+        urinalysis), by isolating the urine section from the surrounding blocks.
+        """
+        if "URINA TIPO II" not in text.upper() and "URINAS" not in text.upper():
+            return None
+        start_match = re.search(
+            r'^\s*(URINA TIPO II|URINAS)\b', text, re.IGNORECASE | re.MULTILINE
+        )
+        if not start_match:
+            return None
+        start = start_match.start()
+        after = start + len(start_match.group(0))
+        end_match = re.search(
+            r'^\s*(CITOLOGIA|HISTOLOGIA|MICROBIOLOGIA|IMUNOLOGIA|PROTEINOGRAMA|COPROLOGIA)\b',
+            text[after:],
+            re.IGNORECASE | re.MULTILINE,
+        )
+        end = after + end_match.start() if end_match else len(text)
+        return text[start:end]
+
+    def _parse_cytology_findings(self, text: str) -> List[PathologyFinding]:
+        if "CITOLOGIA" not in text.upper():
+            return []
+
+        sections = self._split_cytology_sections(text)
+        if not sections:
+            sections = [("Citologia", text)]
+
+        findings: List[PathologyFinding] = []
+        for sort_order, (title, block) in enumerate(sections):
+            material = self._clean_dnatech_narrative(
+                self._extract_labeled_section(
+                    block,
+                    "Lâminas recebidas",
+                    ("Tipo de Amostra", "Celularidade", "Conclusão", "O Analista", "Data de fecho"),
+                )
+            )
+            sample_method = self._clean_dnatech_narrative(
+                self._extract_labeled_section(
+                    block,
+                    "Tipo de Amostra",
+                    ("Celularidade", "CARACTERES GERAIS", "Conclusão", "O Analista", "Data de fecho"),
+                )
+            )
+            if not material:
+                material = self._extract_single_line_value(block, "Material Recebido") or ""
+
+            sample_sites = re.findall(
+                r'^Amostra Analisada\s+(.+?)\s*$',
+                block,
+                re.IGNORECASE | re.MULTILINE,
+            )
+            microscopic_description = self._clean_dnatech_narrative(
+                self._extract_labeled_section(
+                    block,
+                    "Celularidade",
+                    ("Conclusão", "Observações", "O Analista", "Data de fecho"),
+                )
+            ) or self._clean_dnatech_narrative(
+                self._extract_labeled_section(
+                    block,
+                    "CARACTERES GERAIS",
+                    ("Conclusão", "Observações", "O Analista", "Data de fecho"),
+                )
+            )
+            observations = self._clean_dnatech_narrative(
+                self._extract_labeled_section(
+                    block, "Observações",
+                    ("Resultado", "Conclusão", "Notas", "*Escala", "O Analista", "Data de fecho"),
+                )
+            ) or self._clean_dnatech_narrative(
+                self._extract_labeled_section(
+                    block, "Observação",
+                    ("Resultado", "Conclusão", "Notas", "*Escala", "O Analista", "Data de fecho"),
+                )
+            )
+            # Vaginal cytology (and newer DNAtech layouts) label the conclusion
+            # "Resultado"; classic auricular/dermatological reports use "Conclusão".
+            conclusion = self._clean_dnatech_narrative(
+                self._extract_labeled_section(block, "Conclusão", ("Notas", "*Escala", "O Analista", "Data de fecho"))
+            ) or self._clean_dnatech_narrative(
+                self._extract_labeled_section(block, "Resultado", ("Notas", "*Escala", "O Analista", "Data de fecho"))
+            )
+            notes = self._clean_dnatech_narrative(
+                self._extract_labeled_section(block, "Notas", ("*Escala", "O Analista", "Data de fecho"))
+            )
+            comment = observations or ""
+            if notes:
+                comment = (comment + "\n\nNotas: " + notes).strip() if comment else ("Notas: " + notes)
+
+            findings.append(PathologyFinding(
+                section_type="cytology",
+                title=title,
+                specimen_label=material or None,
+                sample_site="; ".join(_normalize_space(site) for site in sample_sites) or None,
+                sample_method=sample_method or None,
+                microscopic_description=microscopic_description or None,
+                diagnosis=conclusion or None,
+                comment=comment or None,
+                sort_order=sort_order,
+            ))
+
+        return findings
+
+    def _split_cytology_sections(self, text: str) -> List[Tuple[str, str]]:
+        title_pattern = re.compile(
+            r'^(CITOLOGIA(?:\s+(?:AURICULAR|GERAL|DERMATOL[ÓO]GICA|DERMATOLOGICA|VAGINAL))?)\s*$',
+            re.IGNORECASE | re.MULTILINE,
+        )
+        specific_matches = [
+            match for match in title_pattern.finditer(text)
+            if _fold_for_detection(match.group(1)) != "CITOLOGIA"
+        ]
+        matches = specific_matches or list(title_pattern.finditer(text))
+        if not matches:
+            return []
+
+        sections: List[Tuple[str, str]] = []
+        for index, match in enumerate(matches):
+            start = match.start()
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+            title = self._format_cytology_title(match.group(1))
+            block = text[start:end]
+            sections.append((title, block))
+        return sections
+
+    def _format_cytology_title(self, value: str) -> str:
+        folded = _fold_for_detection(value)
+        if "AURICULAR" in folded:
+            return "Citologia auricular"
+        if "GERAL" in folded:
+            return "Citologia geral"
+        if "DERMATOLOGICA" in folded:
+            return "Citologia dermatológica"
+        if "VAGINAL" in folded:
+            return "Citologia Vaginal"
+        return "Citologia"
+
+    def _parse_cytology_measurements(self, text: str) -> List[SessionMeasurement]:
+        if "CITOLOGIA" not in text.upper():
+            return []
+
+        measurements: List[SessionMeasurement] = []
+        metric_patterns = [
+            ("epithelial_cells", "Células epiteliais pavimentosas queratinizadas"),
+            ("bacteria", "Bactérias"),
+            ("malassezia", "Malassezia sp."),
+            ("mites", "Ácaros"),
+            ("neutrophils", "Neutrófilos"),
+        ]
+
+        seen_codes = set()
+        for code, label in metric_patterns:
+            if code in seen_codes:
+                continue
+            for match in re.finditer(
+                rf'^{re.escape(label)}\s+(.+?)\s*$',
+                text,
+                re.IGNORECASE | re.MULTILINE,
+            ):
+                raw_value = _normalize_space(match.group(1))
+                value_text = raw_value
+                reference_text = None
+
+                value_ref_match = re.match(
+                    r'(.+?)\s+((?:<|>|<=|>=)?\s*\d+(?:[,.]\d+)?|Ausentes?|Presentes?)$',
+                    raw_value,
+                    re.IGNORECASE,
+                )
+                if value_ref_match:
+                    value_text = _normalize_space(value_ref_match.group(1))
+                    reference_text = _normalize_space(value_ref_match.group(2))
+
+                flag = "normal"
+                if reference_text:
+                    same_text = _fold_for_detection(value_text) == _fold_for_detection(reference_text)
+                    both_less_than = value_text.startswith("<") and reference_text.startswith("<")
+                    if not same_text and not both_less_than:
+                        flag = "high"
+
+                measurements.append(SessionMeasurement(
+                    panel_name="auricular_cytology",
+                    measurement_code=code,
+                    measurement_name=label,
+                    value_text=value_text,
+                    reference_text=reference_text,
+                    flag=flag,
+                    sort_order=len(measurements),
+                ))
+                seen_codes.add(code)
+                break
+
+        return measurements
     
     def _parse_results(self, text: str, tables: List) -> List[ProteinResult]:
         """
@@ -593,6 +1430,10 @@ class DNAtechParser:
         
         Uses a combination of regex patterns and table extraction.
         """
+        upper_text = text.upper()
+        if "PROTEINOGRAMA" not in upper_text and "ELECTROFORESE DE PROTEINAS" not in upper_text:
+            return []
+
         results = []
         
         # Try table-based extraction first (more reliable)
@@ -1165,6 +2006,179 @@ class CVSAnalyzerParser:
         return "analyzer_panel"
 
 
+class GenevetUrinalysisParser:
+    """Parser for Genevet/LDMV urinalysis and UPC reports."""
+
+    def parse_pdf(self, pdf_path: str) -> ParsedReport:
+        text = _extract_layout_text(pdf_path)
+        plain_text = _extract_pdf_text(pdf_path)
+        parse_text = plain_text if plain_text.strip() else text
+
+        report_id = self._extract(parse_text, r'N[º°]\s*(\d+)')
+        test_datetime = self._parse_datetime(parse_text)
+        closing_date = parse_portuguese_date(
+            self._extract(parse_text, r'Data de Sa[íi]da:\s*(\d{2}/\d{2}/\d{4})')
+        )
+        test_date = closing_date or (test_datetime.date() if test_datetime else None)
+
+        age_years, age_months, sex = parse_age(self._age_with_sex(parse_text))
+        microchip = self._extract(parse_text, r'Microchip:\s*([^\s]+)')
+        if microchip and microchip.lower().startswith("id"):
+            microchip = None
+
+        animal = Animal(
+            name=self._extract(parse_text, r'Nome:\s*([^\n]+?)(?=\s+Idade:|\n|$)') or "Unknown",
+            species=_parse_species(self._extract(parse_text, r'Esp[ée]cie:\s*([^\n]+)')),
+            breed=self._extract(parse_text, r'Ra[çc]a:\s*([^\n]*)') or "",
+            microchip=microchip,
+            owner_name=self._extract(parse_text, r'Propriet[áa]rio:\s*([^\n]+)'),
+            age_years=age_years,
+            age_months=age_months,
+            sex=sex,
+        )
+
+        session = TestSession(
+            report_number=f"GENEVET/{report_id}" if report_id else f"GENEVET/{os.path.basename(pdf_path)}",
+            test_date=test_date,
+            closing_date=closing_date,
+            sample_type=self._extract(parse_text, r'Material enviado:\s*([^\n]+)') or "Urina",
+            lab_name="Genevet/LDMV",
+            source_system="genevet",
+            report_type="urinalysis",
+            external_report_id=report_id,
+            report_source=pdf_path,
+            reported_at=datetime.combine(closing_date, datetime.min.time()) if closing_date else None,
+            received_at=test_datetime,
+            clinic_name=self._extract_first_clinic_line(parse_text),
+            ordering_vet=self._extract_vet(parse_text) or _extract_ordering_vet_from_text(parse_text),
+            panel_name="urinalysis_upc",
+            pdf_path=pdf_path,
+        )
+
+        return ParsedReport(
+            animal=animal,
+            session=session,
+            biochemistry=self._parse_biochemistry(parse_text),
+            urinalysis=self._parse_urinalysis(parse_text),
+            raw_text=text,
+        )
+
+    def _extract(self, text: str, pattern: str) -> Optional[str]:
+        match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
+        if not match:
+            return None
+        return _normalize_space(match.group(1))
+
+    def _extract_first_clinic_line(self, text: str) -> Optional[str]:
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped and "SOS Animal" in stripped:
+                return "SOS Animal"
+        return None
+
+    def _age_with_sex(self, text: str) -> str:
+        age = self._extract(text, r'Idade:\s*([0-9]+)\s*A?')
+        sex = self._extract(text, r'Sexo:\s*([MF])')
+        if not age:
+            return ""
+        return f"{age} A ({sex or 'U'})"
+
+    def _extract_vet(self, text: str) -> Optional[str]:
+        return self._extract(
+            text,
+            r'M[ée]dico Veterin[áa]rio:\s*(?:Nome:\s*[^\n]+\n)?\s*([A-Za-zÀ-ÿ ]+?)(?=\s+Idade:|\n)',
+        )
+
+    def _parse_datetime(self, text: str) -> Optional[datetime]:
+        value = self._extract(
+            text,
+            r'Data de Chegada:\s*(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2})',
+        )
+        if not value:
+            return None
+        try:
+            return datetime.strptime(value, "%d/%m/%Y %H:%M:%S")
+        except ValueError:
+            return None
+
+    def _parse_urinalysis(self, text: str) -> Optional[UrinalysisResult]:
+        result = UrinalysisResult()
+        result.color = self._extract(text, r'\bCor\s+([^\n]+)')
+        result.appearance = self._extract(text, r'\bAspecto\s+([^\n]+)')
+        result.glucose = self._extract(text, r'\bGlucose\s+([^\n]+)')
+        result.bilirubin = self._extract(text, r'\bBilirrubina\s+([^\n]+)')
+        result.ketones = self._extract(text, r'Corpos cet[óo]nicos\s+([^\n]+)')
+        result.urobilinogen = self._format_result_with_unit(
+            self._extract(text, r'Urobilinog[ée]nio\s+([^\n]+)')
+        )
+        result.nitrites = self._extract(text, r'\bNitr(?:atos|itos)\s+([^\n]+)')
+
+        density = _parse_decimal(self._extract(text, r'\bDensidade\s+([>0-9.,]+)'))
+        if density and density > 10:
+            density = density / 1000
+        result.specific_gravity = density
+        result.ph = _parse_decimal(self._extract(text, r'\bpH\s+([0-9.,]+)'))
+
+        proteins_line = self._extract(text, r'Prote[íi]nas\s+([^\n]+)')
+        if proteins_line:
+            protein_value = _parse_decimal(
+                re.search(r'([0-9]+(?:[,.][0-9]+)?)', proteins_line).group(1)
+                if re.search(r'([0-9]+(?:[,.][0-9]+)?)', proteins_line)
+                else None
+            )
+            result.proteins_value = protein_value
+            result.proteins = f"{protein_value:g} mg/dL" if protein_value is not None else proteins_line.split()[0]
+
+        observations = []
+        deposit = self._extract(text, r'Dep[óo]sito\s+([^\n]+)')
+        if deposit:
+            observations.append(f"Depósito: {deposit}")
+        blood = self._extract(text, r'\bSangue\s+([^\n]+)')
+        if blood:
+            observations.append(f"Sangue: {blood.split()[0]}")
+        sediment = self._extract(
+            text,
+            r'Exame Microsc[óo]pico de Sedimento\s+(.*?)(?=\s+R[áa]cio UPC)',
+        )
+        if sediment:
+            observations.append(sediment)
+        result.observations = "; ".join(observations) if observations else None
+
+        if result.color or result.specific_gravity or result.ph or result.proteins:
+            result.compute_flags()
+            return result
+        return None
+
+    def _format_result_with_unit(self, value: Optional[str]) -> Optional[str]:
+        if not value:
+            return None
+        number = re.search(r'([0-9]+(?:[,.][0-9]+)?)', value)
+        if number and "mg" in value.lower():
+            return f"{number.group(1)} mg/dL"
+        return value.split()[0]
+
+    def _parse_biochemistry(self, text: str) -> Optional[BiochemistryResult]:
+        result = BiochemistryResult(
+            urine_total_protein=_parse_decimal(
+                self._extract(text, r'Prote[íi]na Urin[áa]ria\s+([0-9.,]+)')
+            ),
+            urine_creatinine=_parse_decimal(
+                self._extract(text, r'Creatinina\s+([0-9.,]+)')
+            ),
+            upc_ratio=_parse_decimal(
+                self._extract(text, r'R[áa]cio UPC\s+([0-9.,]+)')
+            ),
+        )
+        if (
+            result.upc_ratio is not None
+            or result.urine_total_protein is not None
+            or result.urine_creatinine is not None
+        ):
+            result.compute_upc_status()
+            return result
+        return None
+
+
 class VedisCytologyParser:
     """Parser for Vedis cytology pathology reports."""
 
@@ -1172,14 +2186,20 @@ class VedisCytologyParser:
         text = _extract_layout_text(pdf_path)
         patient = self._parse_patient(text)
         clinic_name = "Clínica Veterinária CVS SOS Animal" if "Clínica Veterinária CVS" in text else None
-        attending_vet = self._next_first_column_after_label(text, "Attending Vet")
-        exam_id = self._extract(text, r'Exam ID\s+(\d+)')
-        receipt_date = parse_portuguese_date(self._value_after_label_line(text, "Date of receipt"))
-        report_date = parse_portuguese_date(self._value_after_label_line(text, "Date of report"))
-        clinical_history = _clean_vedis_text(self._extract_block(text, "CLINICAL HISTORY", "DIAGNOSIS"))
-        specimens = self._parse_specimens(text, clinical_history)
-        general_comment = _clean_vedis_text(self._extract_block(text, "GENERAL COMMENT", "TRADUÇÃO"))
-        assets = _extract_cytology_assets(pdf_path)
+        attending_vet = (
+            self._next_first_column_after_label(text, "Attending Vet")
+            or self._next_first_column_after_label(text, "Veterinário/a")
+        )
+        exam_id = self._extract(text, r'Exam ID\s+(\d+)') or self._extract(text, r'ID exame\s+(\d+)')
+        receipt_date = parse_portuguese_date(
+            self._value_after_label_line(text, "Date of receipt")
+            or self._value_after_label_line(text, "Data de receção")
+        )
+        report_date = parse_portuguese_date(
+            self._value_after_label_line(text, "Date of report")
+            or self._value_after_label_line(text, "Data de relatório")
+        )
+        general_comment = self._extract_general_comment(text)
 
         animal = Animal(
             name=patient["name"] or "Unknown",
@@ -1190,7 +2210,6 @@ class VedisCytologyParser:
             neutered=patient["neutered"],
             age_years=patient["age_years"],
             age_months=patient["age_months"],
-            responsible_vet=attending_vet,
         )
         session = TestSession(
             report_number=f"VEDIS/{exam_id}" if exam_id else f"VEDIS/{os.path.basename(pdf_path)}",
@@ -1205,6 +2224,7 @@ class VedisCytologyParser:
             reported_at=datetime.combine(report_date, datetime.min.time()) if report_date else None,
             received_at=datetime.combine(receipt_date, datetime.min.time()) if receipt_date else None,
             clinic_name=clinic_name or "Clínica Veterinária CVS SOS Animal",
+            ordering_vet=attending_vet,
             panel_name="cytology",
             raw_metadata_json=json.dumps({
                 "attending_vet": attending_vet,
@@ -1213,11 +2233,16 @@ class VedisCytologyParser:
             pdf_path=pdf_path,
         )
 
-        findings = specimens
+        findings = self._extract_portuguese_pathology_findings(
+            text,
+            default_title="Citologia",
+            default_section_type="cytology",
+            general_comment=general_comment,
+        )
         if general_comment:
             findings.append(PathologyFinding(
                 section_type="general_comment",
-                title="General comment",
+                title="Comentário geral",
                 comment=general_comment,
                 sort_order=len(findings),
             ))
@@ -1226,7 +2251,6 @@ class VedisCytologyParser:
             animal=animal,
             session=session,
             pathology_findings=findings,
-            assets=assets,
             raw_text=text,
         )
 
@@ -1258,15 +2282,172 @@ class VedisCytologyParser:
                     return _normalize_space(re.split(r'\s{2,}', candidate)[0])
         return None
 
+    def _inline_label_value(self, text: str, label: str,
+                            max_words: Optional[int] = None) -> Optional[str]:
+        match = re.search(
+            rf'{re.escape(label)}\s*([^\n]+)',
+            text,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+
+        value = match.group(1).strip(" :")
+        value = re.split(
+            r'\s{2,}|\s+(?:Owner|Tutor|Specie|Espécie|Breed|Raça|Gender|Sexo|DOB/Idade|DN/Idade|Date|Data):',
+            value,
+            maxsplit=1,
+        )[0]
+        if max_words:
+            words = re.findall(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'-]*", value)
+            words = [word for word in words if len(word) > 1]
+            value = " ".join(words[:max_words])
+        return _normalize_space(value) or None
+
     def _next_first_column_after_label(self, text: str, label: str) -> Optional[str]:
         lines = [line.rstrip() for line in text.splitlines()]
         for index, raw_line in enumerate(lines):
             if raw_line.strip().startswith(label):
-                for followup in lines[index + 1:]:
+                for followup in lines[index + 1:index + 4]:
                     candidate = followup.strip()
                     if candidate:
-                        return _normalize_space(re.split(r'\s{2,}', candidate)[0])
+                        first_column = _normalize_space(re.split(r'\s{2,}', candidate)[0])
+                        if _is_plausible_ordering_vet_value(first_column):
+                            return first_column
         return None
+
+    def _is_vedis_report_noise_line(self, value: str) -> bool:
+        folded = _fold_for_detection(value)
+        if not folded:
+            return True
+        noise_prefixes = (
+            "VEDIS",
+            "PATIENT",
+            "PACIENTE",
+            "CLIENT",
+            "ENTIDADE",
+            "OWNER:",
+            "TUTOR:",
+            "SPECIE:",
+            "ESPECIE:",
+            "BREED:",
+            "RACA:",
+            "GENDER:",
+            "SEXO:",
+            "DOB/AGE:",
+            "DN/IDADE:",
+            "DATE OF RECEIPT",
+            "DATA DE RECECAO",
+            "DATE OF REPORT",
+            "DATA DE RELATORIO",
+            "ATTENDING VET",
+            "VETERINARIO/A",
+            "PATHOLOGIST",
+            "TECHNICAL DIRECTOR",
+            "DIRETOR TECNICO",
+            "DIRECTOR TECNICO",
+            "EXAM ID",
+            "ID EXAME",
+            "PAGE ",
+            "PAGINA ",
+            "IN CASE OF DOUBT",
+            "EM CASO DE DUVIDAS",
+            "REPORTS@VEDIS",
+            "NOTA:",
+        )
+        return any(folded.startswith(prefix) for prefix in noise_prefixes)
+
+    def _extract_portuguese_pathology_findings(
+        self,
+        text: str,
+        default_title: str,
+        default_section_type: str,
+        general_comment: Optional[str] = None,
+    ) -> List[PathologyFinding]:
+        lines = [_normalize_space(line) for line in text.splitlines()]
+        lines = [line for line in lines if line]
+        folded_lines = [_fold_for_detection(line) for line in lines]
+
+        translation_start = next(
+            (idx for idx, folded in enumerate(folded_lines) if folded == "TRADUCAO"),
+            None,
+        )
+        if translation_start is None:
+            diagnosis = (
+                self._right_text_between_labels(
+                    text,
+                    "DIAGNÓSTICO",
+                    (
+                        "SUSPEITA CLINICA",
+                        "SUSPEITA CLÍNICA",
+                        "PRODUTO ENVIADO",
+                        "DESCRIÇÃO MICROSCÓPICA",
+                        "COMENTÁRIO GERAL",
+                        "Data de receção",
+                        "Data de relatório",
+                        "Em caso de dúvidas",
+                    ),
+                )
+                or _clean_vedis_text(
+                    self._extract_block(text, "DIAGNÓSTICO", "SUSPEITA CLINICA")
+                    or self._extract_block(text, "DIAGNÓSTICO", "SUSPEITA CLÍNICA")
+                    or self._extract_block(text, "DIAGNÓSTICO", "PRODUTO ENVIADO")
+                    or self._extract_block(text, "DIAGNÓSTICO", "DESCRIÇÃO MICROSCÓPICA")
+                    or self._extract_block(text, "DIAGNÓSTICO", "COMENTÁRIO GERAL")
+                )
+            )
+            if diagnosis:
+                return [PathologyFinding(
+                    section_type=default_section_type,
+                    title=default_title,
+                    diagnosis=diagnosis,
+                    sort_order=0,
+                )]
+            return []
+
+        findings: List[PathologyFinding] = []
+        pending_titles: List[str] = []
+        idx = translation_start + 1
+        while idx < len(lines):
+            line = lines[idx]
+            folded = folded_lines[idx]
+            if folded in {"COMENTARIO GERAL", "GENERAL COMMENT"}:
+                break
+            if self._is_vedis_report_noise_line(line):
+                idx += 1
+                continue
+            if folded == "DIAGNOSTICO":
+                diagnosis_lines: List[str] = []
+                idx += 1
+                while idx < len(lines):
+                    candidate = lines[idx]
+                    candidate_folded = folded_lines[idx]
+                    if (
+                        candidate_folded in {"DIAGNOSTICO", "COMENTARIO GERAL", "GENERAL COMMENT", "SAMPLE", "AMOSTRA"}
+                        or self._is_vedis_report_noise_line(candidate)
+                        or (diagnosis_lines and re.match(r'^[A-Z]-\s+', candidate))
+                    ):
+                        break
+                    if candidate:
+                        diagnosis_lines.append(candidate)
+                    idx += 1
+                diagnosis = _clean_vedis_text(" ".join(diagnosis_lines))
+                title = " · ".join(pending_titles[-2:]) if pending_titles else default_title
+                pending_titles = []
+                if diagnosis:
+                    findings.append(PathologyFinding(
+                        section_type=default_section_type,
+                        title=title,
+                        diagnosis=diagnosis,
+                        sort_order=len(findings),
+                    ))
+                continue
+            if not any(token in folded for token in {"CLINICAL", "HISTORY", "RELATORIO", "REPORT"}):
+                pending_titles.append(line)
+                pending_titles = pending_titles[-3:]
+            idx += 1
+
+        return findings
 
     def _right_column_between_markers(self, text: str, anchor: str,
                                       start_label: str, end_label: str) -> Optional[str]:
@@ -1331,9 +2512,28 @@ class VedisCytologyParser:
             if candidate.startswith("Vedis"):
                 continue
             first_column = re.split(r'\s{2,}', candidate)[0].strip()
-            if not first_column or ":" in first_column or first_column in {"CYTOLOGY REPORT", "RELATÓRIO IMUNOCITOQUÍMICA"}:
+            ignored_headings = {
+                "CYTOLOGY REPORT",
+                "HISTOLOGY REPORT",
+                "RELATÓRIO IMUNOCITOQUÍMICA",
+            }
+            if not first_column or ":" in first_column or first_column in ignored_headings:
                 continue
             return first_column
+        return None
+
+    def _extract_portuguese_cytology_name(self, text: str) -> Optional[str]:
+        for line in text.splitlines():
+            folded = _fold_for_detection(line)
+            marker = "INFORMACAO CLINICA"
+            if marker not in folded:
+                continue
+
+            prefix = line[:folded.index(marker)]
+            words = re.findall(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'-]*", prefix)
+            words = [word for word in words if len(word) > 1]
+            if words:
+                return _normalize_space(" ".join(words[-3:]))
         return None
 
     def _extract_block(self, text: str, start: str, end: str) -> str:
@@ -1344,19 +2544,147 @@ class VedisCytologyParser:
         )
         return match.group(1) if match else ""
 
+    def _extract_general_comment(self, text: str) -> str:
+        """Prefer the Portuguese Vedis general comment, falling back to English."""
+        portuguese_comment = (
+            self._right_text_between_labels(
+                text,
+                "COMENTÁRIO GERAL",
+                (
+                    "Nota:",
+                    "Data de receção",
+                    "Data de relatório",
+                    "Date of receipt",
+                    "Date of report",
+                    "Pathologist",
+                    "Technical Director",
+                    "Em caso de dúvidas",
+                    "In case of doubt",
+                    "Page ",
+                    "Página ",
+                ),
+            )
+            or self._right_text_between_labels(
+                text,
+                "COMENTARIO GERAL",
+                (
+                    "Nota:",
+                    "Data de receção",
+                    "Data de relatório",
+                    "Date of receipt",
+                    "Date of report",
+                    "Pathologist",
+                    "Technical Director",
+                    "Em caso de dúvidas",
+                    "In case of doubt",
+                    "Page ",
+                    "Página ",
+                ),
+            )
+        )
+        if portuguese_comment:
+            return portuguese_comment
+
+        return _clean_vedis_text(
+            self._extract_block(text, "GENERAL COMMENT", "TRADUÇÃO")
+            or self._extract_block(text, "GENERAL COMMENT", "TRADUCAO")
+            or self._extract_block(text, "COMENTÁRIO GERAL", "TRADUÇÃO")
+            or self._extract_block(text, "COMENTARIO GERAL", "TRADUCAO")
+            or self._extract_block(text, "COMENTÁRIO GERAL", "Data de receção")
+            or self._extract_block(text, "COMENTARIO GERAL", "Data de rececao")
+        )
+
+    def _right_text_between_labels(self, text: str, start_label: str,
+                                   end_labels: Tuple[str, ...]) -> str:
+        lines = [line.rstrip() for line in text.splitlines()]
+        collecting = False
+        parts: List[str] = []
+        skip_prefixes = (
+            "Tutor:",
+            "Owner:",
+            "Espécie:",
+            "Specie:",
+            "Raça:",
+            "Breed:",
+            "Sexo:",
+            "Gender:",
+            "DN/Idade:",
+            "DOB/Age:",
+            "ENTIDADE",
+            "Clínica Veterinária",
+            "SOS Animal",
+            "Data de receção",
+            "Data de relatório",
+            "Date of receipt",
+            "Date of report",
+            "Vedis .",
+            "Carina Marta",
+            "Catarina Lopes",
+            "Nazaré Cunha",
+            "Andrea Renzi",
+        )
+
+        for raw_line in lines:
+            stripped = raw_line.strip()
+            if not stripped:
+                continue
+            if not collecting:
+                if start_label in stripped:
+                    collecting = True
+                    after_label = stripped.split(start_label, 1)[1].strip()
+                    if after_label:
+                        parts.append(after_label)
+                continue
+            if any(label in stripped for label in end_labels):
+                break
+
+            columns = re.split(r'\s{2,}', stripped)
+            candidate = columns[-1].strip() if len(columns) >= 2 else stripped
+            if not candidate or any(candidate.startswith(prefix) for prefix in skip_prefixes):
+                continue
+            parts.append(candidate)
+
+        return _clean_vedis_text("\n".join(parts))
+
     def _parse_patient(self, text: str) -> Dict[str, Any]:
-        name = self._extract_name_after_heading(text, "PATIENT")
-        owner = self._value_after_label_line(text, "Owner:")
-        species = self._value_after_label_line(text, "Specie:")
-        breed = self._value_after_label_line(text, "Breed:")
-        gender = self._value_after_label_line(text, "Gender:")
-        age_str = self._value_after_label_line(text, "DOB/Age:")
+        name = (
+            self._extract_name_after_heading(text, "PATIENT")
+            or self._extract_portuguese_cytology_name(text)
+            or self._extract_name_after_heading(text, "PACIENTE")
+        )
+        owner = (
+            self._value_after_label_line(text, "Owner:")
+            or self._inline_label_value(text, "Tutor:", max_words=2)
+            or self._value_after_label_line(text, "Tutor:")
+        )
+        species = (
+            self._value_after_label_line(text, "Specie:")
+            or self._value_after_label_line(text, "Espécie:")
+            or self._inline_label_value(text, "Espécie:", max_words=2)
+        )
+        breed = (
+            self._value_after_label_line(text, "Breed:")
+            or self._value_after_label_line(text, "Raça:")
+            or self._inline_label_value(text, "Raça:", max_words=3)
+        )
+        gender = (
+            self._value_after_label_line(text, "Gender:")
+            or self._value_after_label_line(text, "Sexo:")
+            or self._inline_label_value(text, "Sexo:", max_words=3)
+        )
+        age_str = (
+            self._value_after_label_line(text, "DOB/Age:")
+            or self._value_after_label_line(text, "DN/Idade:")
+            or self._inline_label_value(text, "DN/Idade:", max_words=2)
+        )
         sex = "U"
         neutered = None
         if gender:
             lowered = gender.lower()
-            sex = "M" if "male" in lowered else ("F" if "female" in lowered else "U")
-            neutered = "neuter" in lowered
+            sex = "F" if ("female" in lowered or "fêmea" in lowered or "femea" in lowered) else (
+                "M" if ("male" in lowered or "macho" in lowered) else "U"
+            )
+            neutered = "neuter" in lowered or "castrad" in lowered or "esteriliz" in lowered
         age_years = _parse_decimal(re.search(r'(\d+)', age_str or "") and re.search(r'(\d+)', age_str or "").group(1))
         return {
             "name": name,
@@ -1418,7 +2746,137 @@ class VedisCytologyParser:
                 ))
                 for index, finding in enumerate(findings):
                     finding.sort_order = index
+        if not findings and "RELATÓRIO CITOLOGIA" in text.upper():
+            diagnosis = (
+                self._right_text_between_labels(
+                    text,
+                    "DIAGNÓSTICO",
+                    ("SUSPEITA CLINICA", "SUSPEITA CLÍNICA", "PRODUTO ENVIADO"),
+                )
+                or _clean_vedis_text(
+                    self._extract_block(text, "DIAGNÓSTICO", "SUSPEITA CLINICA")
+                    or self._extract_block(text, "DIAGNÓSTICO", "SUSPEITA CLÍNICA")
+                    or self._extract_block(text, "DIAGNÓSTICO", "PRODUTO ENVIADO")
+                )
+            )
+            sample_method = (
+                self._right_text_between_labels(
+                    text,
+                    "PRODUTO ENVIADO",
+                    ("DESCRIÇÃO MICROSCÓPICA", "Data de receção", "Data de relatório", "Em caso de dúvidas"),
+                )
+                or _clean_vedis_text(
+                    self._extract_block(text, "PRODUTO ENVIADO", "DESCRIÇÃO MICROSCÓPICA")
+                    or self._extract_block(text, "PRODUTO ENVIADO", "Data de receção")
+                    or self._extract_block(text, "PRODUTO ENVIADO", "Em caso de dúvidas")
+                )
+            )
+            microscopic_description = (
+                self._right_text_between_labels(
+                    text,
+                    "DESCRIÇÃO MICROSCÓPICA",
+                    ("COMENTÁRIO GERAL", "DIAGNÓSTICO", "SUSPEITA CLINICA", "Em caso de dúvidas"),
+                )
+                or _clean_vedis_text(
+                    self._extract_block(text, "DESCRIÇÃO MICROSCÓPICA", "COMENTÁRIO GERAL")
+                    or self._extract_block(text, "DESCRIÇÃO MICROSCÓPICA", "Data de receção")
+                    or self._extract_block(text, "DESCRIÇÃO MICROSCÓPICA", "Em caso de dúvidas")
+                )
+            )
+            if diagnosis or sample_method or microscopic_description or clinical_history:
+                findings.append(PathologyFinding(
+                    section_type="cytology",
+                    title="Citologia",
+                    sample_method=sample_method or None,
+                    clinical_history=clinical_history or None,
+                    microscopic_description=microscopic_description or None,
+                    diagnosis=diagnosis or None,
+                    sort_order=0,
+                ))
         return findings
+
+
+class VedisHistologyParser(VedisCytologyParser):
+    """Parser for Vedis histopathology reports."""
+
+    def parse_pdf(self, pdf_path: str) -> ParsedReport:
+        text = _extract_layout_text(pdf_path)
+        patient = self._parse_patient(text)
+        clinic_name = "Clínica Veterinária CVS SOS Animal" if "Clínica Veterinária CVS" in text else None
+        attending_vet = self._extract_attending_vet(text)
+        exam_id = self._extract(text, r'Exam ID\s+(\d+)')
+        receipt_date = parse_portuguese_date(self._value_after_label_line(text, "Date of receipt"))
+        report_date = parse_portuguese_date(self._value_after_label_line(text, "Date of report"))
+
+        comment = self._extract_general_comment(text)
+
+        animal = Animal(
+            name=patient["name"] or "Unknown",
+            species=_parse_species(patient["species"]),
+            breed=patient["breed"] or "",
+            owner_name=patient["owner"],
+            sex=patient["sex"],
+            neutered=patient["neutered"],
+            age_years=patient["age_years"],
+            age_months=patient["age_months"],
+        )
+        session = TestSession(
+            report_number=f"VEDIS/{exam_id}" if exam_id else f"VEDIS/{os.path.basename(pdf_path)}",
+            test_date=report_date,
+            closing_date=report_date,
+            sample_type="Histology",
+            lab_name="Vedis",
+            source_system="vedis",
+            report_type="histology",
+            external_report_id=exam_id,
+            report_source=pdf_path,
+            reported_at=datetime.combine(report_date, datetime.min.time()) if report_date else None,
+            received_at=datetime.combine(receipt_date, datetime.min.time()) if receipt_date else None,
+            clinic_name=clinic_name or "Clínica Veterinária CVS SOS Animal",
+            ordering_vet=attending_vet,
+            panel_name="histology",
+            raw_metadata_json=json.dumps({
+                "attending_vet": attending_vet,
+                "general_comment": comment,
+            }, ensure_ascii=False),
+            pdf_path=pdf_path,
+        )
+
+        findings = self._extract_portuguese_pathology_findings(
+            text,
+            default_title="Histologia",
+            default_section_type="histology",
+            general_comment=comment,
+        )
+        if comment:
+            findings.append(PathologyFinding(
+                section_type="general_comment",
+                title="Comentário geral",
+                comment=comment,
+                sort_order=len(findings),
+            ))
+
+        return ParsedReport(
+            animal=animal,
+            session=session,
+            pathology_findings=findings,
+            raw_text=text,
+        )
+
+    def _extract_attending_vet(self, text: str) -> Optional[str]:
+        lines = [line.rstrip() for line in text.splitlines()]
+        for index, raw_line in enumerate(lines):
+            if not raw_line.strip().startswith("Attending Vet"):
+                continue
+            for followup in lines[index + 1:index + 4]:
+                candidate = followup.strip()
+                if not candidate:
+                    continue
+                first_column = re.split(r'\s{2,}', candidate)[0].strip()
+                if not _is_plausible_ordering_vet_value(first_column):
+                    continue
+                return _normalize_space(first_column)
+        return self._next_first_column_after_label(text, "Attending Vet")
 
 
 class VedisImmunocytochemistryParser:
@@ -1432,15 +2890,7 @@ class VedisImmunocytochemistryParser:
         exam_id = self._extract(text, r'ID exame\s+(\d+)')
         receipt_date = parse_portuguese_date(self._value_after_label_line(text, "Data de receção"))
         report_date = parse_portuguese_date(self._value_after_label_line(text, "Data de relatório"))
-        product_sent = _clean_vedis_text(self._extract_block(text, "PRODUTO ENVIADO", "DESCRIÇÃO MICROSCÓPICA"))
-        microscopic_description = _clean_vedis_text(self._extract_block(text, "DESCRIÇÃO MICROSCÓPICA", "DIAGNÓSTICO"))
-        diagnosis = self._right_column_between_labels(text, "DIAGNÓSTICO", "COMENTÁRIO GERAL") or _clean_vedis_text(self._extract_block(text, "DIAGNÓSTICO", "COMENTÁRIO GERAL"))
-        comment = self._right_column_between_labels(text, "COMENTÁRIO GERAL", "Data de receção") or _clean_vedis_text(self._extract_block(text, "COMENTÁRIO GERAL", "Pathologist"))
-        if not comment:
-            comment = _clean_vedis_text(self._extract_block(text, "COMENTÁRIO GERAL", "Em caso de dúvidas"))
-
-        measurements = self._parse_markers(text)
-        assets = _extract_cytology_assets(pdf_path)
+        comment = self._extract_general_comment(text)
 
         animal = Animal(
             name=patient["name"] or "Unknown",
@@ -1451,7 +2901,6 @@ class VedisImmunocytochemistryParser:
             neutered=patient["neutered"],
             age_years=patient["age_years"],
             age_months=patient["age_months"],
-            responsible_vet=attending_vet,
         )
         session = TestSession(
             report_number=f"VEDIS/{exam_id}" if exam_id else f"VEDIS/{os.path.basename(pdf_path)}",
@@ -1466,28 +2915,26 @@ class VedisImmunocytochemistryParser:
             reported_at=datetime.combine(report_date, datetime.min.time()) if report_date else None,
             received_at=datetime.combine(receipt_date, datetime.min.time()) if receipt_date else None,
             clinic_name=clinic_name or "Clínica Veterinária CVS SOS Animal",
+            ordering_vet=attending_vet,
             panel_name="immunocytochemistry",
             raw_metadata_json=json.dumps({
-                "product_sent": product_sent,
+                "general_comment": comment,
             }, ensure_ascii=False),
             pdf_path=pdf_path,
         )
-        findings = [PathologyFinding(
-            section_type="immunocytochemistry",
-            title="Immunocytochemistry",
-            sample_method=product_sent,
-            microscopic_description=microscopic_description,
-            diagnosis=diagnosis,
-            comment=comment,
-            sort_order=0,
-        )]
+        findings = []
+        if comment:
+            findings.append(PathologyFinding(
+                section_type="general_comment",
+                title="Comentário geral",
+                comment=comment,
+                sort_order=0,
+            ))
 
         return ParsedReport(
             animal=animal,
             session=session,
-            measurements=measurements,
             pathology_findings=findings,
-            assets=assets,
             raw_text=text,
         )
 
@@ -1523,10 +2970,12 @@ class VedisImmunocytochemistryParser:
         lines = [line.rstrip() for line in text.splitlines()]
         for index, raw_line in enumerate(lines):
             if raw_line.strip().startswith(label):
-                for followup in lines[index + 1:]:
+                for followup in lines[index + 1:index + 4]:
                     candidate = followup.strip()
                     if candidate:
-                        return _normalize_space(re.split(r'\s{2,}', candidate)[0])
+                        first_column = _normalize_space(re.split(r'\s{2,}', candidate)[0])
+                        if _is_plausible_ordering_vet_value(first_column):
+                            return first_column
         return None
 
     def _right_column_between_labels(self, text: str, start_label: str,
@@ -1596,6 +3045,16 @@ class VedisImmunocytochemistryParser:
         )
         return match.group(1) if match else ""
 
+    def _extract_general_comment(self, text: str) -> str:
+        comment = (
+            self._right_column_between_labels(text, "COMENTÁRIO GERAL", "Data de receção")
+            or self._right_column_between_labels(text, "COMENTARIO GERAL", "Data de rececao")
+            or _clean_vedis_text(self._extract_block(text, "COMENTÁRIO GERAL", "Pathologist"))
+            or _clean_vedis_text(self._extract_block(text, "COMENTÁRIO GERAL", "Em caso de dúvidas"))
+            or _clean_vedis_text(self._extract_block(text, "GENERAL COMMENT", "TRADUÇÃO"))
+        )
+        return comment
+
     def _parse_patient(self, text: str) -> Dict[str, Any]:
         name = self._extract_name_after_heading(text, "PACIENTE")
         owner = self._value_after_label_line(text, "Tutor:")
@@ -1607,7 +3066,7 @@ class VedisImmunocytochemistryParser:
         neutered = None
         if gender:
             lowered = gender.lower()
-            sex = "M" if "male" in lowered else ("F" if "female" in lowered else "U")
+            sex = "F" if "female" in lowered else ("M" if "male" in lowered else "U")
             neutered = "neuter" in lowered
         age_years = _parse_decimal(re.search(r'(\d+)', age_str or "") and re.search(r'(\d+)', age_str or "").group(1))
         return {
@@ -1644,19 +3103,227 @@ class VedisImmunocytochemistryParser:
         return measurements
 
 
-def parse_lab_report(pdf_path: str) -> ParsedReport:
+class GenericReportParser:
+    """Best-effort parser used when a clean PDF has an unsupported body format."""
+
+    def __init__(self, detected_report_type: Optional[str] = None,
+                 parse_error: Optional[Exception] = None):
+        self.detected_report_type = detected_report_type
+        self.parse_error = parse_error
+
+    def parse_pdf(self, pdf_path: str) -> ParsedReport:
+        text = _extract_layout_text(pdf_path)
+        plain_text = _extract_pdf_text(pdf_path)
+        parse_text = text if text.strip() else plain_text
+        filename = os.path.basename(pdf_path)
+        source_system = self._infer_source_system(parse_text, filename)
+
+        if source_system == "vedis":
+            animal, session = self._parse_vedis_metadata(parse_text, filename, pdf_path)
+        elif source_system == "dnatech":
+            animal, session, identifiers = self._parse_dnatech_metadata(parse_text, filename, pdf_path)
+            return ParsedReport(
+                animal=animal,
+                session=session,
+                animal_identifiers=identifiers,
+                raw_text=text,
+                parse_warnings=self._warnings(),
+            )
+        else:
+            animal, session = self._parse_unknown_metadata(parse_text, filename, pdf_path)
+
+        return ParsedReport(
+            animal=animal,
+            session=session,
+            raw_text=text,
+            parse_warnings=self._warnings(),
+        )
+
+    def _warnings(self) -> List[str]:
+        warnings = ["generic_report_fallback"]
+        if self.detected_report_type:
+            warnings.append(f"detected_report_type:{self.detected_report_type}")
+        if self.parse_error:
+            warnings.append(f"parser_error:{type(self.parse_error).__name__}: {self.parse_error}")
+        return warnings
+
+    def _infer_source_system(self, text: str, filename: str) -> str:
+        folded = _fold_for_detection(text)
+        if self.detected_report_type:
+            if self.detected_report_type.startswith("vedis_"):
+                return "vedis"
+            if self.detected_report_type.startswith("dnatech_"):
+                return "dnatech"
+            if self.detected_report_type.startswith("genevet_"):
+                return "genevet"
+            if self.detected_report_type == "cvs_analyzer":
+                return "cvs_analyzer"
+        if re.search(r'bolt\d+_\d+', filename, re.IGNORECASE):
+            return "dnatech"
+        if "FOLHA DE TRABALHO" in folded or "DADOS DO ANIMAL" in folded:
+            return "dnatech"
+        if "VEDIS" in folded or "ID EXAME" in folded or "EXAM ID" in folded:
+            return "vedis"
+        return "unknown"
+
+    def _parse_vedis_metadata(self, text: str, filename: str,
+                              pdf_path: str) -> Tuple[Animal, TestSession]:
+        parser = VedisCytologyParser()
+        patient = parser._parse_patient(text)
+        filename_parts = self._parse_vedis_filename(filename)
+
+        exam_id = (
+            parser._extract(text, r'Exam ID\s+(\d+)')
+            or parser._extract(text, r'ID exame\s+(\d+)')
+            or filename_parts.get("report_id")
+        )
+        receipt_date = parse_portuguese_date(
+            parser._value_after_label_line(text, "Date of receipt")
+            or parser._value_after_label_line(text, "Data de receção")
+        )
+        report_date = parse_portuguese_date(
+            parser._value_after_label_line(text, "Date of report")
+            or parser._value_after_label_line(text, "Data de relatório")
+        )
+        attending_vet = (
+            parser._next_first_column_after_label(text, "Attending Vet")
+            or parser._next_first_column_after_label(text, "Veterinário/a")
+        )
+
+        animal = Animal(
+            name=patient["name"] or filename_parts.get("animal_name") or "Unknown",
+            species=_parse_species(patient["species"]) if patient["species"] else "",
+            breed=patient["breed"] or "",
+            owner_name=patient["owner"] or filename_parts.get("owner_name"),
+            sex=patient["sex"],
+            neutered=patient["neutered"],
+            age_years=patient["age_years"],
+            age_months=patient["age_months"],
+        )
+        session = TestSession(
+            report_number=f"VEDIS/{exam_id}" if exam_id else f"PDF/{os.path.splitext(filename)[0]}",
+            test_date=report_date,
+            closing_date=report_date,
+            sample_type="PDF",
+            lab_name="Vedis",
+            source_system="vedis",
+            report_type="unstructured_report",
+            external_report_id=exam_id,
+            report_source=pdf_path,
+            reported_at=datetime.combine(report_date, datetime.min.time()) if report_date else None,
+            received_at=datetime.combine(receipt_date, datetime.min.time()) if receipt_date else None,
+            clinic_name="Clínica Veterinária CVS SOS Animal" if "Clínica Veterinária CVS" in text else None,
+            ordering_vet=attending_vet,
+            pdf_path=pdf_path,
+        )
+        return animal, session
+
+    def _parse_dnatech_metadata(self, text: str, filename: str,
+                                pdf_path: str) -> Tuple[Animal, TestSession, List[AnimalIdentifier]]:
+        parser = DNAtechParser()
+        animal = parser._parse_animal_data(text)
+        if animal.name == "Unknown":
+            animal.species = ""
+
+        report_number = parser._extract_pattern(text, "report_number")
+        if not report_number:
+            match = re.search(r'bolt(\d+)_(\d+)', filename, re.IGNORECASE)
+            if match:
+                report_number = f"{match.group(1)}/{match.group(2)}"
+
+        test_date = parse_portuguese_date(parser._extract_pattern(text, "date"))
+        closing_date = parse_portuguese_date(parser._extract_pattern(text, "closing_date"))
+        sample_type = parser._extract_pattern(text, "sample") or "PDF"
+        session = TestSession(
+            report_number=report_number or f"PDF/{os.path.splitext(filename)[0]}",
+            test_date=test_date,
+            closing_date=closing_date,
+            sample_type=sample_type.strip(),
+            lab_name="DNAtech",
+            source_system="dnatech",
+            report_type="unstructured_report",
+            external_report_id=report_number,
+            report_source=pdf_path,
+            ordering_vet=_extract_ordering_vet_from_text(text),
+            panel_name=None,
+            pdf_path=pdf_path,
+        )
+        return animal, session, parser._parse_animal_identifiers(text)
+
+    def _parse_unknown_metadata(self, text: str, filename: str,
+                                pdf_path: str) -> Tuple[Animal, TestSession]:
+        stem = os.path.splitext(filename)[0]
+        animal = Animal(name=self._guess_animal_name(text, stem), species="")
+        session = TestSession(
+            report_number=f"PDF/{stem}",
+            sample_type="PDF",
+            lab_name="Unknown",
+            source_system="unknown",
+            report_type="unstructured_report",
+            external_report_id=stem,
+            report_source=pdf_path,
+            pdf_path=pdf_path,
+        )
+        return animal, session
+
+    def _parse_vedis_filename(self, filename: str) -> Dict[str, Optional[str]]:
+        stem = os.path.splitext(filename)[0]
+        match = re.match(r'(?P<report_id>\d{5,})\s*-\s*(?P<animal>[^-]+?)(?:\s*-\s*(?P<owner>.+))?$', stem)
+        if not match:
+            return {}
+        return {
+            "report_id": _normalize_space(match.group("report_id")),
+            "animal_name": _normalize_space(match.group("animal")),
+            "owner_name": _normalize_space(match.group("owner") or ""),
+        }
+
+    def _guess_animal_name(self, text: str, filename_stem: str) -> str:
+        patterns = (
+            r'Nome animal:\s*([^\n]+?)(?:\s{2,}|$)',
+            r'\bAnimal\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s\'-]+?)(?:\n|$)',
+            r'\bPaciente\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s\'-]+?)(?:\n|$)',
+        )
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return _normalize_space(match.group(1))
+        parts = [part.strip() for part in re.split(r'\s+-\s+', filename_stem) if part.strip()]
+        if len(parts) >= 2 and parts[0].isdigit():
+            return parts[1]
+        return "Unknown"
+
+
+def parse_lab_report(pdf_path: str, allow_generic: bool = False) -> ParsedReport:
     """Parse any supported report type."""
     text = _extract_pdf_text(pdf_path)
     report_type = detect_report_type(text)
 
-    if report_type == "dnatech_proteinogram":
-        return DNAtechParser().parse_pdf(pdf_path)
-    if report_type == "cvs_analyzer":
-        return CVSAnalyzerParser().parse_pdf(pdf_path)
-    if report_type == "vedis_cytology":
-        return VedisCytologyParser().parse_pdf(pdf_path)
-    if report_type == "vedis_immunocytochemistry":
-        return VedisImmunocytochemistryParser().parse_pdf(pdf_path)
+    try:
+        if report_type == "dnatech_proteinogram":
+            return DNAtechParser().parse_pdf(pdf_path)
+        if report_type == "dnatech_urine_biochemistry":
+            return DNAtechParser().parse_pdf(pdf_path)
+        if report_type == "dnatech_cytology":
+            return DNAtechParser().parse_pdf(pdf_path)
+        if report_type == "dnatech_lab_report":
+            return DNAtechParser().parse_pdf(pdf_path)
+        if report_type == "cvs_analyzer":
+            return CVSAnalyzerParser().parse_pdf(pdf_path)
+        if report_type == "genevet_urinalysis":
+            return GenevetUrinalysisParser().parse_pdf(pdf_path)
+        if report_type == "vedis_cytology":
+            return VedisCytologyParser().parse_pdf(pdf_path)
+        if report_type == "vedis_histology":
+            return VedisHistologyParser().parse_pdf(pdf_path)
+        if report_type == "vedis_immunocytochemistry":
+            return VedisImmunocytochemistryParser().parse_pdf(pdf_path)
+    except Exception as exc:
+        if allow_generic:
+            return GenericReportParser(report_type, exc).parse_pdf(pdf_path)
+        raise
+
+    if allow_generic:
+        return GenericReportParser(report_type).parse_pdf(pdf_path)
 
     raise ValueError(f"Unsupported report format for {os.path.basename(pdf_path)}")
 

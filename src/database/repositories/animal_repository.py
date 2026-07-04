@@ -15,7 +15,6 @@ from models.domain import (
     Symptom,
     Observation,
     ClinicalNote,
-    AnimalVetAssignment,
     AnimalIdentifier,
     AnimalMatchCandidate,
     AnimalMatchDecision,
@@ -34,6 +33,12 @@ class AnimalRepository:
         """
         self.db = db
 
+    def _animal_from_row(self, row) -> Animal:
+        data = dict(row)
+        if data.get("neutered") is not None:
+            data["neutered"] = bool(data["neutered"])
+        return Animal(**data)
+
     def create(self, animal: Animal) -> int:
         """
         Insert a new animal and return its ID.
@@ -47,15 +52,13 @@ class AnimalRepository:
         cursor = self.db.conn.execute("""
             INSERT INTO animals (name, species, breed, microchip, age_years,
                                 owner_name, age_months, sex, weight_kg, neutered,
-                                patient_since, medical_history, notes, responsible_vet)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                patient_since, medical_history, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (animal.name, animal.species, animal.breed, animal.microchip,
               animal.age_years, animal.owner_name, animal.age_months, animal.sex,
               animal.weight_kg, animal.neutered, animal.patient_since,
-              animal.medical_history, animal.notes, animal.responsible_vet))
+              animal.medical_history, animal.notes))
         animal_id = cursor.lastrowid
-        if animal.responsible_vet:
-            self._record_vet_assignment(animal_id, animal.responsible_vet)
         self.db.conn.commit()
         return animal_id
 
@@ -73,7 +76,7 @@ class AnimalRepository:
             "SELECT * FROM animals WHERE id = ?", (animal_id,))
         row = cursor.fetchone()
         if row:
-            return Animal(**dict(row))
+            return self._animal_from_row(row)
         return None
 
     def find_by_name(self, name: str) -> List[Animal]:
@@ -88,7 +91,7 @@ class AnimalRepository:
         """
         cursor = self.db.conn.execute(
             "SELECT * FROM animals WHERE name LIKE ?", (f"%{name}%",))
-        return [Animal(**dict(row)) for row in cursor.fetchall()]
+        return [self._animal_from_row(row) for row in cursor.fetchall()]
 
     def _normalize_text(self, value: Optional[str]) -> str:
         if not value:
@@ -101,11 +104,18 @@ class AnimalRepository:
 
     def _canonical_species(self, value: Optional[str]) -> str:
         normalized = self._normalize_text(value)
+        if normalized in {"", "unknown", "indeterminado", "indeterminada", "und"}:
+            return ""
         if "can" in normalized or "dog" in normalized:
             return "canine"
         if "fel" in normalized or "cat" in normalized:
             return "feline"
         return normalized
+
+    def _species_compatible(self, left: Optional[str], right: Optional[str]) -> bool:
+        left_norm = self._canonical_species(left)
+        right_norm = self._canonical_species(right)
+        return not left_norm or not right_norm or left_norm == right_norm
 
     def _owner_matches(self, left: Optional[str], right: Optional[str]) -> bool:
         left_norm = self._normalize_text(left)
@@ -118,48 +128,10 @@ class AnimalRepository:
             or right_norm in left_norm
         )
 
-    def _record_vet_assignment(self, animal_id: int, vet_name: Optional[str],
-                               changed_by_user_id: Optional[int] = None,
-                               change_reason: Optional[str] = None,
-                               start_date: Optional[date] = None):
-        normalized_vet = (vet_name or "").strip()
-        if not normalized_vet:
-            self._close_open_vet_assignment(animal_id, changed_by_user_id)
-            return
-
-        current = self.db.conn.execute("""
-            SELECT id, vet_name
-            FROM animal_vet_assignments
-            WHERE animal_id = ? AND end_date IS NULL
-            ORDER BY start_date DESC, id DESC
-            LIMIT 1
-        """, (animal_id,)).fetchone()
-
-        if current and (current["vet_name"] or "").strip() == normalized_vet:
-            return
-
-        self._close_open_vet_assignment(animal_id, changed_by_user_id, start_date)
-        self.db.conn.execute("""
-            INSERT INTO animal_vet_assignments (
-                animal_id, vet_name, start_date, change_reason, changed_by_user_id
-            ) VALUES (?, ?, ?, ?, ?)
-        """, (
-            animal_id,
-            normalized_vet,
-            start_date or date.today(),
-            change_reason,
-            changed_by_user_id,
-        ))
-
-    def _close_open_vet_assignment(self, animal_id: int,
-                                   changed_by_user_id: Optional[int] = None,
-                                   end_date: Optional[date] = None):
-        self.db.conn.execute("""
-            UPDATE animal_vet_assignments
-            SET end_date = COALESCE(?, CURRENT_DATE),
-                changed_by_user_id = COALESCE(changed_by_user_id, ?)
-            WHERE animal_id = ? AND end_date IS NULL
-        """, (end_date, changed_by_user_id, animal_id))
+    def _owner_conflicts(self, left: Optional[str], right: Optional[str]) -> bool:
+        left_norm = self._normalize_text(left)
+        right_norm = self._normalize_text(right)
+        return bool(left_norm and right_norm and not self._owner_matches(left, right))
 
     def _update_from_report(self, animal_id: int, animal: Animal):
         existing = self.get(animal_id)
@@ -183,8 +155,6 @@ class AnimalRepository:
             updates["sex"] = animal.sex
         if animal.neutered is not None and existing.neutered is None:
             updates["neutered"] = animal.neutered
-        if animal.responsible_vet and not existing.responsible_vet:
-            updates["responsible_vet"] = animal.responsible_vet
         if updates:
             self.update(animal_id, **updates)
 
@@ -228,7 +198,7 @@ class AnimalRepository:
 
     def _get_all_candidates(self) -> List[Animal]:
         cursor = self.db.conn.execute("SELECT * FROM animals")
-        return [Animal(**dict(row)) for row in cursor.fetchall()]
+        return [self._animal_from_row(row) for row in cursor.fetchall()]
 
     def analyze_match(self, animal: Animal,
                       identifiers: Optional[List[AnimalIdentifier]] = None) -> AnimalMatchDecision:
@@ -269,7 +239,6 @@ class AnimalRepository:
                 )
 
         target_name = self._normalize_text(animal.name)
-        target_species = self._canonical_species(animal.species)
         target_owner = self._normalize_text(animal.owner_name)
 
         if not target_name:
@@ -287,7 +256,7 @@ class AnimalRepository:
         for candidate in candidates:
             if (
                 self._normalize_text(candidate.name) == target_name
-                and self._canonical_species(candidate.species) == target_species
+                and self._species_compatible(candidate.species, animal.species)
             ):
                 if target_owner:
                     candidate_owner = self._normalize_text(candidate.owner_name)
@@ -360,9 +329,56 @@ class AnimalRepository:
                 candidates=combined_exact[:5],
             )
 
+        near_exact_matches: List[AnimalMatchCandidate] = []
+        near_exact_conflicts: List[AnimalMatchCandidate] = []
+        for candidate in candidates:
+            if not self._species_compatible(candidate.species, animal.species):
+                continue
+
+            name_score = SequenceMatcher(
+                None,
+                self._normalize_text(candidate.name),
+                target_name,
+            ).ratio()
+            if name_score < 0.88 or name_score >= 1.0:
+                continue
+
+            reason = f"Near-exact name similarity {name_score:.0%}"
+            if self._owner_conflicts(candidate.owner_name, animal.owner_name):
+                near_exact_conflicts.append(self._candidate_from_animal(
+                    candidate,
+                    0.86,
+                    f"{reason}; owner differs",
+                ))
+                continue
+
+            confidence = 0.96 if self._owner_matches(candidate.owner_name, animal.owner_name) else 0.91
+            if self._owner_matches(candidate.owner_name, animal.owner_name):
+                reason = f"{reason}; owner match"
+            near_exact_matches.append(self._candidate_from_animal(candidate, confidence, reason))
+
+        if len(near_exact_matches) == 1 and not near_exact_conflicts:
+            best = near_exact_matches[0]
+            return AnimalMatchDecision(
+                action="match_existing",
+                animal_id=best.animal_id,
+                confidence=best.confidence,
+                reason="near_exact_name_match",
+                candidates=[best],
+            )
+        if near_exact_matches or near_exact_conflicts:
+            combined_near_exact = near_exact_matches + near_exact_conflicts
+            combined_near_exact.sort(key=lambda item: item.confidence, reverse=True)
+            return AnimalMatchDecision(
+                action="manual_review",
+                confidence=combined_near_exact[0].confidence,
+                reason="ambiguous_near_exact_name_match",
+                candidates=combined_near_exact[:5],
+            )
+
         scored: List[AnimalMatchCandidate] = []
         for candidate in candidates:
-            if self._canonical_species(candidate.species) != target_species:
+            if not self._species_compatible(candidate.species, animal.species):
                 continue
 
             name_score = SequenceMatcher(
@@ -471,15 +487,10 @@ class AnimalRepository:
                     a.name LIKE ?
                     OR a.owner_name LIKE ?
                     OR a.microchip LIKE ?
-                    OR a.responsible_vet LIKE ?
                     OR a.breed LIKE ?
                 )
             """)
-            params.extend([wildcard] * 5)
-
-        if responsible_vet:
-            filters.append("a.responsible_vet = ?")
-            params.append(responsible_vet)
+            params.extend([wildcard] * 4)
 
         if species:
             filters.append("a.species = ?")
@@ -496,8 +507,6 @@ class AnimalRepository:
         order_clause = {
             "name_asc": "a.name COLLATE NOCASE ASC, a.id ASC",
             "name_desc": "a.name COLLATE NOCASE DESC, a.id DESC",
-            "vet_asc": "COALESCE(a.responsible_vet, '') COLLATE NOCASE ASC, a.name COLLATE NOCASE ASC",
-            "vet_desc": "COALESCE(a.responsible_vet, '') COLLATE NOCASE DESC, a.name COLLATE NOCASE ASC",
             "last_report_desc": "COALESCE(latest_report_at, '') DESC, a.name COLLATE NOCASE ASC",
             "last_report_asc": "COALESCE(latest_report_at, '') ASC, a.name COLLATE NOCASE ASC",
             "reports_desc": "test_count DESC, latest_report_at DESC, a.name COLLATE NOCASE ASC",
@@ -544,10 +553,9 @@ class AnimalRepository:
             "a.name LIKE ?",
             "a.owner_name LIKE ?",
             "a.microchip LIKE ?",
-            "a.responsible_vet LIKE ?",
             "a.breed LIKE ?",
         ]
-        params: List[object] = [wildcard, wildcard, wildcard, wildcard, wildcard]
+        params: List[object] = [wildcard, wildcard, wildcard, wildcard]
         exclusion_clause = ""
         if exclude_id is not None:
             exclusion_clause = "AND a.id != ?"
@@ -573,29 +581,6 @@ class AnimalRepository:
 
         return [dict(row) for row in rows]
 
-    def list_responsible_vets(self) -> List[str]:
-        """Distinct responsible vets used for filters."""
-        rows = self.db.conn.execute("""
-            SELECT DISTINCT responsible_vet
-            FROM animals
-            WHERE responsible_vet IS NOT NULL AND TRIM(responsible_vet) != ''
-            ORDER BY responsible_vet COLLATE NOCASE ASC
-        """).fetchall()
-        return [row["responsible_vet"] for row in rows]
-
-    def get_vet_assignment_history(self, animal_id: int) -> List[AnimalVetAssignment]:
-        """Return responsible-vet ownership history for an animal."""
-        rows = self.db.conn.execute("""
-            SELECT
-                ava.*,
-                COALESCE(changer.display_name, changer.email) AS changed_by_name
-            FROM animal_vet_assignments ava
-            LEFT JOIN users changer ON changer.id = ava.changed_by_user_id
-            WHERE ava.animal_id = ?
-            ORDER BY COALESCE(ava.start_date, DATE(ava.created_at)) DESC, ava.id DESC
-        """, (animal_id,)).fetchall()
-        return [AnimalVetAssignment(**dict(row)) for row in rows]
-
     def list_all(self) -> List[Animal]:
         """
         List all animals ordered by name.
@@ -604,7 +589,7 @@ class AnimalRepository:
             List of all animals
         """
         cursor = self.db.conn.execute("SELECT * FROM animals ORDER BY name")
-        return [Animal(**dict(row)) for row in cursor.fetchall()]
+        return [self._animal_from_row(row) for row in cursor.fetchall()]
 
     def update(self, animal_id: int,
                changed_by_user_id: Optional[int] = None,
@@ -626,7 +611,7 @@ class AnimalRepository:
 
         allowed_fields = {'name', 'species', 'breed', 'microchip', 'owner_name', 'age_years',
                          'age_months', 'sex', 'weight_kg', 'neutered',
-                         'patient_since', 'medical_history', 'notes', 'responsible_vet'}
+                         'patient_since', 'medical_history', 'notes'}
         update_fields = {k: v for k, v in kwargs.items() if k in allowed_fields}
         if not update_fields:
             return False
@@ -637,17 +622,6 @@ class AnimalRepository:
         cursor = self.db.conn.execute(
             f"UPDATE animals SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             values)
-
-        if "responsible_vet" in update_fields:
-            previous_vet = (existing.responsible_vet or "").strip()
-            next_vet = (update_fields.get("responsible_vet") or "").strip()
-            if previous_vet != next_vet:
-                self._record_vet_assignment(
-                    animal_id,
-                    next_vet,
-                    changed_by_user_id=changed_by_user_id,
-                    change_reason=assignment_reason,
-                )
 
         self.db.conn.commit()
         return cursor.rowcount > 0
@@ -709,8 +683,6 @@ class AnimalRepository:
             update_fields["sex"] = source.sex
         if target.weight_kg is None and source.weight_kg is not None:
             update_fields["weight_kg"] = source.weight_kg
-        if not target.responsible_vet and source.responsible_vet:
-            update_fields["responsible_vet"] = source.responsible_vet
 
         merged_medical_history = merge_text(target.medical_history, source.medical_history)
         if merged_medical_history != target.medical_history:
@@ -752,7 +724,6 @@ class AnimalRepository:
             "symptoms",
             "observations",
             "clinical_notes",
-            "animal_vet_assignments",
             "diagnosis_reports",
         ):
             self.db.conn.execute(

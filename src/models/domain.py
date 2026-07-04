@@ -84,6 +84,7 @@ class TestSession:
     reported_at: Optional[datetime] = None
     received_at: Optional[datetime] = None
     clinic_name: Optional[str] = None
+    ordering_vet: Optional[str] = None
     panel_name: Optional[str] = None
     raw_metadata_json: Optional[str] = None
     pdf_path: Optional[str] = None

@@ -11,7 +11,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # VPS Server Details
 SSH_USER="root"
-SSH_HOST="76.13.5.89"
+SSH_HOST="72.62.188.233"
 REMOTE_APP_DIR="/var/www/vetscan.net/app"
 
 # Function to run SSH commands
@@ -118,7 +118,7 @@ echo "  - Local: backups/vet_proteins_*.db"
 echo "  - Server: data/$BACKUP_NAME"
 echo ""
 echo "Server management commands:"
-echo "  - Status:  ssh root@76.13.5.89 'systemctl status vetscan'"
-echo "  - Logs:    ssh root@76.13.5.89 'journalctl -u vetscan -f'"
-echo "  - Restart: ssh root@76.13.5.89 'systemctl restart vetscan'"
+echo "  - Status:  ssh root@72.62.188.233 'systemctl status vetscan'"
+echo "  - Logs:    ssh root@72.62.188.233 'journalctl -u vetscan -f'"
+echo "  - Restart: ssh root@72.62.188.233 'systemctl restart vetscan'"
 echo ""

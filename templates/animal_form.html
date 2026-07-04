@@ -10,7 +10,7 @@
         <p class="page-subtitle">{{ t(lang, 'animal_form.subtitle') }}</p>
     </div>
     <div class="inline-actions">
-        <a href="/animals" class="btn btn-secondary">{{ t(lang, 'animal_form.back_to_animals') }}</a>
+        <a href="/animals" class="btn btn-secondary"><span aria-hidden="true">←</span> {{ t(lang, 'animal_form.back_to_animals') }}</a>
     </div>
 </div>
 
@@ -46,10 +46,6 @@
                 <input id="animal-breed" name="breed" value="{{ form_values.breed or '' }}">
             </div>
             <div class="field">
-                <label for="animal-vet">{{ t(lang, 'animal.responsible_vet') }}</label>
-                <input id="animal-vet" name="responsible_vet" value="{{ form_values.responsible_vet or '' }}" placeholder="{{ t(lang, 'animal_form.vet_placeholder') }}">
-            </div>
-            <div class="field">
                 <label for="animal-patient-since">{{ t(lang, 'animal_detail.patient_since') }}</label>
                 <input id="animal-patient-since" name="patient_since" type="date" value="{{ form_values.patient_since or '' }}">
             </div>
@@ -75,6 +71,15 @@
                 </select>
             </div>
             <div class="field">
+                <label for="animal-neutered">{{ t(lang, 'animal_detail.neutered') }}</label>
+                {% set current_neutered = form_values.neutered %}
+                <select id="animal-neutered" name="neutered">
+                    <option value="" {% if not current_neutered %}selected{% endif %}>{{ t(lang, 'common.unknown') }}</option>
+                    <option value="true" {% if current_neutered == 'true' %}selected{% endif %}>{{ t(lang, 'common.yes') }}</option>
+                    <option value="false" {% if current_neutered == 'false' %}selected{% endif %}>{{ t(lang, 'common.no') }}</option>
+                </select>
+            </div>
+            <div class="field">
                 <label for="animal-weight">{{ t(lang, 'animal_form.weight') }}</label>
                 <input id="animal-weight" name="weight_kg" type="number" step="0.1" min="0" value="{{ form_values.weight_kg or '' }}">
             </div>
@@ -91,8 +96,8 @@
         </div>
 
         <div class="filters-actions">
-            <button type="submit" class="btn btn-primary">{{ t(lang, 'animal_form.create_animal') }}</button>
-            <a href="/animals" class="btn btn-secondary">{{ t(lang, 'common.cancel') }}</a>
+            <button type="submit" class="btn btn-primary"><span aria-hidden="true">+</span> {{ t(lang, 'animal_form.create_animal') }}</button>
+            <a href="/animals" class="btn btn-secondary"><span aria-hidden="true">✕</span> {{ t(lang, 'common.cancel') }}</a>
         </div>
     </form>
 </section>

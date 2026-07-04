@@ -15,9 +15,10 @@
         </p>
     </div>
     <div class="inline-actions">
-        <a href="/animal/{{ animal.id }}" class="btn btn-secondary">{{ t(lang, 'session_detail.open_animal') }}</a>
+        <a href="/animal/{{ animal.id }}" class="btn btn-secondary"><span aria-hidden="true">🐾</span> {{ t(lang, 'session_detail.open_animal') }}</a>
         {% if pdf_url %}
-        <a href="{{ pdf_url }}" class="btn btn-primary" target="_blank" rel="noopener">{{ t(lang, 'session_detail.open_pdf') }}</a>
+        <a href="{{ pdf_url }}" class="btn btn-primary" target="_blank" rel="noopener"><span aria-hidden="true">📄</span> {{ t(lang, 'session_detail.open_pdf') }}</a>
+        <a href="{{ pdf_url }}?download=true" class="btn btn-secondary"><span aria-hidden="true">⬇</span> {{ t(lang, 'session_detail.download_pdf') }}</a>
         {% endif %}
     </div>
 </div>
@@ -34,10 +35,10 @@
             </div>
             <div class="table-shell">
                 <div class="table-responsive">
-                    <table>
+                    <table class="measurements-table">
                         <thead>
                             <tr>
-                                <th>{{ t(lang, 'session_detail.code') }}</th>
+                                <th>{{ t(lang, 'session_detail.parameter') }}</th>
                                 <th>{{ t(lang, 'session_detail.value') }}</th>
                                 <th>{{ t(lang, 'session_detail.reference') }}</th>
                                 <th>{{ t(lang, 'session_detail.status') }}</th>
@@ -47,14 +48,14 @@
                             {% for measurement in measurements %}
                             <tr>
                                 <td>
-                                    <div class="table-title">{{ measurement.measurement_code }}</div>
-                                    {% if measurement.measurement_name and measurement.measurement_name != measurement.measurement_code %}
-                                    <div class="table-meta">{{ measurement.measurement_name }}</div>
-                                    {% endif %}
+                                    {% set _uname = (measurement.measurement_name or '')|upper %}
+                                    {% set _is_subtitle = 'ANTICORPOS' in _uname %}
+                                    {% set _is_titer = _uname[:6] == 'TITULA' %}
+                                    <div class="table-title"{% if _is_subtitle %} style="font-weight:700;"{% elif _is_titer %} style="padding-left:1.25rem; font-weight:400;"{% endif %}>{{ measurement.measurement_name or measurement.measurement_code }}</div>
                                 </td>
                                 <td>
                                     {% if measurement.value_text %}
-                                        {{ measurement.value_text }}{% if measurement.unit %} {{ measurement.unit }}{% endif %}
+                                        {{ measurement.value_text|report_inline_text }}{% if measurement.unit %} {{ measurement.unit }}{% endif %}
                                     {% elif measurement.value_numeric is not none %}
                                         {{ measurement.value_numeric }}{% if measurement.unit %} {{ measurement.unit }}{% endif %}
                                     {% else %}
@@ -63,7 +64,7 @@
                                 </td>
                                 <td>
                                     {% if measurement.reference_text %}
-                                    {{ measurement.reference_text }}
+                                    {{ measurement.reference_text|report_inline_text }}
                                     {% elif measurement.reference_min is not none and measurement.reference_max is not none %}
                                     {{ measurement.reference_min }} - {{ measurement.reference_max }}
                                     {% else %}
@@ -117,6 +118,9 @@
                                 <td>
                                     {% if result.reference_min is not none and result.reference_max is not none %}
                                     {{ "%.1f"|format(result.reference_min) }} - {{ "%.1f"|format(result.reference_max) }}
+                                    {% if result.reference_min_absolute is not none and result.reference_max_absolute is not none %}
+                                    <div class="table-meta">g/dL: {{ "%.2f"|format(result.reference_min_absolute) }} - {{ "%.2f"|format(result.reference_max_absolute) }}</div>
+                                    {% endif %}
                                     {% else %}
                                     --
                                     {% endif %}
@@ -149,8 +153,8 @@
             </div>
             <div class="list-stack">
                 {% for finding in pathology_findings %}
-                <div class="card" style="margin-bottom: 0;">
-                    <div class="card-header">
+                <article class="report-finding">
+                    <div class="report-finding-header">
                         <div>
                             <div class="table-title">
                                 {% if finding.specimen_label %}{{ finding.specimen_label }} · {% endif %}
@@ -160,21 +164,36 @@
                         </div>
                     </div>
                     {% if finding.clinical_history %}
-                    <p style="margin-bottom: 0.85rem;"><strong>{{ t(lang, 'session_detail.clinical_history') }}:</strong> {{ finding.clinical_history }}</p>
+                    <div class="report-field">
+                        <div class="report-field-label">{{ t(lang, 'session_detail.clinical_history') }}</div>
+                        <div class="report-text">{{ finding.clinical_history|report_text }}</div>
+                    </div>
                     {% endif %}
                     {% if finding.sample_method %}
-                    <p style="margin-bottom: 0.85rem;"><strong>{{ t(lang, 'session_detail.sample') }}:</strong> {{ finding.sample_method }}</p>
+                    <div class="report-field">
+                        <div class="report-field-label">{{ t(lang, 'session_detail.sample') }}</div>
+                        <div class="report-value">{{ finding.sample_method|report_inline_text }}</div>
+                    </div>
                     {% endif %}
                     {% if finding.diagnosis %}
-                    <p style="margin-bottom: 0.85rem;"><strong>{{ t(lang, 'session_detail.diagnosis') }}:</strong> {{ finding.diagnosis }}</p>
+                    <div class="report-field">
+                        <div class="report-field-label">{{ t(lang, 'session_detail.diagnosis') }}</div>
+                        <div class="report-text-diagnosis">{{ finding.diagnosis|report_text }}</div>
+                    </div>
                     {% endif %}
                     {% if finding.microscopic_description %}
-                    <p style="margin-bottom: 0.85rem;"><strong>{{ t(lang, 'session_detail.microscopic_description') }}:</strong> {{ finding.microscopic_description }}</p>
+                    <div class="report-field">
+                        <div class="report-field-label">{{ t(lang, 'session_detail.microscopic_description') }}</div>
+                        <div class="report-text">{{ finding.microscopic_description|report_text }}</div>
+                    </div>
                     {% endif %}
                     {% if finding.comment %}
-                    <p><strong>{{ t(lang, 'session_detail.comment') }}:</strong> {{ finding.comment }}</p>
+                    <div class="report-field">
+                        <div class="report-field-label">{{ t(lang, 'session_detail.comment') }}</div>
+                        <div class="report-text">{{ finding.comment|report_text }}</div>
+                    </div>
                     {% endif %}
-                </div>
+                </article>
                 {% endfor %}
             </div>
         </section>
@@ -281,10 +300,6 @@
                     <div class="summary-block-label">{{ t(lang, 'common.pet_owner') }}</div>
                     <div class="summary-block-value">{{ animal.owner_name or '--' }}</div>
                 </div>
-                <div class="summary-block">
-                    <div class="summary-block-label">{{ t(lang, 'animal.responsible_vet') }}</div>
-                    <div class="summary-block-value">{{ animal.responsible_vet or '--' }}</div>
-                </div>
             </div>
         </section>
 
@@ -308,10 +323,10 @@
                     <div class="summary-block-label">{{ t(lang, 'session_detail.clinic') }}</div>
                     <div class="summary-block-value">{{ session.clinic_name or '--' }}</div>
                 </div>
-            </div>
-            <div style="margin-top: 1rem;">
-                <div class="summary-block-label">{{ t(lang, 'session_detail.source_reference') }}</div>
-                <div class="table-meta" style="word-break: break-word;">{{ session.report_source or '--' }}</div>
+                <div class="summary-block">
+                    <div class="summary-block-label">{{ t(lang, 'common.ordering_vet') }}</div>
+                    <div class="summary-block-value">{{ ordering_vet_display or '--' }}</div>
+                </div>
             </div>
         </section>
 
@@ -322,7 +337,7 @@
             <div class="table-title">{{ previous_session.report_number or previous_session.external_report_id or (t(lang, 'common.report') ~ ' ' ~ previous_session.id) }}</div>
             <div class="table-meta">{{ previous_session.test_date|format_date if previous_session.test_date else '--' }}</div>
             <div class="inline-actions" style="margin-top: 1rem;">
-                <a href="/session/{{ previous_session.id }}" class="btn btn-secondary">{{ t(lang, 'session_detail.open_previous') }}</a>
+                <a href="/session/{{ previous_session.id }}" class="btn btn-secondary"><span aria-hidden="true">←</span> {{ t(lang, 'session_detail.open_previous') }}</a>
             </div>
         </section>
         {% endif %}

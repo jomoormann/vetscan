@@ -11,6 +11,7 @@ from models.domain import (
     TestSession, ProteinResult, BiochemistryResult, UrinalysisResult,
     SessionMeasurement, PathologyFinding, SessionAsset, UnassignedReport
 )
+from vet_names import canonicalize_vet_name, ordering_vet_sql_normalized
 
 
 class SessionRepository:
@@ -39,20 +40,22 @@ class SessionRepository:
         Returns:
             ID of the created session
         """
+        ordering_vet = canonicalize_vet_name(session.ordering_vet) or None
         cursor = self.db.conn.execute("""
             INSERT INTO test_sessions (animal_id, report_number, test_date,
                                       closing_date, sample_type, lab_name,
                                       source_system, report_type,
                                       external_report_id, report_source,
                                       reported_at, received_at, clinic_name,
-                                      panel_name, raw_metadata_json,
+                                      ordering_vet, panel_name, raw_metadata_json,
                                       pdf_path, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (session.animal_id, session.report_number, session.test_date,
               session.closing_date, session.sample_type, session.lab_name,
               session.source_system, session.report_type,
               session.external_report_id, session.report_source,
               session.reported_at, session.received_at, session.clinic_name,
+              ordering_vet,
               session.panel_name, session.raw_metadata_json,
               session.pdf_path, session.notes))
         self.db.conn.commit()
@@ -96,12 +99,13 @@ class SessionRepository:
                     OR ts.external_report_id LIKE ?
                     OR ts.report_source LIKE ?
                     OR ts.clinic_name LIKE ?
+                    OR ts.ordering_vet LIKE ?
                     OR a.name LIKE ?
                     OR a.owner_name LIKE ?
                     OR a.microchip LIKE ?
                 )
             """)
-            params.extend([wildcard] * 7)
+            params.extend([wildcard] * 8)
 
         if source_system:
             filters.append("ts.source_system = ?")
@@ -112,8 +116,8 @@ class SessionRepository:
             params.append(report_type)
 
         if responsible_vet:
-            filters.append("a.responsible_vet = ?")
-            params.append(responsible_vet)
+            filters.append(f"{ordering_vet_sql_normalized()} = ?")
+            params.append(canonicalize_vet_name(responsible_vet).casefold())
 
         if animal_id is not None:
             filters.append("ts.animal_id = ?")
@@ -135,10 +139,10 @@ class SessionRepository:
             "report_desc": "COALESCE(ts.report_number, ts.external_report_id, '') COLLATE NOCASE DESC, ts.id DESC",
             "animal_asc": "a.name COLLATE NOCASE ASC, COALESCE(ts.test_date, DATE(ts.created_at)) DESC",
             "animal_desc": "a.name COLLATE NOCASE DESC, COALESCE(ts.test_date, DATE(ts.created_at)) DESC",
-            "vet_asc": "COALESCE(a.responsible_vet, '') COLLATE NOCASE ASC, a.name COLLATE NOCASE ASC",
-            "vet_desc": "COALESCE(a.responsible_vet, '') COLLATE NOCASE DESC, a.name COLLATE NOCASE ASC",
-            "source_asc": "COALESCE(ts.source_system, '') COLLATE NOCASE ASC, COALESCE(ts.clinic_name, ts.lab_name, '') COLLATE NOCASE ASC",
-            "source_desc": "COALESCE(ts.source_system, '') COLLATE NOCASE DESC, COALESCE(ts.clinic_name, ts.lab_name, '') COLLATE NOCASE DESC",
+            "vet_asc": "COALESCE(ts.ordering_vet, '') COLLATE NOCASE ASC, a.name COLLATE NOCASE ASC",
+            "vet_desc": "COALESCE(ts.ordering_vet, '') COLLATE NOCASE DESC, a.name COLLATE NOCASE ASC",
+            "source_asc": "COALESCE(ts.lab_name, ts.source_system, '') COLLATE NOCASE ASC, ts.id ASC",
+            "source_desc": "COALESCE(ts.lab_name, ts.source_system, '') COLLATE NOCASE DESC, ts.id DESC",
         }.get(sort, "COALESCE(ts.test_date, DATE(ts.created_at)) DESC, ts.id DESC")
 
         offset = max(page - 1, 0) * page_size
@@ -148,7 +152,7 @@ class SessionRepository:
                 a.name AS animal_name,
                 a.species AS animal_species,
                 a.owner_name AS owner_name,
-                a.responsible_vet AS responsible_vet,
+                ts.ordering_vet AS ordering_vet,
                 (
                     SELECT COUNT(*)
                     FROM protein_results pr
@@ -221,6 +225,87 @@ class SessionRepository:
             WHERE source_system = ? AND external_report_id = ?
         """, (source_system, external_report_id))
         return cursor.fetchone() is not None
+
+    def find_session_by_report_number(self, report_number: str) -> Optional[TestSession]:
+        """Find a session by its display report number."""
+        cursor = self.db.conn.execute(
+            "SELECT * FROM test_sessions WHERE report_number = ?",
+            (report_number,),
+        )
+        row = cursor.fetchone()
+        return TestSession(**dict(row)) if row else None
+
+    def find_sessions_by_external_reference(self, source_system: str,
+                                            external_report_id: str) -> List[TestSession]:
+        """Find all sessions that share a source-system external report ID."""
+        cursor = self.db.conn.execute("""
+            SELECT *
+            FROM test_sessions
+            WHERE source_system = ? AND external_report_id = ?
+            ORDER BY id ASC
+        """, (source_system, external_report_id))
+        return [TestSession(**dict(row)) for row in cursor.fetchall()]
+
+    def update_session(self, session_id: int, session: TestSession) -> bool:
+        """Update a test session while keeping its primary key stable."""
+        ordering_vet = canonicalize_vet_name(session.ordering_vet) or None
+        cursor = self.db.conn.execute("""
+            UPDATE test_sessions
+            SET animal_id = ?,
+                report_number = ?,
+                test_date = ?,
+                closing_date = ?,
+                sample_type = ?,
+                lab_name = ?,
+                source_system = ?,
+                report_type = ?,
+                external_report_id = ?,
+                report_source = ?,
+                reported_at = ?,
+                received_at = ?,
+                clinic_name = ?,
+                ordering_vet = ?,
+                panel_name = ?,
+                raw_metadata_json = ?,
+                pdf_path = ?,
+                notes = ?
+            WHERE id = ?
+        """, (
+            session.animal_id,
+            session.report_number,
+            session.test_date,
+            session.closing_date,
+            session.sample_type,
+            session.lab_name,
+            session.source_system,
+            session.report_type,
+            session.external_report_id,
+            session.report_source,
+            session.reported_at,
+            session.received_at,
+            session.clinic_name,
+            ordering_vet,
+            session.panel_name,
+            session.raw_metadata_json,
+            session.pdf_path,
+            session.notes,
+            session_id,
+        ))
+        self.db.conn.commit()
+        return cursor.rowcount > 0
+
+    def clear_session_results(self, session_id: int) -> None:
+        """Remove parsed child rows before re-importing an updated report."""
+        for table in (
+            "protein_results",
+            "biochemistry_results",
+            "urinalysis_results",
+            "session_measurements",
+            "pathology_findings",
+            "session_assets",
+        ):
+            self.db.conn.execute(f"DELETE FROM {table} WHERE session_id = ?", (session_id,))
+        self.db.conn.commit()
 
     def delete_session(self, session_id: int) -> bool:
         """Delete a test session (cascades to results)."""

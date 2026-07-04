@@ -35,6 +35,10 @@
             <div class="kpi-value" style="color: var(--warning);">{{ stats.skipped }}</div>
             <div class="kpi-label">{{ t(lang, 'imports.skipped_or_duplicate') }}</div>
         </div>
+        <div class="kpi-card">
+            <div class="kpi-value">{{ stats.acknowledged }}</div>
+            <div class="kpi-label">{{ t(lang, 'imports.acknowledged') }}</div>
+        </div>
     </div>
 </section>
 
@@ -56,6 +60,9 @@
                         <th>{{ t(lang, 'imports.attachment') }}</th>
                         <th>{{ t(lang, 'common.status') }}</th>
                         <th>{{ t(lang, 'common.animal') }}</th>
+                        {% if current_user and current_user.is_superuser %}
+                        <th>{{ t(lang, 'common.actions') }}</th>
+                        {% endif %}
                     </tr>
                 </thead>
                 <tbody>
@@ -76,12 +83,23 @@
                             <span class="badge badge-low">{{ t(lang, 'imports.status.queued') }}</span>
                             {% elif imp.display_status == 'success' %}
                             <span class="badge badge-normal">{{ t(lang, 'imports.status.success') }}</span>
+                            {% elif imp.display_status == 'updated' %}
+                            <span class="badge badge-info">{{ t(lang, 'imports.status.updated') }}</span>
+                            {% elif imp.display_status == 'backfilled' %}
+                            <span class="badge badge-info">{{ t(lang, 'imports.status.backfilled') }}</span>
                             {% elif imp.display_status == 'duplicate' %}
                             <span class="badge badge-info">{{ t(lang, 'imports.status.duplicate') }}</span>
                             {% elif imp.display_status == 'rate_limited' %}
                             <span class="badge badge-info">{{ t(lang, 'imports.status.rate_limited') }}</span>
+                            {% elif imp.display_status == 'acknowledged' %}
+                            <span class="badge badge-info" title="{{ t(lang, 'imports.acknowledged_by')|replace('{user}', imp.acknowledged_by_name or '--') }}">{{ t(lang, 'imports.status.acknowledged') }}</span>
                             {% else %}
                             <span class="badge badge-high" title="{{ imp.error_message }}">{{ t(lang, 'imports.status.failed') }}</span>
+                            {% endif %}
+                            {% if imp.error_message and imp.display_status in ['failed', 'acknowledged'] %}
+                            <div class="table-meta" title="{{ imp.error_message }}">{{ imp.error_message|truncate(80) }}</div>
+                            {% elif imp.error_message and imp.display_status in ['success', 'updated', 'backfilled'] %}
+                            <div class="table-meta" title="{{ imp.error_message }}">{{ imp.error_message|truncate(80) }}</div>
                             {% endif %}
                         </td>
                         <td>
@@ -93,6 +111,20 @@
                             <span class="text-muted">--</span>
                             {% endif %}
                         </td>
+                        {% if current_user and current_user.is_superuser %}
+                        <td>
+                            {% if imp.display_status == 'failed' %}
+                            <form method="post" action="/imports/{{ imp.id }}/acknowledge">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token_for_request(request) }}">
+                                <button type="submit" class="btn btn-secondary btn-sm">{{ t(lang, 'imports.acknowledge') }}</button>
+                            </form>
+                            {% elif imp.display_status == 'acknowledged' %}
+                            <span class="table-meta">{{ imp.acknowledged_at|string|truncate(16, True, '') }}</span>
+                            {% else %}
+                            <span class="text-muted">--</span>
+                            {% endif %}
+                        </td>
+                        {% endif %}
                     </tr>
                     {% endfor %}
                 </tbody>

@@ -22,8 +22,8 @@
             <input id="pending-search" type="search" name="q" value="{{ filters.q }}" placeholder="{{ t(lang, 'unassigned.search_placeholder') }}">
         </div>
         <div class="inline-actions">
-            <button type="submit" class="btn btn-primary">{{ t(lang, 'common.search') }}</button>
-            <a href="/unassigned-reports" class="btn btn-secondary">{{ t(lang, 'common.clear') }}</a>
+            <button type="submit" class="btn btn-primary"><span aria-hidden="true">🔍</span> {{ t(lang, 'common.search') }}</button>
+            <a href="/unassigned-reports" class="btn btn-secondary"><span aria-hidden="true">✕</span> {{ t(lang, 'common.clear') }}</a>
         </div>
     </form>
 </section>
@@ -47,7 +47,10 @@
                         </div>
                     </div>
                     {% if item.pdf_url %}
-                    <a href="{{ item.pdf_url }}" target="_blank" rel="noopener" class="btn btn-secondary">{{ t(lang, 'common.open_pdf') }}</a>
+                    <div class="inline-actions">
+                        <a href="{{ item.pdf_url }}" target="_blank" rel="noopener" class="btn btn-secondary"><span aria-hidden="true">📄</span> {{ t(lang, 'common.open_pdf') }}</a>
+                        <a href="{{ item.pdf_url }}?download=true" class="btn btn-secondary"><span aria-hidden="true">⬇</span> {{ t(lang, 'common.download_pdf') }}</a>
+                    </div>
                     {% endif %}
                 </div>
 
@@ -67,6 +70,10 @@
                     <div class="summary-block">
                         <div class="summary-block-label">{{ t(lang, 'unassigned.clinic') }}</div>
                         <div class="summary-block-value">{{ summary.clinic_name or report.clinic_name or '--' }}</div>
+                    </div>
+                    <div class="summary-block">
+                        <div class="summary-block-label">{{ t(lang, 'common.ordering_vet') }}</div>
+                        <div class="summary-block-value">{{ summary.ordering_vet or '--' }}</div>
                     </div>
                     <div class="summary-block">
                         <div class="summary-block-label">{{ t(lang, 'unassigned.source_reference') }}</div>
@@ -110,7 +117,7 @@
                             <form method="post" action="/unassigned-reports/{{ report.id }}/assign-existing">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <input type="hidden" name="animal_id" value="{{ candidate.animal_id }}">
-                                <button type="submit" class="btn btn-primary">{{ t(lang, 'unassigned.assign') }}</button>
+                                <button type="submit" class="btn btn-primary"><span aria-hidden="true">✓</span> {{ t(lang, 'unassigned.assign') }}</button>
                             </form>
                         </div>
                         {% endfor %}
@@ -141,7 +148,7 @@
                         </div>
                         <div class="list-stack animal-lookup-results" id="lookup-results-{{ report.id }}" style="margin-bottom: 1rem;"></div>
                         <div class="filters-actions">
-                            <button type="submit" class="btn btn-primary" id="assign-button-{{ report.id }}" disabled>{{ t(lang, 'unassigned.assign_selected') }}</button>
+                            <button type="submit" class="btn btn-primary" id="assign-button-{{ report.id }}" disabled><span aria-hidden="true">✓</span> {{ t(lang, 'unassigned.assign_selected') }}</button>
                         </div>
                     </form>
                 </section>
@@ -156,7 +163,7 @@
                     <p class="text-muted" style="margin-bottom: 1rem;">{{ t(lang, 'unassigned.create_hint') }}</p>
                     <form method="post" action="/unassigned-reports/{{ report.id }}/create-animal">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                        <button type="submit" class="btn btn-secondary">{{ t(lang, 'unassigned.create_from_report') }}</button>
+                        <button type="submit" class="btn btn-secondary"><span aria-hidden="true">+</span> {{ t(lang, 'unassigned.create_from_report') }}</button>
                     </form>
                 </section>
             </div>
@@ -180,13 +187,13 @@
         </form>
         <div class="pagination-links">
             {% if pagination.has_prev %}
-            <a href="{{ pagination.prev_url }}" class="pagination-link">{{ t(lang, 'common.previous') }}</a>
+            <a href="{{ pagination.prev_url }}" class="pagination-link"><span aria-hidden="true">←</span> {{ t(lang, 'common.previous') }}</a>
             {% endif %}
             {% for page in pagination.pages %}
             <a href="{{ page.url }}" class="pagination-link {% if page.current %}is-current{% endif %}">{{ page.number }}</a>
             {% endfor %}
             {% if pagination.has_next %}
-            <a href="{{ pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }}</a>
+            <a href="{{ pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }} <span aria-hidden="true">→</span></a>
             {% endif %}
         </div>
     </div>
@@ -250,7 +257,6 @@
                             <div class="table-meta">
                                 ${escapeHtml(item.species || '--')}
                                 ${item.owner_name ? ` · ${escapeHtml(item.owner_name)}` : ''}
-                                ${item.responsible_vet ? ` · ${escapeHtml(item.responsible_vet)}` : ''}
                                 ${item.microchip ? ` · ${escapeHtml(item.microchip)}` : ''}
                             </div>
                             <div class="table-meta">${reportLabel.replace('{count}', reportCount)}</div>

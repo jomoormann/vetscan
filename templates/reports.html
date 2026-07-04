@@ -10,7 +10,7 @@
         <p class="page-subtitle">{{ t(lang, 'reports.subtitle') }}</p>
     </div>
     <div class="inline-actions">
-        <a href="/upload" class="btn btn-primary">{{ t(lang, 'dashboard.upload_report') }}</a>
+        <a href="/upload" class="btn btn-primary"><span aria-hidden="true">📤</span> {{ t(lang, 'dashboard.upload_report') }}</a>
     </div>
 </div>
 
@@ -40,7 +40,7 @@
             </select>
         </div>
         <div class="field">
-            <label for="report-vet" class="sr-only">{{ t(lang, 'animal.responsible_vet') }}</label>
+            <label for="report-vet" class="sr-only">{{ t(lang, 'common.ordering_vet') }}</label>
             <select id="report-vet" name="responsible_vet" onchange="this.form.submit()">
                 <option value="">{{ t(lang, 'reports.all_vets') }}</option>
                 {% for vet in responsible_vets %}
@@ -49,8 +49,8 @@
             </select>
         </div>
         <div class="inline-actions">
-            <button type="submit" class="btn btn-primary">{{ t(lang, 'common.search') }}</button>
-            <a href="/reports" class="btn btn-secondary">{{ t(lang, 'common.clear') }}</a>
+            <button type="submit" class="btn btn-primary"><span aria-hidden="true">🔍</span> {{ t(lang, 'common.search') }}</button>
+            <a href="/reports" class="btn btn-secondary"><span aria-hidden="true">✕</span> {{ t(lang, 'common.clear') }}</a>
         </div>
     </form>
 </section>
@@ -69,12 +69,11 @@
             <table>
                 <thead>
                     <tr>
-                        <th><a class="sort-link" href="{{ sort_links.date.url }}">{{ t(lang, 'common.date') }}{% if sort_links.date.state %}<span class="sort-state">{{ '^' if sort_links.date.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
-                        <th><a class="sort-link" href="{{ sort_links.report.url }}">{{ t(lang, 'common.report') }}{% if sort_links.report.state %}<span class="sort-state">{{ '^' if sort_links.report.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
-                        <th><a class="sort-link" href="{{ sort_links.animal.url }}">{{ t(lang, 'common.animal') }}{% if sort_links.animal.state %}<span class="sort-state">{{ '^' if sort_links.animal.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
-                        <th><a class="sort-link" href="{{ sort_links.vet.url }}">{{ t(lang, 'animal.responsible_vet') }}{% if sort_links.vet.state %}<span class="sort-state">{{ '^' if sort_links.vet.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
-                        <th><a class="sort-link" href="{{ sort_links.source.url }}">{{ t(lang, 'common.source') }}{% if sort_links.source.state %}<span class="sort-state">{{ '^' if sort_links.source.state == 'asc' else 'v' }}</span>{% endif %}</a></th>
-                        <th>{{ t(lang, 'common.summary') }}</th>
+                        <th><a class="sort-link" href="{{ sort_links.date.url }}">{{ t(lang, 'common.date') }}{% if sort_links.date.state %}<span class="sort-state">{{ '↑' if sort_links.date.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
+                        <th><a class="sort-link" href="{{ sort_links.report.url }}">{{ t(lang, 'common.report') }}{% if sort_links.report.state %}<span class="sort-state">{{ '↑' if sort_links.report.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
+                        <th><a class="sort-link" href="{{ sort_links.animal.url }}">{{ t(lang, 'common.animal') }}{% if sort_links.animal.state %}<span class="sort-state">{{ '↑' if sort_links.animal.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
+                        <th><a class="sort-link" href="{{ sort_links.vet.url }}">{{ t(lang, 'common.ordering_vet') }}{% if sort_links.vet.state %}<span class="sort-state">{{ '↑' if sort_links.vet.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
+                        <th><a class="sort-link" href="{{ sort_links.source.url }}">{{ t(lang, 'common.source') }}{% if sort_links.source.state %}<span class="sort-state">{{ '↑' if sort_links.source.state == 'asc' else '↓' }}</span>{% endif %}</a></th>
                         <th>{{ t(lang, 'common.status') }}</th>
                         <th>{{ t(lang, 'common.actions') }}</th>
                     </tr>
@@ -92,12 +91,8 @@
                             <div class="table-title"><a href="/animal/{{ report.animal_id }}">{{ report.animal_name }}</a></div>
                             <div class="table-meta">{{ report.animal_species or '--' }}</div>
                         </td>
-                        <td>{{ report.responsible_vet or '--' }}</td>
-                        <td>
-                            <div>{{ report.source_system or '--' }}</div>
-                            <div class="table-meta">{{ report.clinic_name or report.lab_name or '--' }}</div>
-                        </td>
-                        <td>{{ report.summary }}</td>
+                        <td>{{ report.ordering_vet_display or '--' }}</td>
+                        <td>{{ report.lab_display or report.lab_name or '--' }}</td>
                         <td><span class="badge badge-normal">{{ t(lang, 'common.imported') }}</span></td>
                         <td><a href="/session/{{ report.id }}" class="btn btn-secondary">{{ t(lang, 'common.open') }}</a></td>
                     </tr>
@@ -132,13 +127,13 @@
             </form>
             <div class="pagination-links">
                 {% if pagination.has_prev %}
-                <a href="{{ pagination.prev_url }}" class="pagination-link">{{ t(lang, 'common.previous') }}</a>
+                <a href="{{ pagination.prev_url }}" class="pagination-link"><span aria-hidden="true">←</span> {{ t(lang, 'common.previous') }}</a>
                 {% endif %}
                 {% for page in pagination.pages %}
                 <a href="{{ page.url }}" class="pagination-link {% if page.current %}is-current{% endif %}">{{ page.number }}</a>
                 {% endfor %}
                 {% if pagination.has_next %}
-                <a href="{{ pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }}</a>
+                <a href="{{ pagination.next_url }}" class="pagination-link">{{ t(lang, 'common.next') }} <span aria-hidden="true">→</span></a>
                 {% endif %}
             </div>
         </div>
@@ -147,8 +142,8 @@
     <div class="empty-state">
         <p>{{ t(lang, 'reports.no_matches') }}</p>
         <div class="inline-actions" style="justify-content: center; margin-top: 1rem;">
-            <a href="/upload" class="btn btn-primary">{{ t(lang, 'dashboard.upload_report') }}</a>
-            <a href="/reports" class="btn btn-secondary">{{ t(lang, 'reports.clear_filters') }}</a>
+            <a href="/upload" class="btn btn-primary"><span aria-hidden="true">📤</span> {{ t(lang, 'dashboard.upload_report') }}</a>
+            <a href="/reports" class="btn btn-secondary"><span aria-hidden="true">✕</span> {{ t(lang, 'reports.clear_filters') }}</a>
         </div>
     </div>
     {% endif %}

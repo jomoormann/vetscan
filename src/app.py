@@ -20,6 +20,7 @@ from models import (
     Symptom, Observation, AnimalMatchDecision, UnassignedReport
 )
 from pdf_parser import parse_lab_report, ParsedReport
+from vet_names import canonicalize_vet_name
 
 
 @dataclass
@@ -54,7 +55,7 @@ class AnalysisReport:
 @dataclass
 class ImportOutcome:
     """Result of importing a PDF report."""
-    status: str  # imported, pending_review
+    status: str  # imported, updated, pending_review
     parsed: ParsedReport
     animal_id: Optional[int] = None
     session_id: Optional[int] = None
@@ -63,7 +64,24 @@ class ImportOutcome:
 
     @property
     def imported(self) -> bool:
-        return self.status == "imported"
+        return self.status in ("imported", "updated")
+
+
+@dataclass
+class ReprocessStats:
+    """Summary for retroactive report parser backfills."""
+    sessions_seen: int = 0
+    sessions_updated: int = 0
+    unassigned_seen: int = 0
+    unassigned_updated: int = 0
+    unassigned_assigned: int = 0
+    skipped: int = 0
+    failed: int = 0
+    errors: List[Dict[str, str]] = None
+
+    def __post_init__(self):
+        if self.errors is None:
+            self.errors = []
 
 
 class VetProteinService:
@@ -101,25 +119,123 @@ class VetProteinService:
             return value.isoformat()
         raise TypeError(f"Type {type(value)} is not JSON serializable")
 
-    def _ensure_unique_session(self, parsed: ParsedReport):
+    def _allocate_upload_path(self, filename: str) -> str:
+        """Return a non-overwriting upload path for a stored report PDF."""
+        safe_name = os.path.basename(filename or "report.pdf")
+        upload_path = os.path.join(self.uploads_dir, safe_name)
+        base, ext = os.path.splitext(safe_name)
+        counter = 1
+        while os.path.exists(upload_path):
+            upload_path = os.path.join(self.uploads_dir, f"{base}_{counter}{ext or '.pdf'}")
+            counter += 1
+        return upload_path
+
+    def _find_existing_sessions(self, parsed: ParsedReport) -> List[TestSession]:
+        existing: List[TestSession] = []
+        seen_ids = set()
+
         if parsed.session.external_report_id and parsed.session.source_system:
-            if self.db.session_exists_by_external_reference(
+            for session in self.db.find_sessions_by_external_reference(
                 parsed.session.source_system,
                 parsed.session.external_report_id,
             ):
-                raise ValueError(
-                    f"Report {parsed.session.external_report_id} already exists in database"
-                )
+                if session.id not in seen_ids:
+                    existing.append(session)
+                    seen_ids.add(session.id)
 
-        if parsed.session.report_number and self.db.session_exists(parsed.session.report_number):
-            raise ValueError(
-                f"Report {parsed.session.report_number} already exists in database"
-            )
+        if parsed.session.report_number:
+            session = self.db.find_session_by_report_number(parsed.session.report_number)
+            if session and session.id not in seen_ids:
+                existing.append(session)
 
-    def _persist_session(self, parsed: ParsedReport, animal_id: int) -> int:
-        parsed.session.animal_id = animal_id
-        session_id = self.db.create_test_session(parsed.session)
+        return existing
 
+    def _is_compatible_update(self, existing: TestSession, parsed: ParsedReport) -> bool:
+        """Decide whether a repeated report should replace an existing session."""
+        existing_panel = existing.panel_name or ""
+        new_panel = parsed.session.panel_name or ""
+
+        if existing.report_type == parsed.session.report_type and existing_panel == new_panel:
+            return True
+
+        urine_upgrade = (
+            existing.report_type == "biochemistry"
+            and existing_panel == "urine_protein_creatinine_ratio"
+            and parsed.session.report_type == "urinalysis"
+            and new_panel == "urinalysis_upc"
+            and parsed.biochemistry is not None
+            and parsed.urinalysis is not None
+        )
+        if urine_upgrade:
+            return True
+
+        return False
+
+    def _existing_pdf_path(self, existing_path: Optional[str]) -> Optional[str]:
+        if not existing_path:
+            return None
+
+        candidates = []
+        if os.path.isabs(existing_path):
+            candidates.append(existing_path)
+        else:
+            candidates.append(os.path.abspath(existing_path))
+            candidates.append(os.path.join(self.uploads_dir, os.path.basename(existing_path)))
+
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                return candidate
+        return None
+
+    def _same_pdf_content(self, existing_path: Optional[str], new_path: str) -> bool:
+        resolved = self._existing_pdf_path(existing_path)
+        if not resolved or not os.path.exists(new_path):
+            return False
+        if os.path.getsize(resolved) != os.path.getsize(new_path):
+            return False
+        with open(resolved, "rb") as old_file, open(new_path, "rb") as new_file:
+            while True:
+                old_chunk = old_file.read(1024 * 1024)
+                new_chunk = new_file.read(1024 * 1024)
+                if old_chunk != new_chunk:
+                    return False
+                if not old_chunk:
+                    return True
+
+    def _ensure_unique_report_number_for_panel(self, parsed: ParsedReport):
+        base_number = parsed.session.report_number
+        if not base_number or not self.db.session_exists(base_number):
+            return
+
+        suffix_seed = parsed.session.panel_name or parsed.session.report_type or "report"
+        suffix = suffix_seed.replace("_", " ")
+        candidate = f"{base_number} [{suffix}]"
+        counter = 2
+        while self.db.session_exists(candidate):
+            candidate = f"{base_number} [{suffix} {counter}]"
+            counter += 1
+        parsed.session.report_number = candidate
+
+    def _prepare_existing_import(self, parsed: ParsedReport) -> Optional[TestSession]:
+        existing_sessions = self._find_existing_sessions(parsed)
+        if not existing_sessions:
+            return None
+
+        for session in existing_sessions:
+            if self._is_compatible_update(session, parsed):
+                parsed.session.report_number = session.report_number
+                return session
+
+        self._ensure_unique_report_number_for_panel(parsed)
+        return None
+
+    def _is_generic_fallback_report(self, parsed: ParsedReport) -> bool:
+        return (
+            parsed.session.report_type == "unstructured_report"
+            or any(warning.startswith("generic_report_fallback") for warning in parsed.parse_warnings)
+        )
+
+    def _persist_children(self, parsed: ParsedReport, session_id: int):
         for result in parsed.results:
             result.session_id = session_id
             self.db.create_protein_result(result)
@@ -158,7 +274,286 @@ class VetProteinService:
                     metadata_json=json.dumps(asset.metadata, ensure_ascii=False),
                 ))
 
+    def _remove_stored_assets(self, session_id: int):
+        assets_dir = os.path.join(self.uploads_dir, "report_assets", str(session_id))
+        if os.path.isdir(assets_dir):
+            shutil.rmtree(assets_dir)
+
+    def _persist_session(self, parsed: ParsedReport, animal_id: int) -> int:
+        parsed.session.animal_id = animal_id
+        session_id = self.db.create_test_session(parsed.session)
+        self._persist_children(parsed, session_id)
         return session_id
+
+    def _update_existing_session(self, parsed: ParsedReport,
+                                 existing: TestSession) -> int:
+        animal_id = self.db.attach_report_to_animal(
+            existing.animal_id, parsed.animal, parsed.animal_identifiers
+        )
+        parsed.session.animal_id = animal_id
+        self.db.update_session(existing.id, parsed.session)
+        self._remove_stored_assets(existing.id)
+        self.db.clear_session_results(existing.id)
+        self._persist_children(parsed, existing.id)
+        return existing.id
+
+    def _reparse_stored_pdf(self, pdf_path: Optional[str]) -> Optional[ParsedReport]:
+        resolved_path = self._existing_pdf_path(pdf_path)
+        if not resolved_path:
+            return None
+        return parse_lab_report(resolved_path, allow_generic=True)
+
+    def reprocess_session(self, session_id: int) -> Optional[int]:
+        """Re-parse a stored report PDF and refresh its parsed database rows."""
+        existing = self.db.get_session(session_id)
+        if not existing:
+            raise ValueError(f"Session {session_id} not found")
+
+        parsed = self._reparse_stored_pdf(existing.pdf_path)
+        if not parsed:
+            return None
+
+        parsed.session.pdf_path = existing.pdf_path
+        parsed.session.report_source = existing.report_source or parsed.session.report_source
+        if not parsed.session.report_number:
+            parsed.session.report_number = existing.report_number
+        elif parsed.session.report_number != existing.report_number:
+            conflict = self.db.conn.execute("""
+                SELECT id
+                FROM test_sessions
+                WHERE report_number = ? AND id != ?
+                LIMIT 1
+            """, (parsed.session.report_number, existing.id)).fetchone()
+            if conflict:
+                parsed.session.report_number = existing.report_number
+        return self._update_existing_session(parsed, existing)
+
+    def _update_unassigned_from_parsed(self, report: UnassignedReport,
+                                       parsed: ParsedReport,
+                                       match_decision: AnimalMatchDecision):
+        summary = {
+            "animal_name": parsed.animal.name,
+            "species": parsed.animal.species,
+            "breed": parsed.animal.breed,
+            "owner_name": parsed.animal.owner_name,
+            "microchip": parsed.animal.microchip,
+            "age_years": parsed.animal.age_years,
+            "sex": parsed.animal.sex,
+            "report_number": parsed.session.report_number,
+            "external_report_id": parsed.session.external_report_id,
+            "report_type": parsed.session.report_type,
+            "source_system": parsed.session.source_system,
+            "report_source": parsed.session.report_source,
+            "test_date": parsed.session.test_date,
+            "sample_type": parsed.session.sample_type,
+            "lab_name": parsed.session.lab_name,
+            "clinic_name": parsed.session.clinic_name,
+            "ordering_vet": parsed.session.ordering_vet,
+            "panel_name": parsed.session.panel_name,
+            "measurement_count": len(parsed.measurements),
+            "protein_result_count": len(parsed.results),
+            "pathology_finding_count": len(parsed.pathology_findings),
+            "asset_count": len(parsed.assets),
+        }
+        self.db.conn.execute("""
+            UPDATE unassigned_reports
+            SET source_system = ?,
+                report_type = ?,
+                report_number = ?,
+                external_report_id = ?,
+                report_source = ?,
+                animal_name = ?,
+                species = ?,
+                owner_name = ?,
+                clinic_name = ?,
+                report_date = ?,
+                panel_name = ?,
+                match_reason = ?,
+                parsed_summary_json = ?,
+                candidate_matches_json = ?
+            WHERE id = ?
+        """, (
+            parsed.session.source_system,
+            parsed.session.report_type,
+            parsed.session.report_number,
+            parsed.session.external_report_id,
+            parsed.session.report_source,
+            parsed.animal.name or None,
+            parsed.animal.species or None,
+            parsed.animal.owner_name,
+            parsed.session.clinic_name,
+            parsed.session.test_date,
+            parsed.session.panel_name,
+            match_decision.reason,
+            json.dumps(summary, ensure_ascii=False, default=self._json_default),
+            json.dumps(
+                [asdict(candidate) for candidate in match_decision.candidates],
+                ensure_ascii=False,
+                default=self._json_default,
+            ),
+            report.id,
+        ))
+        self.db.conn.commit()
+
+    def reprocess_unassigned_report(self, report_id: int,
+                                    auto_assign_existing: bool = True) -> str:
+        """Refresh a queued report and optionally assign it if current matching is confident."""
+        report = self.db.get_unassigned_report(report_id)
+        if not report:
+            raise ValueError(f"Queued report {report_id} not found")
+        if report.status != "pending":
+            return "skipped"
+
+        parsed = self._reparse_stored_pdf(report.pdf_path)
+        if not parsed:
+            return "skipped"
+
+        parsed.session.pdf_path = report.pdf_path
+        parsed.session.report_source = report.report_source or parsed.session.report_source
+        match_decision = self.db.analyze_animal_match(parsed.animal, parsed.animal_identifiers)
+        self._update_unassigned_from_parsed(report, parsed, match_decision)
+
+        if auto_assign_existing and match_decision.action == "match_existing" and match_decision.animal_id:
+            animal_id = self.db.attach_report_to_animal(
+                match_decision.animal_id,
+                parsed.animal,
+                parsed.animal_identifiers,
+            )
+            session_id = self._persist_session(parsed, animal_id)
+            self.db.mark_unassigned_report_assigned(report_id, animal_id, session_id)
+            return "assigned"
+
+        return "updated"
+
+    def reprocess_all_reports(self, include_unassigned: bool = True,
+                              auto_assign_unassigned: bool = True) -> ReprocessStats:
+        """Apply the current parser/import behavior to all stored report PDFs."""
+        stats = ReprocessStats()
+
+        session_rows = self.db.conn.execute("""
+            SELECT id
+            FROM test_sessions
+            WHERE pdf_path IS NOT NULL AND TRIM(pdf_path) != ''
+            ORDER BY id ASC
+        """).fetchall()
+        stats.sessions_seen = len(session_rows)
+        for row in session_rows:
+            session_id = row["id"]
+            try:
+                if self.reprocess_session(session_id) is None:
+                    stats.skipped += 1
+                else:
+                    stats.sessions_updated += 1
+            except Exception as exc:
+                stats.failed += 1
+                stats.errors.append({"kind": "session", "id": str(session_id), "error": str(exc)})
+
+        if include_unassigned:
+            report_rows = self.db.conn.execute("""
+                SELECT id
+                FROM unassigned_reports
+                WHERE status = 'pending'
+                  AND pdf_path IS NOT NULL
+                  AND TRIM(pdf_path) != ''
+                ORDER BY id ASC
+            """).fetchall()
+            stats.unassigned_seen = len(report_rows)
+            for row in report_rows:
+                report_id = row["id"]
+                try:
+                    status = self.reprocess_unassigned_report(
+                        report_id,
+                        auto_assign_existing=auto_assign_unassigned,
+                    )
+                    if status == "assigned":
+                        stats.unassigned_assigned += 1
+                    elif status == "updated":
+                        stats.unassigned_updated += 1
+                    else:
+                        stats.skipped += 1
+                except Exception as exc:
+                    stats.failed += 1
+                    stats.errors.append({"kind": "unassigned", "id": str(report_id), "error": str(exc)})
+
+        self._cleanup_invalid_imported_responsible_vets()
+
+        self.db.conn.execute("""
+            INSERT INTO email_import_log (
+                email_uid,
+                email_subject,
+                email_from,
+                attachment_name,
+                validation_result,
+                import_success,
+                error_message
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            f"backfill-reprocess-{datetime.utcnow().isoformat(timespec='seconds')}",
+            "manual report reprocess",
+            "system",
+            "all stored reports",
+            "backfill_reprocessed_reports",
+            1 if stats.failed == 0 else 0,
+            json.dumps(asdict(stats), ensure_ascii=False, default=self._json_default),
+        ))
+        self.db.conn.commit()
+        return stats
+
+    def _cleanup_invalid_imported_responsible_vets(self):
+        """Clear old animal responsible-vet values that are clearly report text, not names."""
+        invalid_exact = {
+            "DESCRIÇÃO MICROSCÓPICA",
+            "DESCRICAO MICROSCOPICA",
+            "Turbididade: transparente",
+            "Desconhecido Unknown",
+            "Dr(a).",
+        }
+        invalid_fragments = (
+            "shrinkage",
+            "turbididade",
+            "descrição",
+            "descricao",
+            "diagnóstico",
+            "diagnostico",
+            "comentário",
+            "comentario",
+            "microscópica",
+            "microscopica",
+        )
+        rows = self.db.conn.execute("""
+            SELECT id, responsible_vet
+            FROM animals
+            WHERE responsible_vet IS NOT NULL AND TRIM(responsible_vet) != ''
+        """).fetchall()
+        for row in rows:
+            value = (row["responsible_vet"] or "").strip()
+            lowered = value.lower()
+            if value in invalid_exact or any(fragment in lowered for fragment in invalid_fragments):
+                self.db.conn.execute(
+                    "UPDATE animals SET responsible_vet = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (row["id"],),
+                )
+        session_rows = self.db.conn.execute("""
+            SELECT id, ordering_vet
+            FROM test_sessions
+            WHERE ordering_vet IS NOT NULL AND TRIM(ordering_vet) != ''
+        """).fetchall()
+        for row in session_rows:
+            value = (row["ordering_vet"] or "").strip()
+            lowered = value.lower()
+            if value in invalid_exact or any(fragment in lowered for fragment in invalid_fragments):
+                self.db.conn.execute(
+                    "UPDATE test_sessions SET ordering_vet = NULL WHERE id = ?",
+                    (row["id"],),
+                )
+                continue
+            canonical = canonicalize_vet_name(value)
+            if canonical and canonical != value:
+                self.db.conn.execute(
+                    "UPDATE test_sessions SET ordering_vet = ? WHERE id = ?",
+                    (canonical, row["id"]),
+                )
 
     def _queue_unassigned_report(self, parsed: ParsedReport,
                                  match_decision: AnimalMatchDecision) -> int:
@@ -187,6 +582,7 @@ class VetProteinService:
             "sample_type": parsed.session.sample_type,
             "lab_name": parsed.session.lab_name,
             "clinic_name": parsed.session.clinic_name,
+            "ordering_vet": parsed.session.ordering_vet,
             "panel_name": parsed.session.panel_name,
             "measurement_count": len(parsed.measurements),
             "protein_result_count": len(parsed.results),
@@ -233,7 +629,9 @@ class VetProteinService:
                    report_source: Optional[str] = None,
                    force_animal_id: Optional[int] = None,
                    force_create_animal: bool = False,
-                   allow_pending_assignment: bool = True) -> ImportOutcome:
+                   allow_pending_assignment: bool = True,
+                   allow_update_existing: bool = False,
+                   allow_generic_report: bool = False) -> ImportOutcome:
         """
         Import a PDF report into the database.
         """
@@ -241,16 +639,23 @@ class VetProteinService:
             raise ValueError("force_animal_id and force_create_animal cannot be used together")
 
         # Parse the PDF
-        parsed = parse_lab_report(pdf_path)
+        parsed = parse_lab_report(pdf_path, allow_generic=allow_generic_report)
 
-        # Check if report already exists
-        self._ensure_unique_session(parsed)
+        existing_session = self._prepare_existing_import(parsed)
+        if existing_session:
+            report_id = parsed.session.external_report_id or parsed.session.report_number
+            if self._same_pdf_content(existing_session.pdf_path, pdf_path):
+                raise ValueError(f"Report {report_id} already exists in database")
+            if not allow_update_existing:
+                raise ValueError(f"Report {report_id} already exists in database")
         
         # Copy PDF to uploads directory if requested
         stored_path = pdf_path
         if copy_to_uploads:
             filename = os.path.basename(pdf_path)
             stored_path = os.path.join(self.uploads_dir, filename)
+            if os.path.exists(stored_path) and os.path.abspath(pdf_path) != os.path.abspath(stored_path):
+                stored_path = self._allocate_upload_path(filename)
             if pdf_path != stored_path:
                 shutil.copy2(pdf_path, stored_path)
             parsed.session.pdf_path = stored_path
@@ -258,6 +663,15 @@ class VetProteinService:
             parsed.session.pdf_path = stored_path
 
         parsed.session.report_source = report_source or parsed.session.report_source or stored_path
+
+        if existing_session:
+            session_id = self._update_existing_session(parsed, existing_session)
+            return ImportOutcome(
+                status="updated",
+                animal_id=parsed.session.animal_id,
+                session_id=session_id,
+                parsed=parsed,
+            )
 
         if force_animal_id is not None:
             animal_id = self.db.attach_report_to_animal(
@@ -286,6 +700,13 @@ class VetProteinService:
         match_decision = self.db.analyze_animal_match(
             parsed.animal, parsed.animal_identifiers
         )
+        if (
+            self._is_generic_fallback_report(parsed)
+            and match_decision.action == "create_new"
+            and allow_pending_assignment
+        ):
+            match_decision.action = "manual_review"
+            match_decision.reason = "unstructured_report_needs_assignment"
 
         if match_decision.action == "match_existing" and match_decision.animal_id:
             animal_id = self.db.attach_report_to_animal(
@@ -343,6 +764,7 @@ class VetProteinService:
             report_source=report.report_source,
             force_animal_id=animal_id,
             allow_pending_assignment=False,
+            allow_generic_report=True,
         )
         self.db.mark_unassigned_report_assigned(report_id, animal_id, outcome.session_id)
         return outcome
@@ -356,6 +778,7 @@ class VetProteinService:
             report_source=report.report_source,
             force_create_animal=True,
             allow_pending_assignment=False,
+            allow_generic_report=True,
         )
         self.db.mark_unassigned_report_assigned(report_id, outcome.animal_id, outcome.session_id)
         return outcome

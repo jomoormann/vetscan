@@ -31,6 +31,7 @@
 </div>
 
 <!-- Protein Comparison Table -->
+{% if comparison_data %}
 <div class="card">
     <div class="card-header">
         <h2 class="card-title">{{ t(lang, 'compare.marker_evolution') }}</h2>
@@ -61,11 +62,24 @@
                                 font-weight: 600;
                             ">
                                 {{ "%.1f"|format(val.value) if val.value is not none else '--' }}
+                                {% if val.unit %} {{ val.unit }}{% endif %}
                             </span>
                             {% if val.flag == 'high' %}
                                 <small>↑</small>
                             {% elif val.flag == 'low' %}
                                 <small>↓</small>
+                            {% endif %}
+                            {% if val.value_absolute is not none %}
+                            <div class="table-meta">
+                                {{ "%.2f"|format(val.value_absolute) }}{% if val.unit_absolute %} {{ val.unit_absolute }}{% endif %}
+                                {% if val.flag_absolute == 'high' %}↑{% elif val.flag_absolute == 'low' %}↓{% endif %}
+                            </div>
+                            {% endif %}
+                            {% if val.reference_min is not none and val.reference_max is not none %}
+                            <div class="table-meta">Ref: {{ "%.1f"|format(val.reference_min) }} - {{ "%.1f"|format(val.reference_max) }}</div>
+                            {% endif %}
+                            {% if val.reference_min_absolute is not none and val.reference_max_absolute is not none %}
+                            <div class="table-meta">Ref g/dL: {{ "%.2f"|format(val.reference_min_absolute) }} - {{ "%.2f"|format(val.reference_max_absolute) }}</div>
                             {% endif %}
                         {% else %}
                             <span class="text-muted">--</span>
@@ -94,6 +108,59 @@
         </table>
     </div>
 </div>
+{% endif %}
+
+<!-- Biochemistry (UPC / renal markers) Comparison Table -->
+{% if has_biochemistry %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ t(lang, 'session_detail.biochemistry') }}</h2>
+    </div>
+    <div class="table-responsive" style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th style="position: sticky; left: 0; background: var(--gray-50);">{{ t(lang, 'session_detail.parameter') }}</th>
+                    {% for session in sessions %}
+                    <th style="text-align: center;">{{ session.test_date|format_date_short }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;"><strong>{{ t(lang, 'session_detail.upc_ratio') }}</strong></td>
+                    {% for bio in biochemistry_data %}
+                    <td style="text-align: center;">
+                        {% if bio and bio.upc_ratio is not none %}
+                            <span style="font-weight: 600;
+                                {% if bio.upc_status == 'proteinurico' %}color: var(--danger);
+                                {% elif bio.upc_status == 'suspeito' %}color: var(--warning);
+                                {% else %}color: var(--success);{% endif %}">
+                                {{ "%.2f"|format(bio.upc_ratio) }}
+                            </span>
+                        {% else %}
+                            <span class="text-muted">--</span>
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ t(lang, 'session_detail.total_protein_urine') }}</td>
+                    {% for bio in biochemistry_data %}
+                    <td style="text-align: center;">{{ "%.1f"|format(bio.urine_total_protein) if bio and bio.urine_total_protein is not none else '--' }}</td>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ t(lang, 'session_detail.creatinine_urine') }}</td>
+                    {% for bio in biochemistry_data %}
+                    <td style="text-align: center;">{{ "%.1f"|format(bio.urine_creatinine) if bio and bio.urine_creatinine is not none else '--' }}</td>
+                    {% endfor %}
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
 
 <!-- Urinalysis Comparison Table -->
 {% if has_urinalysis %}
@@ -235,6 +302,51 @@
                     <td style="text-align: center;">{{ urin.bacteria if urin and urin.bacteria else '--' }}</td>
                     {% endfor %}
                 </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Additional Measurements Comparison Table -->
+{% if has_measurements %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">{{ t(lang, 'session_detail.measurements') }}</h2>
+    </div>
+    <div class="table-responsive" style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th style="position: sticky; left: 0; background: var(--gray-50);">{{ t(lang, 'session_detail.parameter') }}</th>
+                    {% for session in sessions %}
+                    <th style="text-align: center;">{{ session.test_date|format_date_short }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in measurement_rows %}
+                <tr>
+                    <td style="position: sticky; left: 0; background: white;">{{ row.name }}</td>
+                    {% for val in row['values'] %}
+                    <td style="text-align: center;">
+                        {% if val %}
+                            <span style="font-weight: 600;
+                                {% if val.flag == 'high' %}color: var(--danger);
+                                {% elif val.flag == 'low' %}color: var(--warning);
+                                {% else %}color: var(--gray-800);{% endif %}">
+                                {% if val.value_text %}{{ val.value_text }}{% elif val.value_numeric is not none %}{{ val.value_numeric }}{% else %}--{% endif %}{% if val.unit %} {{ val.unit }}{% endif %}
+                            </span>
+                            {% if val.reference_text %}
+                            <div class="table-meta">Ref: {{ val.reference_text }}</div>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-muted">--</span>
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
             </tbody>
         </table>
     </div>

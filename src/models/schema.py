@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS test_sessions (
     reported_at TIMESTAMP,
     received_at TIMESTAMP,
     clinic_name TEXT,
+    ordering_vet TEXT,
     panel_name TEXT,
     raw_metadata_json TEXT,
     pdf_path TEXT,
@@ -354,7 +355,9 @@ CREATE TABLE IF NOT EXISTS email_import_log (
     error_message TEXT,
     report_number TEXT,
     animal_id INTEGER,
-    session_id INTEGER
+    session_id INTEGER,
+    acknowledged_at TIMESTAMP,
+    acknowledged_by_user_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_import_log_timestamp ON email_import_log(import_timestamp);
 
